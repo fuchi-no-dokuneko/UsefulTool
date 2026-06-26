@@ -1,0 +1,55 @@
+name: Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check required files
+        run: |
+          test -f index.html
+          test -f image-converter.html
+          test -f calculator.html
+          test -f unit-converter.html
+          test -f metadata-lab.html
+          test -x serve-local.sh
+      - name: Check for external runtime URLs
+        run: |
+          if grep -RInE 'https?://|//[^ ]+\.[a-zA-Z]{2,}' -- *.html _headers wrangler.toml; then
+            echo "External runtime URL found. Keep pages local-only."
+            exit 1
+          fi
+      - name: Check connect-src lock
+        run: grep -R "connect-src 'none'" *.html _headers
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Cloudflare deployment config
+        id: config
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PROJECT_NAME: ${{ vars.CLOUDFLARE_PROJECT_NAME }}
+        run: |
+          if [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ] && [ -n "$CLOUDFLARE_PROJECT_NAME" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Cloudflare secrets/variable are not configured; skipping deploy."
+          fi
+      - name: Deploy to Cloudflare Pages
+        if: steps.config.outputs.configured == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy . --project-name=${{ vars.CLOUDFLARE_PROJECT_NAME }}

@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'none'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>UsefulTool Metadata Lab</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17201b;
+      --muted: #5e6962;
+      --line: #d7ded8;
+      --paper: #f7faf7;
+      --panel: #ffffff;
+      --green: #0d6b4f;
+      --teal: #137083;
+      --gold: #a36a00;
+      --red: #9b2f2f;
+      --shadow: 0 14px 32px rgba(18, 31, 25, .10);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+      line-height: 1.45;
+    }
+    button, input, textarea, select { font: inherit; }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 14px clamp(14px, 4vw, 34px);
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+    .brand, nav a {
+      color: inherit;
+      text-decoration: none;
+      font-weight: 750;
+    }
+    .brand { display: flex; gap: 10px; align-items: center; }
+    .mark {
+      width: 32px;
+      height: 32px;
+      border-radius: 7px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, var(--green), var(--teal));
+      color: #fff;
+      font-size: 13px;
+    }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+    nav a, .button {
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 8px 11px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
+      color: inherit;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .button:hover, nav a:hover { border-color: var(--green); }
+    .primary { color: #fff; background: var(--green); border-color: var(--green); }
+    .danger { color: #fff; background: var(--red); border-color: var(--red); }
+    main {
+      max-width: 1220px;
+      margin: 0 auto;
+      padding: clamp(16px, 4vw, 34px);
+      display: grid;
+      grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+      gap: clamp(16px, 3vw, 28px);
+    }
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .intro { padding: 18px; border-bottom: 1px solid var(--line); background: #fbfdfb; }
+    h1 { margin: 0 0 8px; font-size: 28px; letter-spacing: 0; }
+    h2 { margin: 0 0 12px; font-size: 20px; letter-spacing: 0; }
+    .lead, .muted { color: var(--muted); }
+    .lead { margin: 0; }
+    .muted { margin: 0; font-size: 13px; }
+    .controls, .viewer { padding: 18px; display: grid; gap: 14px; }
+    label { display: grid; gap: 7px; color: var(--muted); font-size: 13px; font-weight: 750; }
+    input, textarea, select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #fff;
+      color: var(--ink);
+    }
+    textarea {
+      min-height: 118px;
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
+    .actions, .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .tabs button[aria-pressed="true"] {
+      color: #fff;
+      background: var(--teal);
+      border-color: var(--teal);
+    }
+    .preview {
+      min-height: 280px;
+      display: grid;
+      place-items: center;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background:
+        linear-gradient(45deg, #dfe6e0 25%, transparent 25%),
+        linear-gradient(-45deg, #dfe6e0 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #dfe6e0 75%),
+        linear-gradient(-45deg, transparent 75%, #dfe6e0 75%);
+      background-size: 28px 28px;
+      background-position: 0 0, 0 14px, 14px -14px, -14px 0;
+    }
+    .preview img, .preview video {
+      max-width: 100%;
+      max-height: 58svh;
+      border: 1px solid rgba(23, 32, 27, .12);
+      background: #fff;
+    }
+    .preview video { background: #111; }
+    .facts {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .fact {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      display: grid;
+      gap: 4px;
+      min-height: 76px;
+    }
+    .fact span { color: var(--muted); font-size: 12px; font-weight: 750; }
+    .fact strong { overflow-wrap: anywhere; }
+    .list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 8px;
+      max-height: 420px;
+      overflow: auto;
+    }
+    .list li {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      display: grid;
+      gap: 4px;
+    }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+    .badge {
+      display: inline-flex;
+      width: fit-content;
+      border-radius: 999px;
+      padding: 2px 8px;
+      background: #edf6f2;
+      color: var(--green);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    @media (max-width: 900px) {
+      .topbar { align-items: flex-start; flex-direction: column; position: static; }
+      nav { justify-content: flex-start; }
+      main { grid-template-columns: 1fr; }
+      .facts { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="mark">UT</span><span>Metadata Lab</span></a>
+    <nav aria-label="Tool navigation">
+      <a href="index.html">Home</a>
+      <a href="image-converter.html">Image Tool</a>
+      <a href="unit-converter.html">Units</a>
+      <a href="calculator.html">Calculator</a>
+      <a href="metadata-lab.html" download>Download HTML</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="panel">
+      <div class="intro">
+        <h1>Image and Video Metadata</h1>
+        <p class="lead">Visualize, erase, and inject simple metadata locally. Files stay inside the browser.</p>
+      </div>
+      <div class="controls">
+        <label>Choose image or video
+          <input id="fileInput" type="file" accept="image/jpeg,image/png,video/mp4,video/webm">
+        </label>
+        <div class="tabs" role="group" aria-label="Mode">
+          <button class="button" id="inspectMode" type="button" aria-pressed="true">Inspect</button>
+          <button class="button" id="eraseMode" type="button" aria-pressed="false">Erase</button>
+          <button class="button" id="injectMode" type="button" aria-pressed="false">Inject</button>
+        </div>
+        <label>Custom note for injection
+          <textarea id="note" maxlength="1200">Created locally with UsefulTool. No network upload.</textarea>
+        </label>
+        <label>Image export format for erase
+          <select id="imageFormat">
+            <option value="image/png">PNG</option>
+            <option value="image/jpeg">JPEG</option>
+          </select>
+        </label>
+        <div class="actions">
+          <button class="button primary" id="runButton" type="button">Run Action</button>
+          <button class="button" id="downloadButton" type="button" disabled>Download Result</button>
+          <button class="button" id="sourceButton" type="button">View Source</button>
+        </div>
+        <p class="muted" id="supportText">Images: JPEG/PNG inspect, erase by canvas re-encode, inject JPEG comment or PNG text. Video: MP4/WebM inspect; MP4 top-level free/skip/uuid and moov udta/meta stripping; MP4 custom free note injection.</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="viewer">
+        <div class="preview" id="preview">Choose a file to begin.</div>
+        <div class="facts" id="facts"></div>
+        <h2>Metadata View</h2>
+        <ul class="list" id="metadataList"></ul>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (function blockOutbound() {
+      const deny = function () { throw new Error("Outbound network calls are disabled in UsefulTool."); };
+      window.fetch = deny;
+      window.XMLHttpRequest = deny;
+      window.WebSocket = deny;
+      window.EventSource = deny;
+      if (navigator.sendBeacon) navigator.sendBeacon = function () { return false; };
+    })();
+
+    const fileInput = document.getElementById("fileInput");
+    const inspectMode = document.getElementById("inspectMode");
+    const eraseMode = document.getElementById("eraseMode");
+    const injectMode = document.getElementById("injectMode");
+    const note = document.getElementById("note");
+    const imageFormat = document.getElementById("imageFormat");
+    const runButton = document.getElementById("runButton");
+    const downloadButton = document.getElementById("downloadButton");
+    const sourceButton = document.getElementById("sourceButton");
+    const preview = document.getElementById("preview");
+    const facts = document.getElementById("facts");
+    const metadataList = document.getElementById("metadataList");
+    const supportText = document.getElementById("supportText");
+
+    const textDecoder = new TextDecoder("latin1");
+    const utf8Decoder = new TextDecoder("utf-8");
+    const textEncoder = new TextEncoder();
+    let currentFile = null;
+    let currentBytes = null;
+    let currentMode = "inspect";
+    let resultBlob = null;
+    let resultName = "metadata-result.bin";
+    let objectUrl = null;
+
+    function setMode(mode) {
+      currentMode = mode;
+      inspectMode.setAttribute("aria-pressed", String(mode === "inspect"));
+      eraseMode.setAttribute("aria-pressed", String(mode === "erase"));
+      injectMode.setAttribute("aria-pressed", String(mode === "inject"));
+      resultBlob = null;
+      downloadButton.disabled = true;
+    }
+
+    function clearObjectUrl() {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      objectUrl = null;
+    }
+
+    function setPreview(file) {
+      clearObjectUrl();
+      preview.replaceChildren();
+      objectUrl = URL.createObjectURL(file);
+      if (file.type.startsWith("image/")) {
+        const img = document.createElement("img");
+        img.alt = "Selected image preview";
+        img.src = objectUrl;
+        preview.appendChild(img);
+      } else if (file.type.startsWith("video/")) {
+        const video = document.createElement("video");
+        video.controls = true;
+        video.preload = "metadata";
+        video.src = objectUrl;
+        video.addEventListener("loadedmetadata", () => {
+          addFact("Video size", (video.videoWidth || "?") + " x " + (video.videoHeight || "?"));
+          addFact("Duration", Number.isFinite(video.duration) ? video.duration.toFixed(3) + " s" : "unknown");
+        }, { once: true });
+        preview.appendChild(video);
+      } else {
+        preview.textContent = "Unsupported file type.";
+      }
+    }
+
+    function addFact(label, value) {
+      const item = document.createElement("div");
+      item.className = "fact";
+      const span = document.createElement("span");
+      span.textContent = label;
+      const strong = document.createElement("strong");
+      strong.textContent = value;
+      item.append(span, strong);
+      facts.appendChild(item);
+    }
+
+    function addMetadata(kind, name, value) {
+      const li = document.createElement("li");
+      const badge = document.createElement("span");
+      badge.className = "badge";
+      badge.textContent = kind;
+      const title = document.createElement("strong");
+      title.textContent = name;
+      const data = document.createElement("div");
+      data.className = "mono";
+      data.textContent = value;
+      li.append(badge, title, data);
+      metadataList.appendChild(li);
+    }
+
+    function resetView() {
+      facts.replaceChildren();
+      metadataList.replaceChildren();
+      resultBlob = null;
+      downloadButton.disabled = true;
+    }
+
+    function byteString(bytes, start, end) {
+      return textDecoder.decode(bytes.slice(start, end));
+    }
+
+    function utf8String(bytes, start, end) {
+      return utf8Decoder.decode(bytes.slice(start, end));
+    }
+
+    function readU32(bytes, offset) {
+      return ((bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0;
+    }
+
+    function writeU32(bytes, offset, value) {
+      bytes[offset] = (value >>> 24) & 255;
+      bytes[offset + 1] = (value >>> 16) & 255;
+      bytes[offset + 2] = (value >>> 8) & 255;
+      bytes[offset + 3] = value & 255;
+    }
+
+    function readU64(bytes, offset) {
+      const high = readU32(bytes, offset);
+      const low = readU32(bytes, offset + 4);
+      return high * 4294967296 + low;
+    }
+
+    function concatBytes(parts) {
+      const total = parts.reduce((sum, item) => sum + item.length, 0);
+      const out = new Uint8Array(total);
+      let offset = 0;
+      parts.forEach((item) => {
+        out.set(item, offset);
+        offset += item.length;
+      });
+      return out;
+    }
+
+    function crc32(bytes) {
+      let table = crc32.table;
+      if (!table) {
+        table = [];
+        for (let n = 0; n < 256; n += 1) {
+          let c = n;
+          for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+          table[n] = c >>> 0;
+        }
+        crc32.table = table;
+      }
+      let c = 0xffffffff;
+      for (let i = 0; i < bytes.length; i += 1) c = table[(c ^ bytes[i]) & 255] ^ (c >>> 8);
+      return (c ^ 0xffffffff) >>> 0;
+    }
+
+    function pngChunk(type, payload) {
+      const typeBytes = textEncoder.encode(type);
+      const out = new Uint8Array(12 + payload.length);
+      writeU32(out, 0, payload.length);
+      out.set(typeBytes, 4);
+      out.set(payload, 8);
+      writeU32(out, 8 + payload.length, crc32(out.slice(4, 8 + payload.length)));
+      return out;
+    }
+
+    function inspectJpeg(bytes) {
+      addMetadata("format", "JPEG", "Segment metadata scan");
+      let pos = 2;
+      while (pos + 4 <= bytes.length && bytes[pos] === 255) {
+        const marker = bytes[pos + 1];
+        if (marker === 218 || marker === 217) break;
+        const len = (bytes[pos + 2] << 8) | bytes[pos + 3];
+        if (len < 2 || pos + 2 + len > bytes.length) break;
+        const payloadStart = pos + 4;
+        const payloadEnd = pos + 2 + len;
+        const label = "0x" + marker.toString(16).padStart(2, "0");
+        if (marker === 225) {
+          const head = byteString(bytes, payloadStart, Math.min(payloadStart + 36, payloadEnd));
+          addMetadata("APP1", head.startsWith("Exif") ? "EXIF" : "XMP or APP1", head.replace(/\0/g, " ").slice(0, 160));
+        } else if (marker === 226) {
+          addMetadata("APP2", "ICC profile", String(payloadEnd - payloadStart) + " bytes");
+        } else if (marker === 237) {
+          addMetadata("APP13", "IPTC or Photoshop", String(payloadEnd - payloadStart) + " bytes");
+        } else if (marker === 254) {
+          addMetadata("comment", "JPEG comment", byteString(bytes, payloadStart, payloadEnd).slice(0, 500));
+        } else if (marker >= 224 && marker <= 239) {
+          addMetadata("APP", "JPEG APP marker " + label, String(payloadEnd - payloadStart) + " bytes");
+        }
+        pos = payloadEnd;
+      }
+    }
+
+    function inspectPng(bytes) {
+      addMetadata("format", "PNG", "Chunk metadata scan");
+      let pos = 8;
+      while (pos + 12 <= bytes.length) {
+        const len = readU32(bytes, pos);
+        const type = byteString(bytes, pos + 4, pos + 8);
+        const start = pos + 8;
+        const end = start + len;
+        if (end + 4 > bytes.length) break;
+        if (["tEXt", "zTXt", "iTXt", "pHYs", "tIME", "gAMA", "cHRM", "sRGB"].includes(type)) {
+          const raw = type === "tEXt" || type === "iTXt" ? utf8String(bytes, start, end).replace(/\0/g, " | ") : String(len) + " bytes";
+          addMetadata("chunk", type, raw.slice(0, 700));
+        }
+        if (type === "IHDR" && len >= 8) {
+          addFact("Pixel size", readU32(bytes, start) + " x " + readU32(bytes, start + 4));
+        }
+        pos = end + 4;
+        if (type === "IEND") break;
+      }
+    }
+
+    function parseMp4Boxes(bytes, start, end, depth) {
+      const boxes = [];
+      let pos = start;
+      while (pos + 8 <= end) {
+        let size = readU32(bytes, pos);
+        const type = byteString(bytes, pos + 4, pos + 8);
+        let header = 8;
+        if (size === 1 && pos + 16 <= end) {
+          size = readU64(bytes, pos + 8);
+          header = 16;
+        } else if (size === 0) {
+          size = end - pos;
+        }
+        if (!size || pos + size > end || size < header) break;
+        boxes.push({ type, start: pos, end: pos + size, header, depth });
+        if (["moov", "trak", "mdia", "minf", "stbl", "udta"].includes(type)) {
+          boxes.push(...parseMp4Boxes(bytes, pos + header, pos + size, depth + 1));
+        }
+        pos += size;
+      }
+      return boxes;
+    }
+
+    function inspectMp4(bytes) {
+      addMetadata("format", "MP4", "ISO BMFF box scan");
+      const boxes = parseMp4Boxes(bytes, 0, bytes.length, 0);
+      boxes.slice(0, 80).forEach((box) => {
+        const privacy = ["udta", "meta", "uuid", "free", "skip"].includes(box.type) ? " possible metadata" : "";
+        addMetadata("box", " ".repeat(box.depth * 2) + box.type, (box.end - box.start) + " bytes" + privacy);
+      });
+    }
+
+    function inspectWebm(bytes) {
+      addMetadata("format", "WebM", "Container signature scan");
+      const head = byteString(bytes, 0, Math.min(bytes.length, 256));
+      addMetadata("ebml", "Header", head.includes("webm") ? "WebM marker found" : "EBML-style file");
+      ["TITLE", "ARTIST", "DATE", "ENCODER", "DESCRIPTION"].forEach((term) => {
+        const idx = head.toUpperCase().indexOf(term);
+        if (idx >= 0) addMetadata("tag", term, "Potential tag marker near byte " + idx);
+      });
+    }
+
+    function inspectFile() {
+      resetView();
+      if (!currentFile || !currentBytes) return;
+      addFact("Name", currentFile.name);
+      addFact("Type", currentFile.type || "unknown");
+      addFact("Size", currentFile.size + " bytes");
+      if (currentFile.type === "image/jpeg") inspectJpeg(currentBytes);
+      else if (currentFile.type === "image/png") inspectPng(currentBytes);
+      else if (currentFile.type === "video/mp4") inspectMp4(currentBytes);
+      else if (currentFile.type === "video/webm") inspectWebm(currentBytes);
+      else addMetadata("status", "Unsupported", "Use JPG, PNG, MP4, or WebM.");
+    }
+
+    function stripImageByCanvas(file, type) {
+      return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+          const ctx = canvas.getContext("2d");
+          if (type === "image/jpeg") {
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+          }
+          ctx.drawImage(img, 0, 0);
+          URL.revokeObjectURL(url);
+          canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Canvas export failed")), type, 0.92);
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          reject(new Error("Image decode failed"));
+        };
+        img.src = url;
+      });
+    }
+
+    function injectJpegComment(bytes, text) {
+      const payload = textEncoder.encode(text.slice(0, 60000));
+      const segment = new Uint8Array(4 + payload.length);
+      segment[0] = 255;
+      segment[1] = 254;
+      const len = payload.length + 2;
+      segment[2] = (len >>> 8) & 255;
+      segment[3] = len & 255;
+      segment.set(payload, 4);
+      return concatBytes([bytes.slice(0, 2), segment, bytes.slice(2)]);
+    }
+
+    function injectPngText(bytes, text) {
+      const keyword = textEncoder.encode("UsefulTool");
+      const payload = concatBytes([keyword, new Uint8Array([0]), textEncoder.encode(text.slice(0, 60000))]);
+      const chunk = pngChunk("tEXt", payload);
+      let pos = 8;
+      while (pos + 12 <= bytes.length) {
+        const len = readU32(bytes, pos);
+        const type = byteString(bytes, pos + 4, pos + 8);
+        const next = pos + 12 + len;
+        if (type === "IEND") return concatBytes([bytes.slice(0, pos), chunk, bytes.slice(pos)]);
+        pos = next;
+      }
+      throw new Error("PNG IEND chunk not found");
+    }
+
+    function makeMp4Box(type, payload) {
+      const out = new Uint8Array(8 + payload.length);
+      writeU32(out, 0, out.length);
+      out.set(textEncoder.encode(type), 4);
+      out.set(payload, 8);
+      return out;
+    }
+
+    function stripMp4Ranges(bytes, start, end, containerType) {
+      const parts = [];
+      let pos = start;
+      while (pos + 8 <= end) {
+        let size = readU32(bytes, pos);
+        const type = byteString(bytes, pos + 4, pos + 8);
+        let header = 8;
+        if (size === 1 && pos + 16 <= end) {
+          size = readU64(bytes, pos + 8);
+          header = 16;
+        } else if (size === 0) {
+          size = end - pos;
+        }
+        if (!size || pos + size > end || size < header) {
+          parts.push(bytes.slice(pos, end));
+          break;
+        }
+        const removeTop = !containerType && ["free", "skip", "uuid"].includes(type);
+        const removeInMoov = containerType === "moov" && ["udta", "meta"].includes(type);
+        if (!removeTop && !removeInMoov) {
+          if (type === "moov") {
+            const body = stripMp4Ranges(bytes, pos + header, pos + size, "moov");
+            const box = new Uint8Array(header + body.length);
+            box.set(bytes.slice(pos, pos + header), 0);
+            writeU32(box, 0, box.length);
+            box.set(body, header);
+            parts.push(box);
+          } else {
+            parts.push(bytes.slice(pos, pos + size));
+          }
+        }
+        pos += size;
+      }
+      return concatBytes(parts);
+    }
+
+    function injectMp4Free(bytes, text) {
+      const payload = textEncoder.encode("UsefulTool metadata note\n" + text.slice(0, 60000));
+      const box = makeMp4Box("free", payload);
+      const firstSize = readU32(bytes, 0);
+      const firstType = byteString(bytes, 4, 8);
+      if (firstType === "ftyp" && firstSize > 0 && firstSize < bytes.length) {
+        return concatBytes([bytes.slice(0, firstSize), box, bytes.slice(firstSize)]);
+      }
+      return concatBytes([box, bytes]);
+    }
+
+    async function runAction() {
+      if (!currentFile || !currentBytes) return;
+      resultBlob = null;
+      downloadButton.disabled = true;
+      if (currentMode === "inspect") {
+        inspectFile();
+        return;
+      }
+      try {
+        if (currentMode === "erase") {
+          if (currentFile.type.startsWith("image/")) {
+            resultBlob = await stripImageByCanvas(currentFile, imageFormat.value);
+            resultName = "metadata-erased." + (imageFormat.value === "image/png" ? "png" : "jpg");
+            addMetadata("result", "Image metadata erased", "Canvas re-encode removes EXIF, comments, and PNG text chunks.");
+          } else if (currentFile.type === "video/mp4") {
+            const out = stripMp4Ranges(currentBytes, 0, currentBytes.length, "");
+            resultBlob = new Blob([out], { type: "video/mp4" });
+            resultName = "metadata-erased.mp4";
+            addMetadata("result", "MP4 metadata stripped", "Removed top-level free/skip/uuid and moov udta/meta boxes when found.");
+          } else {
+            addMetadata("unsupported", "Erase not available", "This browser-only tool does not safely rewrite this video container.");
+            return;
+          }
+        } else if (currentMode === "inject") {
+          if (currentFile.type === "image/jpeg") {
+            const out = injectJpegComment(currentBytes, note.value);
+            resultBlob = new Blob([out], { type: "image/jpeg" });
+            resultName = "metadata-injected.jpg";
+            addMetadata("result", "JPEG comment injected", note.value.slice(0, 500));
+          } else if (currentFile.type === "image/png") {
+            const out = injectPngText(currentBytes, note.value);
+            resultBlob = new Blob([out], { type: "image/png" });
+            resultName = "metadata-injected.png";
+            addMetadata("result", "PNG tEXt chunk injected", note.value.slice(0, 500));
+          } else if (currentFile.type === "video/mp4") {
+            const out = injectMp4Free(currentBytes, note.value);
+            resultBlob = new Blob([out], { type: "video/mp4" });
+            resultName = "metadata-injected.mp4";
+            addMetadata("result", "MP4 free box injected", "Inserted a custom UsefulTool note after ftyp.");
+          } else {
+            addMetadata("unsupported", "Inject not available", "Use JPEG, PNG, or MP4 for injection.");
+            return;
+          }
+        }
+        downloadButton.disabled = false;
+      } catch (err) {
+        addMetadata("error", "Action failed", err.message);
+      }
+    }
+
+    fileInput.addEventListener("change", async () => {
+      currentFile = fileInput.files[0] || null;
+      resetView();
+      if (!currentFile) return;
+      currentBytes = new Uint8Array(await currentFile.arrayBuffer());
+      setPreview(currentFile);
+      inspectFile();
+    });
+    inspectMode.addEventListener("click", () => setMode("inspect"));
+    eraseMode.addEventListener("click", () => setMode("erase"));
+    injectMode.addEventListener("click", () => setMode("inject"));
+    runButton.addEventListener("click", runAction);
+    downloadButton.addEventListener("click", () => {
+      if (!resultBlob) return;
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(resultBlob);
+      a.download = resultName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    });
+    sourceButton.addEventListener("click", () => {
+      window.open("view-source:" + location.href, "_blank", "noopener,noreferrer");
+    });
+  </script>
+</body>
+</html>

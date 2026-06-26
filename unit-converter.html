@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>UsefulTool Unit Converter</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17201b;
+      --muted: #5e6962;
+      --line: #d7ded8;
+      --paper: #f7faf7;
+      --panel: #ffffff;
+      --green: #0d6b4f;
+      --teal: #137083;
+      --gold: #a36a00;
+      --red: #9b2f2f;
+      --shadow: 0 14px 32px rgba(18, 31, 25, .10);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+      line-height: 1.45;
+    }
+    button, input, select { font: inherit; }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 14px clamp(14px, 4vw, 34px);
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+    .brand, nav a {
+      color: inherit;
+      text-decoration: none;
+      font-weight: 750;
+    }
+    .brand { display: flex; gap: 10px; align-items: center; }
+    .mark {
+      width: 32px;
+      height: 32px;
+      border-radius: 7px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, var(--green), var(--teal));
+      color: #fff;
+      font-size: 13px;
+    }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+    nav a, .button {
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 8px 11px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
+      color: inherit;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .button:hover, nav a:hover { border-color: var(--green); }
+    .primary { color: #fff; background: var(--green); border-color: var(--green); }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: clamp(16px, 4vw, 34px);
+      display: grid;
+      grid-template-columns: minmax(310px, 400px) minmax(0, 1fr);
+      gap: clamp(16px, 3vw, 28px);
+    }
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .intro { padding: 18px; border-bottom: 1px solid var(--line); background: #fbfdfb; }
+    h1 { margin: 0 0 8px; font-size: 28px; letter-spacing: 0; }
+    .lead { margin: 0; color: var(--muted); }
+    .controls, .results { padding: 18px; display: grid; gap: 14px; }
+    label { display: grid; gap: 7px; color: var(--muted); font-size: 13px; font-weight: 750; }
+    input, select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 11px;
+      background: #fff;
+      color: var(--ink);
+    }
+    input {
+      font-size: 22px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .quick {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding-top: 6px;
+      border-top: 1px solid var(--line);
+    }
+    .result-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 18px 18px 0;
+    }
+    h2 { margin: 0; font-size: 22px; letter-spacing: 0; }
+    .cards {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 13px;
+      display: grid;
+      gap: 6px;
+      min-height: 94px;
+      background: #fff;
+    }
+    .unit-name { color: var(--muted); font-size: 13px; font-weight: 750; }
+    .unit-value {
+      font-size: 22px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      overflow-wrap: anywhere;
+    }
+    .formula {
+      border-top: 1px solid var(--line);
+      padding: 14px 18px 18px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    @media (max-width: 840px) {
+      .topbar { align-items: flex-start; flex-direction: column; position: static; }
+      nav { justify-content: flex-start; }
+      main { grid-template-columns: 1fr; }
+      .cards { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="mark">UT</span><span>Unit Converter</span></a>
+    <nav aria-label="Tool navigation">
+      <a href="index.html">Home</a>
+      <a href="image-converter.html">Image Tool</a>
+      <a href="calculator.html">Calculator</a>
+      <a href="metadata-lab.html">Metadata</a>
+      <a href="unit-converter.html" download>Download HTML</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="panel">
+      <div class="intro">
+        <h1>Unit Converter</h1>
+        <p class="lead">Fast offline conversions for common engineering, daily-use, and digital units.</p>
+      </div>
+      <div class="controls">
+        <label>Category
+          <select id="category"></select>
+        </label>
+        <label>Value
+          <input id="value" inputmode="decimal" value="1" autocomplete="off" spellcheck="false">
+        </label>
+        <div class="row">
+          <label>From
+            <select id="fromUnit"></select>
+          </label>
+          <label>To
+            <select id="toUnit"></select>
+          </label>
+        </div>
+        <button class="button primary" id="swapButton" type="button">Swap</button>
+        <div class="quick" id="quickButtons"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="result-head">
+        <div>
+          <h2 id="mainResult">1</h2>
+          <p class="lead" id="resultLabel">Select units to convert.</p>
+        </div>
+        <button class="button" id="sourceButton" type="button">View Source</button>
+      </div>
+      <div class="results">
+        <ul class="cards" id="cards"></ul>
+      </div>
+      <div class="formula" id="formula">All math runs in this page only.</div>
+    </section>
+  </main>
+
+  <script>
+    (function blockOutbound() {
+      const deny = function () { throw new Error("Outbound network calls are disabled in UsefulTool."); };
+      window.fetch = deny;
+      window.XMLHttpRequest = deny;
+      window.WebSocket = deny;
+      window.EventSource = deny;
+      if (navigator.sendBeacon) navigator.sendBeacon = function () { return false; };
+    })();
+
+    const categories = {
+      Length: {
+        base: "meter",
+        units: {
+          "millimeter": 0.001,
+          "centimeter": 0.01,
+          "meter": 1,
+          "kilometer": 1000,
+          "inch": 0.0254,
+          "foot": 0.3048,
+          "yard": 0.9144,
+          "mile": 1609.344,
+          "nautical mile": 1852
+        },
+        quick: [["1 in to cm", "1", "inch", "centimeter"], ["1 mi to km", "1", "mile", "kilometer"], ["100 m to ft", "100", "meter", "foot"]]
+      },
+      Area: {
+        base: "square meter",
+        units: {
+          "square millimeter": 0.000001,
+          "square centimeter": 0.0001,
+          "square meter": 1,
+          "hectare": 10000,
+          "square kilometer": 1000000,
+          "square inch": 0.00064516,
+          "square foot": 0.09290304,
+          "acre": 4046.8564224,
+          "square mile": 2589988.110336
+        },
+        quick: [["1 acre to m2", "1", "acre", "square meter"], ["100 ft2 to m2", "100", "square foot", "square meter"]]
+      },
+      Mass: {
+        base: "gram",
+        units: {
+          "milligram": 0.001,
+          "gram": 1,
+          "kilogram": 1000,
+          "metric ton": 1000000,
+          "ounce": 28.349523125,
+          "pound": 453.59237,
+          "stone": 6350.29318
+        },
+        quick: [["1 lb to kg", "1", "pound", "kilogram"], ["1 kg to oz", "1", "kilogram", "ounce"]]
+      },
+      Volume: {
+        base: "liter",
+        units: {
+          "milliliter": 0.001,
+          "liter": 1,
+          "cubic meter": 1000,
+          "teaspoon US": 0.00492892159375,
+          "tablespoon US": 0.01478676478125,
+          "fluid ounce US": 0.0295735295625,
+          "cup US": 0.2365882365,
+          "pint US": 0.473176473,
+          "quart US": 0.946352946,
+          "gallon US": 3.785411784
+        },
+        quick: [["1 gal to L", "1", "gallon US", "liter"], ["2 cups to ml", "2", "cup US", "milliliter"]]
+      },
+      Temperature: {
+        affine: true,
+        units: ["celsius", "fahrenheit", "kelvin"],
+        quick: [["32 F to C", "32", "fahrenheit", "celsius"], ["100 C to F", "100", "celsius", "fahrenheit"]]
+      },
+      Speed: {
+        base: "meter per second",
+        units: {
+          "meter per second": 1,
+          "kilometer per hour": 0.2777777777777778,
+          "mile per hour": 0.44704,
+          "foot per second": 0.3048,
+          "knot": 0.5144444444444445
+        },
+        quick: [["60 mph to km/h", "60", "mile per hour", "kilometer per hour"], ["10 m/s to mph", "10", "meter per second", "mile per hour"]]
+      },
+      Pressure: {
+        base: "pascal",
+        units: {
+          "pascal": 1,
+          "kilopascal": 1000,
+          "bar": 100000,
+          "atmosphere": 101325,
+          "psi": 6894.757293168,
+          "torr": 133.3223684211
+        },
+        quick: [["1 atm to psi", "1", "atmosphere", "psi"], ["35 psi to kPa", "35", "psi", "kilopascal"]]
+      },
+      Energy: {
+        base: "joule",
+        units: {
+          "joule": 1,
+          "kilojoule": 1000,
+          "calorie": 4.184,
+          "kilocalorie": 4184,
+          "watt hour": 3600,
+          "kilowatt hour": 3600000,
+          "BTU": 1055.05585262
+        },
+        quick: [["1 kWh to J", "1", "kilowatt hour", "joule"], ["500 kcal to kJ", "500", "kilocalorie", "kilojoule"]]
+      },
+      Data: {
+        base: "byte",
+        units: {
+          "bit": 0.125,
+          "byte": 1,
+          "kilobyte": 1000,
+          "megabyte": 1000000,
+          "gigabyte": 1000000000,
+          "terabyte": 1000000000000,
+          "kibibyte": 1024,
+          "mebibyte": 1048576,
+          "gibibyte": 1073741824,
+          "tebibyte": 1099511627776
+        },
+        quick: [["1 GiB to MB", "1", "gibibyte", "megabyte"], ["100 Mbps to MB", "100000000", "bit", "megabyte"]]
+      }
+    };
+
+    const category = document.getElementById("category");
+    const value = document.getElementById("value");
+    const fromUnit = document.getElementById("fromUnit");
+    const toUnit = document.getElementById("toUnit");
+    const swapButton = document.getElementById("swapButton");
+    const quickButtons = document.getElementById("quickButtons");
+    const mainResult = document.getElementById("mainResult");
+    const resultLabel = document.getElementById("resultLabel");
+    const cards = document.getElementById("cards");
+    const formula = document.getElementById("formula");
+    const sourceButton = document.getElementById("sourceButton");
+
+    function option(text) {
+      const item = document.createElement("option");
+      item.value = text;
+      item.textContent = text;
+      return item;
+    }
+
+    function unitNames(data) {
+      return data.affine ? data.units : Object.keys(data.units);
+    }
+
+    function toCelsius(amount, unit) {
+      if (unit === "celsius") return amount;
+      if (unit === "fahrenheit") return (amount - 32) * 5 / 9;
+      return amount - 273.15;
+    }
+
+    function fromCelsius(amount, unit) {
+      if (unit === "celsius") return amount;
+      if (unit === "fahrenheit") return amount * 9 / 5 + 32;
+      return amount + 273.15;
+    }
+
+    function convert(amount, from, to, data) {
+      if (data.affine) return fromCelsius(toCelsius(amount, from), to);
+      return amount * data.units[from] / data.units[to];
+    }
+
+    function formatNumber(number) {
+      if (!Number.isFinite(number)) return "not finite";
+      if (Math.abs(number) >= 1e12 || (Math.abs(number) > 0 && Math.abs(number) < 1e-8)) return number.toExponential(10).replace(/\.?0+e/, "e");
+      return Number(number.toPrecision(12)).toString();
+    }
+
+    function setUnits() {
+      const data = categories[category.value];
+      const names = unitNames(data);
+      fromUnit.replaceChildren(...names.map(option));
+      toUnit.replaceChildren(...names.map(option));
+      toUnit.selectedIndex = Math.min(1, names.length - 1);
+      quickButtons.replaceChildren();
+      data.quick.forEach((preset) => {
+        const button = document.createElement("button");
+        button.className = "button";
+        button.type = "button";
+        button.textContent = preset[0];
+        button.addEventListener("click", () => {
+          value.value = preset[1];
+          fromUnit.value = preset[2];
+          toUnit.value = preset[3];
+          render();
+        });
+        quickButtons.appendChild(button);
+      });
+      render();
+    }
+
+    function render() {
+      const data = categories[category.value];
+      const amount = Number(value.value.trim());
+      cards.replaceChildren();
+      if (!Number.isFinite(amount)) {
+        mainResult.textContent = "Invalid number";
+        resultLabel.textContent = "Enter a finite numeric value.";
+        return;
+      }
+      const converted = convert(amount, fromUnit.value, toUnit.value, data);
+      mainResult.textContent = formatNumber(converted);
+      resultLabel.textContent = value.value + " " + fromUnit.value + " = " + toUnit.value;
+      unitNames(data).forEach((unit) => {
+        const li = document.createElement("li");
+        li.className = "card";
+        const name = document.createElement("div");
+        name.className = "unit-name";
+        name.textContent = unit;
+        const number = document.createElement("div");
+        number.className = "unit-value";
+        number.textContent = formatNumber(convert(amount, fromUnit.value, unit, data));
+        li.append(name, number);
+        cards.appendChild(li);
+      });
+      if (data.affine) {
+        formula.textContent = "Temperature uses celsius as the neutral calculation point.";
+      } else {
+        formula.textContent = "Base unit: " + data.base + ". Formula: value * from-factor / to-factor.";
+      }
+    }
+
+    Object.keys(categories).forEach((name) => category.appendChild(option(name)));
+    category.addEventListener("change", setUnits);
+    value.addEventListener("input", render);
+    fromUnit.addEventListener("change", render);
+    toUnit.addEventListener("change", render);
+    swapButton.addEventListener("click", () => {
+      const oldFrom = fromUnit.value;
+      fromUnit.value = toUnit.value;
+      toUnit.value = oldFrom;
+      render();
+    });
+    sourceButton.addEventListener("click", () => {
+      window.open("view-source:" + location.href, "_blank", "noopener,noreferrer");
+    });
+    setUnits();
+  </script>
+</body>
+</html>

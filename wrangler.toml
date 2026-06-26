@@ -1,0 +1,5 @@
+name = "usefultool"
+pages_build_output_dir = "."
+
+[vars]
+APP_RUNTIME = "static-local-only"

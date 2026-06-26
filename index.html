@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>UsefulTool</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17201b;
+      --muted: #5e6962;
+      --line: #d7ded8;
+      --paper: #f7faf7;
+      --panel: #ffffff;
+      --green: #0d6b4f;
+      --teal: #137083;
+      --gold: #a36a00;
+      --red: #9b2f2f;
+      --shadow: 0 16px 36px rgba(18, 31, 25, .10);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+      line-height: 1.5;
+    }
+    a { color: inherit; }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 4;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px clamp(16px, 4vw, 48px);
+      background: rgba(247, 250, 247, .92);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(12px);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 760;
+      letter-spacing: 0;
+    }
+    .mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 7px;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      background: linear-gradient(135deg, var(--green), var(--teal));
+      font-weight: 800;
+    }
+    nav {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    nav a, .button {
+      min-height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 8px 12px;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 650;
+    }
+    nav a:hover, .button:hover { border-color: var(--green); }
+    .hero {
+      min-height: calc(100svh - 70px);
+      display: grid;
+      align-items: center;
+      padding: clamp(32px, 7vw, 88px) clamp(16px, 4vw, 48px);
+      background:
+        linear-gradient(115deg, rgba(13, 107, 79, .13), transparent 45%),
+        radial-gradient(circle at 82% 14%, rgba(163, 106, 0, .16), transparent 28%),
+        var(--paper);
+    }
+    .hero-inner {
+      max-width: 1120px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(280px, .85fr);
+      gap: clamp(24px, 5vw, 72px);
+      align-items: center;
+      width: 100%;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(42px, 8vw, 94px);
+      line-height: .95;
+      letter-spacing: 0;
+    }
+    .lead {
+      margin: 22px 0 0;
+      max-width: 720px;
+      color: var(--muted);
+      font-size: clamp(18px, 2vw, 22px);
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 28px;
+    }
+    .primary {
+      color: #fff;
+      background: var(--green);
+      border-color: var(--green);
+    }
+    .console {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .console-head {
+      display: flex;
+      gap: 6px;
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+      background: #eef4ef;
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--green); }
+    .dot:nth-child(2) { background: var(--gold); }
+    .dot:nth-child(3) { background: var(--red); }
+    .console-body { padding: 20px; }
+    .status {
+      display: grid;
+      gap: 12px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
+    .status li {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #edf1ee;
+    }
+    .status li:last-child { border-bottom: 0; padding-bottom: 0; }
+    .ok { color: var(--green); font-weight: 800; }
+    .band {
+      padding: clamp(36px, 7vw, 86px) clamp(16px, 4vw, 48px);
+      background: #fff;
+      border-top: 1px solid var(--line);
+    }
+    .wrap { max-width: 1120px; margin: 0 auto; }
+    h2 { margin: 0 0 16px; font-size: clamp(28px, 4vw, 46px); letter-spacing: 0; }
+    .sub { color: var(--muted); max-width: 760px; margin: 0 0 28px; }
+    .tools {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .tool {
+      display: grid;
+      gap: 12px;
+      align-content: start;
+      min-height: 260px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+    .tool h3 { margin: 0; font-size: 22px; }
+    .tool p { margin: 0; color: var(--muted); }
+    .tool-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; }
+    .note {
+      margin-top: 24px;
+      padding: 16px 0 0;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+    }
+    footer {
+      padding: 24px clamp(16px, 4vw, 48px);
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+    }
+    @media (max-width: 760px) {
+      .topbar { position: static; align-items: flex-start; flex-direction: column; }
+      nav { justify-content: flex-start; }
+      .hero { min-height: auto; }
+      .hero-inner, .tools { grid-template-columns: 1fr; }
+      h1 { font-size: clamp(40px, 15vw, 62px); }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html" aria-label="UsefulTool home"><span class="mark">UT</span><span>UsefulTool</span></a>
+    <nav aria-label="Main navigation">
+      <a href="image-converter.html">Image Tool</a>
+      <a href="calculator.html">Calculator</a>
+      <a href="unit-converter.html">Units</a>
+      <a href="metadata-lab.html">Metadata</a>
+      <a href="#downloads">Downloads</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-inner">
+        <div>
+          <h1>UsefulTool</h1>
+          <p class="lead">Portable browser tools for private, local work. Open a page, use the tool, inspect the source, or download the HTML file for offline use.</p>
+          <div class="actions">
+            <a class="button primary" href="image-converter.html">Open Image Tool</a>
+            <a class="button" href="calculator.html">Open Calculator</a>
+            <a class="button" href="unit-converter.html">Open Units</a>
+            <a class="button" href="metadata-lab.html">Open Metadata</a>
+          </div>
+        </div>
+        <aside class="console" aria-label="Runtime privacy status">
+          <div class="console-head"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <div class="console-body">
+            <ul class="status">
+              <li><span>external API calls</span><span class="ok">blocked</span></li>
+              <li><span>page storage</span><span class="ok">none</span></li>
+              <li><span>tool execution</span><span class="ok">local canvas/js</span></li>
+              <li><span>download format</span><span class="ok">single HTML</span></li>
+            </ul>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="band" id="downloads">
+      <div class="wrap">
+        <h2>Tools</h2>
+        <p class="sub">Each tool page is self-contained. The download links save the same HTML pages you can open normally.</p>
+        <div class="tools">
+          <article class="tool">
+            <h3>JPG and PNG Converter</h3>
+            <p>Load a local image, remove a simple background with traditional color-distance matting, refine alpha with mouse or touch, then export PNG or JPEG.</p>
+            <div class="tool-actions">
+              <a class="button primary" href="image-converter.html">Open</a>
+              <a class="button" href="image-converter.html" download>Download HTML</a>
+              <button class="button" type="button" data-source="image-converter.html">View Source</button>
+            </div>
+          </article>
+          <article class="tool">
+            <h3>Scientific Calculator</h3>
+            <p>Calculate common functions, trigonometry, powers, constants, and definite integrals locally with a parser that avoids dynamic code execution.</p>
+            <div class="tool-actions">
+              <a class="button primary" href="calculator.html">Open</a>
+              <a class="button" href="calculator.html" download>Download HTML</a>
+              <button class="button" type="button" data-source="calculator.html">View Source</button>
+            </div>
+          </article>
+          <article class="tool">
+            <h3>Unit Converter</h3>
+            <p>Convert length, area, mass, volume, temperature, speed, pressure, energy, and digital data with local formulas and quick presets.</p>
+            <div class="tool-actions">
+              <a class="button primary" href="unit-converter.html">Open</a>
+              <a class="button" href="unit-converter.html" download>Download HTML</a>
+              <button class="button" type="button" data-source="unit-converter.html">View Source</button>
+            </div>
+          </article>
+          <article class="tool">
+            <h3>Image and Video Metadata</h3>
+            <p>Inspect metadata, strip image metadata by re-encoding, and add controlled local notes to supported image and MP4 containers.</p>
+            <div class="tool-actions">
+              <a class="button primary" href="metadata-lab.html">Open</a>
+              <a class="button" href="metadata-lab.html" download>Download HTML</a>
+              <button class="button" type="button" data-source="metadata-lab.html">View Source</button>
+            </div>
+          </article>
+        </div>
+        <p class="note">Runtime pages declare `connect-src 'none'` and also disable common network functions in JavaScript. Images and expressions stay inside your browser process.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">Cloudflare Pages static app. No build step required.</div>
+  </footer>
+
+  <script>
+    (function blockOutbound() {
+      const deny = function () { throw new Error("Outbound network calls are disabled in UsefulTool."); };
+      window.fetch = deny;
+      window.XMLHttpRequest = deny;
+      window.WebSocket = deny;
+      window.EventSource = deny;
+      if (navigator.sendBeacon) navigator.sendBeacon = function () { return false; };
+    })();
+    document.querySelectorAll("[data-source]").forEach((button) => {
+      button.addEventListener("click", () => {
+        window.open("view-source:" + new URL(button.dataset.source, location.href).href, "_blank", "noopener,noreferrer");
+      });
+    });
+  </script>
+</body>
+</html>
