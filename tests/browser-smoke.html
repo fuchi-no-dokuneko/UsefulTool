@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>UsefulTool browser smoke tests</title>
+</head>
+<body>
+  <iframe id="units" src="../unit-converter.html" hidden></iframe>
+  <iframe id="metadata" src="../metadata-lab.html" hidden></iframe>
+  <iframe id="base64" src="../base64-converter.html" hidden></iframe>
+  <iframe id="diff" src="../file-diff.html" hidden></iframe>
+  <iframe id="rot" src="../rot-cipher.html" hidden></iframe>
+  <iframe id="pdf" src="../pdf-merge.html" hidden></iframe>
+  <iframe id="imagesPdf" src="../images-to-pdf.html" hidden></iframe>
+  <iframe id="editor" src="../image-editor.html" hidden></iframe>
+  <iframe id="chat" src="../lan-chat.html" hidden></iframe>
+  <pre id="result">RUNNING</pre>
+  <script>
+    const TIFF_BASE64 = "SUkqAAgAAAADAA8BAgAJAAAAMgAAAGmHBAABAAAAPAAAACWIBAABAAAAYgAAAAAAAABDYW1lcmFDbwAAAQADkAIAFAAAAE4AAAAAAAAAMjAyNjowNjozMCAxMjozNDo1NgAEAAEAAgACAAAATgAAAAIABQADAAAAmAAAAAMAAgACAAAARQAAAAQABQADAAAAsAAAAAAAAAAjAAAAAQAAACkAAAABAAAAHgAAAAEAAACLAAAAAQAAACkAAAABAAAADwAAAAEAAAA=";
+
+    function loaded(frame) {
+      return new Promise((resolve) => frame.addEventListener("load", resolve, { once: true }));
+    }
+
+    function bytesFromBase64(value) {
+      const raw = atob(value);
+      return Uint8Array.from(raw, (character) => character.charCodeAt(0));
+    }
+
+    function concat(parts) {
+      const length = parts.reduce((total, part) => total + part.length, 0);
+      const output = new Uint8Array(length);
+      let offset = 0;
+      for (const part of parts) {
+        output.set(part, offset);
+        offset += part.length;
+      }
+      return output;
+    }
+
+    function u32be(value) {
+      return new Uint8Array([(value >>> 24) & 255, (value >>> 16) & 255, (value >>> 8) & 255, value & 255]);
+    }
+
+    function u32le(value) {
+      return new Uint8Array([value & 255, (value >>> 8) & 255, (value >>> 16) & 255, (value >>> 24) & 255]);
+    }
+
+    function pngChunk(type, payload) {
+      const name = new TextEncoder().encode(type);
+      return concat([u32be(payload.length), name, payload, new Uint8Array(4)]);
+    }
+
+    function pngFixture(tiff) {
+      const signature = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+      const ihdr = concat([u32be(1), u32be(1), new Uint8Array([8, 2, 0, 0, 0])]);
+      const text = new TextEncoder().encode("Comment\0api_key=TOPSECRET");
+      return concat([signature, pngChunk("IHDR", ihdr), pngChunk("tEXt", text), pngChunk("eXIf", tiff), pngChunk("IEND", new Uint8Array())]);
+    }
+
+    function webpFixture(tiff) {
+      const encoder = new TextEncoder();
+      const padding = tiff.length % 2 ? new Uint8Array([0]) : new Uint8Array();
+      const chunk = concat([encoder.encode("EXIF"), u32le(tiff.length), tiff, padding]);
+      return concat([encoder.encode("RIFF"), u32le(4 + chunk.length), encoder.encode("WEBP"), chunk]);
+    }
+
+    (async () => {
+      const frames = Array.from(document.querySelectorAll("iframe"));
+      await Promise.all(frames.map(loaded));
+      const unitFrame = document.getElementById("units");
+      const metadataFrame = document.getElementById("metadata");
+      const checks = [];
+      const check = (name, pass, detail) => checks.push({ name, pass: Boolean(pass), detail });
+
+      const units = unitFrame.contentWindow.UsefulToolUnits;
+      check("18 conversion categories", Object.keys(units.categories).length === 18, Object.keys(units.categories).join(", "));
+      check("mile to kilometer", Math.abs(units.convert(1, "mile", "kilometer", units.categories.Length) - 1.609344) < 1e-12);
+      check("Rankine affine conversion", Math.abs(units.convert(491.67, "rankine", "celsius", units.categories.Temperature)) < 1e-9);
+      check("data-rate conversion", Math.abs(units.convert(100, "megabit per second", "megabyte per second", units.categories["Data rate"]) - 12.5) < 1e-12);
+      check("mechanical power conversion", Math.abs(units.convert(1, "horsepower mechanical", "watt", units.categories.Power) - 745.6998715822702) < 1e-9);
+
+      const base64 = document.getElementById("base64").contentWindow.UsefulToolBase64;
+      const encoded = base64.bytesToBase64(new TextEncoder().encode("Useful Tool"));
+      check("Base64 UTF-8 round trip", new TextDecoder().decode(base64.base64ToBytes(encoded).bytes) === "Useful Tool");
+      check("URL-safe Base64", base64.base64ToBytes("-_8").bytes.join(",") === "251,255");
+
+      const diffWindow = document.getElementById("diff").contentWindow;
+      check("jsdiff loaded locally", typeof diffWindow.Diff.diffLines === "function");
+      check("side-by-side diff rendered", diffWindow.document.querySelectorAll(".added,.removed").length >= 2);
+
+      const rot = document.getElementById("rot").contentWindow.UsefulToolRot;
+      check("ROT13 reversible", rot.rotateAlpha(rot.rotateAlpha("Hello, Z!", 13), 13) === "Hello, Z!");
+      check("ROT47 reversible", rot.rot47(rot.rot47("Secret! 123")) === "Secret! 123");
+
+      const pdfWindow = document.getElementById("pdf").contentWindow;
+      const pdfDocument = await pdfWindow.PDFLib.PDFDocument.create();
+      pdfDocument.addPage();
+      check("pdf-lib creates PDF", (await pdfDocument.save()).length > 100);
+      check("images-to-PDF engine loaded", typeof document.getElementById("imagesPdf").contentWindow.PDFLib.PDFDocument.create === "function");
+
+      const editorWindow = document.getElementById("editor").contentWindow;
+      for (let attempt = 0; attempt < 40 && !editorWindow.UsefulToolImageEditor; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 50));
+      check("Fabric image editor initialized", editorWindow.document.documentElement.dataset.editorReady === "true" && editorWindow.UsefulToolImageEditor.canvas.width === 1200);
+      check("LAN chat WebRTC available", typeof document.getElementById("chat").contentWindow.RTCPeerConnection === "function");
+
+      const metadataWindow = metadataFrame.contentWindow;
+      const metadata = metadataWindow.UsefulToolMetadata;
+      const tiff = bytesFromBase64(TIFF_BASE64);
+      metadata.resetView();
+      metadata.inspectExif(tiff, 0, "fixture TIFF");
+      metadata.scanSensitiveText("fixture note", "api_key=TOPSECRET user@example.com");
+      metadata.finalizePrivacy();
+      let output = metadataWindow.document.getElementById("metadataList").textContent;
+      check("EXIF GPS decoded", output.includes("Decimal coordinates") && output.includes("35.6916667, 139.6875000"), output.slice(0, 1200));
+      check("EXIF timestamp flagged", output.includes("Capture timestamp"));
+      check("secret and email flagged", output.includes("Possible secret") && output.includes("Email address"));
+
+      metadata.resetView();
+      await metadata.inspectPng(pngFixture(tiff));
+      metadata.finalizePrivacy();
+      output = metadataWindow.document.getElementById("metadataList").textContent;
+      check("PNG text decoded", output.includes("api_key=TOPSECRET"));
+      check("PNG eXIf decoded", output.includes("Decimal coordinates"));
+      check("PNG secret flagged", output.includes("Possible secret"));
+
+      metadata.resetView();
+      metadata.inspectWebp(webpFixture(tiff));
+      metadata.finalizePrivacy();
+      output = metadataWindow.document.getElementById("metadataList").textContent;
+      check("WebP EXIF decoded", output.includes("Decimal coordinates"));
+
+      metadata.resetView();
+      metadata.inspectXmpText("<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"><rdf:Description xmlns:exif=\"http://ns.adobe.com/exif/1.0/\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:custom=\"urn:test\" exif:GPSLatitude=\"35.6\" dc:creator=\"user@example.com\" custom:token=\"Bearer ABCDEFGHIJKLMNOP\"/></rdf:RDF></x:xmpmeta>", "fixture XMP");
+      metadata.finalizePrivacy();
+      output = metadataWindow.document.getElementById("metadataList").textContent;
+      check("XMP fields decoded", output.includes("exif:GPSLatitude") && output.includes("dc:creator"));
+      check("XMP privacy flagged", output.includes("Location metadata") && output.includes("Email address") && output.includes("Possible secret"));
+
+      const icc = new Uint8Array(132);
+      icc.set(u32be(132), 0);
+      icc.set(new TextEncoder().encode("mntrRGB XYZ acsp"), 12);
+      icc[8] = 4;
+      icc[9] = 0x30;
+      metadata.resetView();
+      metadata.inspectIcc(icc, "fixture ICC");
+      output = metadataWindow.document.getElementById("metadataList").textContent;
+      check("ICC header decoded", output.includes("version 4.3.0") && output.includes("class mntr"));
+
+      const iptc = concat([
+        new Uint8Array([0x1c, 2, 80, 0, 5]), new TextEncoder().encode("Alice"),
+        new Uint8Array([0x1c, 2, 90, 0, 5]), new TextEncoder().encode("Tokyo"),
+        new Uint8Array([0x1c, 2, 120, 0, 18]), new TextEncoder().encode("password=TOPSECRET")
+      ]);
+      metadata.resetView();
+      metadata.inspectIptc(iptc, 0, iptc.length, "fixture IPTC");
+      metadata.finalizePrivacy();
+      output = metadataWindow.document.getElementById("metadataList").textContent;
+      check("IPTC fields decoded", output.includes("Byline") && output.includes("City") && output.includes("Caption"));
+      check("IPTC privacy flagged", output.includes("Creator identity") && output.includes("Location metadata") && output.includes("Possible secret"));
+
+      const gifComment = concat([
+        new TextEncoder().encode("GIF89a"), new Uint8Array([1, 0, 1, 0, 0, 0, 0, 0x21, 0xfe, 6]),
+        new TextEncoder().encode("secret"), new Uint8Array([0, 0x3b])
+      ]);
+      metadata.resetView();
+      metadata.inspectGif(gifComment);
+      output = metadataWindow.document.getElementById("metadataList").textContent;
+      check("GIF comment decoded", output.includes("secret"));
+
+      const avif = concat([u32be(12), new TextEncoder().encode("ftypavif")]);
+      const mp4 = concat([u32be(12), new TextEncoder().encode("ftypisom")]);
+      const webm = new Uint8Array([0x1a, 0x45, 0xdf, 0xa3]);
+      const bmp = new TextEncoder().encode("BM");
+      check("format signatures",
+        metadata.detectFormat(pngFixture(tiff), { name: "x.bin" }) === "PNG" &&
+        metadata.detectFormat(webpFixture(tiff), { name: "x.bin" }) === "WebP" &&
+        metadata.detectFormat(tiff, { name: "x.bin" }) === "TIFF" &&
+        metadata.detectFormat(gifComment, { name: "x.bin" }) === "GIF" &&
+        metadata.detectFormat(bmp, { name: "x.bmp" }) === "BMP" &&
+        metadata.detectFormat(avif, { name: "x.bin" }) === "AVIF" &&
+        metadata.detectFormat(mp4, { name: "x.bin" }) === "MP4" &&
+        metadata.detectFormat(webm, { name: "x.bin" }) === "WebM");
+
+      const passed = checks.every((item) => item.pass);
+      document.getElementById("result").textContent = (passed ? "PASS" : "FAIL") + "\n" +
+        checks.map((item) => (item.pass ? "PASS " : "FAIL ") + item.name + (item.detail ? " | " + item.detail : "")).join("\n");
+      document.title = passed ? "PASS" : "FAIL";
+    })().catch((error) => {
+      document.getElementById("result").textContent = "FAIL\n" + error.stack;
+      document.title = "FAIL";
+    });
+  </script>
+</body>
+</html>

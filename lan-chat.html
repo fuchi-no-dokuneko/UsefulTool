@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self'; connect-src 'none'; img-src 'self' data: blob:; media-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>LAN Chat | UsefulTool</title>
+  <link rel="stylesheet" href="toolkit.css">
+  <style>
+    .chat-log { min-height: 360px; max-height: 62vh; overflow: auto; display: grid; gap: 10px; align-content: start; }
+    .message { padding: 10px 12px; border-left: 3px solid var(--teal); background: #fff; }
+    .message.self { border-color: var(--green); background: #edf7f1; }
+    .message img { display: block; max-width: min(100%, 520px); max-height: 420px; margin-top: 8px; object-fit: contain; }
+    #signalInput, #signalOutput { min-height: 110px; }
+  </style>
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="index.html"><span class="mark">UT</span><span>LAN Chat</span></a><nav><a href="index.html">Home</a><a href="base64-converter.html">Base64</a></nav></header>
+  <section class="page-head"><h1>Manual-Signaling LAN Chat</h1><p>Create a peer-to-peer room without a server. Exchange offer/answer text once, then send text and images through encrypted WebRTC data channels.</p></section>
+  <main class="tool-shell">
+    <section class="controls stack">
+      <label>Display name<input id="displayName" maxlength="40" value="Guest"></label>
+      <div class="row"><button class="primary grow" id="hostButton" type="button">Create host invite</button><button class="grow" id="joinButton" type="button">Accept invite</button></div>
+      <label>Paste invite or answer<textarea id="signalInput" class="mono" spellcheck="false"></textarea></label>
+      <button id="applyAnswerButton" type="button">Host: apply pasted answer</button>
+      <label>Signal to send to peer<textarea id="signalOutput" class="mono" readonly></textarea></label>
+      <button id="copySignalButton" type="button">Copy signal</button>
+      <div class="status warn" id="connectionStatus">No peers. Signaling text can expose local network candidate details; share it only with intended peers.</div>
+      <button class="danger" id="disconnectButton" type="button">Disconnect all peers</button>
+    </section>
+    <section class="workspace stack">
+      <section class="output chat-log" id="chatLog" aria-live="polite"></section>
+      <div class="row">
+        <input class="grow" id="messageInput" maxlength="4000" placeholder="Message">
+        <button class="primary" id="sendButton" type="button">Send</button>
+      </div>
+      <div class="row">
+        <input class="grow" id="imageInput" type="file" accept="image/*">
+        <button id="sendImageButton" type="button">Send image</button>
+      </div>
+    </section>
+  </main>
+  <footer>Peers must exchange signaling text manually. No signaling, storage, or relay server is included.</footer>
+  <script src="toolkit.js"></script>
+  <script>
+    const peers = new Set();
+    const channels = new Set();
+    const incomingImages = new Map();
+    const signalInput = document.getElementById("signalInput");
+    const signalOutput = document.getElementById("signalOutput");
+    const status = document.getElementById("connectionStatus");
+    const chatLog = document.getElementById("chatLog");
+    let pendingHost = null;
+
+    function waitForIce(peer) {
+      if (peer.iceGatheringState === "complete") return Promise.resolve();
+      return new Promise((resolve) => {
+        const handler = () => {
+          if (peer.iceGatheringState === "complete") { peer.removeEventListener("icegatheringstatechange", handler); resolve(); }
+        };
+        peer.addEventListener("icegatheringstatechange", handler);
+        setTimeout(resolve, 5000);
+      });
+    }
+
+    function renderMessage(name, text, own) {
+      const item = document.createElement("article");
+      item.className = "message" + (own ? " self" : "");
+      const heading = document.createElement("strong");
+      heading.textContent = name;
+      const body = document.createElement("div");
+      body.textContent = text;
+      item.append(heading, body);
+      chatLog.appendChild(item);
+      chatLog.scrollTop = chatLog.scrollHeight;
+      return item;
+    }
+
+    function openChannel(channel, peer) {
+      channel.binaryType = "arraybuffer";
+      channel.addEventListener("open", () => {
+        channels.add(channel);
+        UsefulTool.status(status, channels.size + " connected peer(s).", "");
+        sendPacket({ type: "system", name: displayName(), text: "joined the room" });
+      });
+      channel.addEventListener("close", () => { channels.delete(channel); UsefulTool.status(status, channels.size + " connected peer(s).", channels.size ? "" : "warn"); });
+      channel.addEventListener("message", (event) => receivePacket(event.data, channel));
+      channel.addEventListener("error", () => UsefulTool.status(status, "A data channel failed.", "error"));
+      peer.channel = channel;
+    }
+
+    function createPeer() {
+      const peer = new RTCPeerConnection({ iceServers: [] });
+      peers.add(peer);
+      peer.addEventListener("connectionstatechange", () => {
+        if (["failed", "closed", "disconnected"].includes(peer.connectionState)) {
+          if (peer.channel) channels.delete(peer.channel);
+          if (peer.connectionState !== "disconnected") peers.delete(peer);
+          UsefulTool.status(status, channels.size + " connected peer(s).", channels.size ? "" : "warn");
+        }
+      });
+      peer.addEventListener("datachannel", (event) => openChannel(event.channel, peer));
+      return peer;
+    }
+
+    function displayName() { return document.getElementById("displayName").value.trim() || "Guest"; }
+
+    function sendRaw(serialized, except) {
+      for (const channel of channels) if (channel !== except && channel.readyState === "open") channel.send(serialized);
+    }
+
+    function sendPacket(packet, except) { sendRaw(JSON.stringify(packet), except); }
+
+    function receivePacket(serialized, source) {
+      let packet;
+      try { packet = JSON.parse(serialized); } catch (_) { return; }
+      if (packet.type === "chat" || packet.type === "system") {
+        renderMessage(packet.name || "Peer", packet.text || "", false);
+        sendPacket(packet, source);
+      } else if (packet.type === "image") {
+        let record = incomingImages.get(packet.id);
+        if (!record) {
+          record = { chunks: new Array(packet.total), name: packet.name, mime: packet.mime, sender: packet.sender };
+          incomingImages.set(packet.id, record);
+        }
+        record.chunks[packet.index] = packet.data;
+        if (record.chunks.every(Boolean)) {
+          const item = renderMessage(record.sender || "Peer", record.name || "image", false);
+          const image = document.createElement("img");
+          image.alt = record.name || "Shared image";
+          image.src = record.chunks.join("");
+          item.appendChild(image);
+          incomingImages.delete(packet.id);
+        }
+        sendPacket(packet, source);
+      }
+    }
+
+    document.getElementById("hostButton").addEventListener("click", async () => {
+      try {
+        const peer = createPeer();
+        const channel = peer.createDataChannel("usefultool-chat", { ordered: true });
+        openChannel(channel, peer);
+        await peer.setLocalDescription(await peer.createOffer());
+        await waitForIce(peer);
+        pendingHost = peer;
+        signalOutput.value = JSON.stringify(peer.localDescription);
+        UsefulTool.status(status, "Invite ready. Send it to one peer, then paste their answer.", "warn");
+      } catch (error) { UsefulTool.status(status, error.message, "error"); }
+    });
+
+    document.getElementById("joinButton").addEventListener("click", async () => {
+      try {
+        const offer = JSON.parse(signalInput.value);
+        const peer = createPeer();
+        await peer.setRemoteDescription(offer);
+        await peer.setLocalDescription(await peer.createAnswer());
+        await waitForIce(peer);
+        signalOutput.value = JSON.stringify(peer.localDescription);
+        UsefulTool.status(status, "Answer ready. Send it back to the host.", "warn");
+      } catch (error) { UsefulTool.status(status, "Invite error: " + error.message, "error"); }
+    });
+
+    document.getElementById("applyAnswerButton").addEventListener("click", async () => {
+      try {
+        if (!pendingHost) throw new Error("Create a host invite first");
+        await pendingHost.setRemoteDescription(JSON.parse(signalInput.value));
+        pendingHost = null;
+        signalInput.value = "";
+        UsefulTool.status(status, "Answer applied; waiting for the channel to open.");
+      } catch (error) { UsefulTool.status(status, "Answer error: " + error.message, "error"); }
+    });
+
+    document.getElementById("sendButton").addEventListener("click", () => {
+      const field = document.getElementById("messageInput");
+      const text = field.value.trim();
+      if (!text || !channels.size) return;
+      const packet = { type: "chat", name: displayName(), text };
+      sendPacket(packet); renderMessage(packet.name, packet.text, true); field.value = "";
+    });
+
+    document.getElementById("sendImageButton").addEventListener("click", async () => {
+      const file = document.getElementById("imageInput").files[0];
+      if (!file || !channels.size) return;
+      if (!file.type.startsWith("image/") || file.size > 5 * 1024 * 1024) {
+        UsefulTool.status(status, "Choose an image no larger than 5 MiB.", "error"); return;
+      }
+      const data = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
+      const size = 12000;
+      const total = Math.ceil(data.length / size);
+      const id = crypto.randomUUID();
+      renderMessage(displayName(), file.name, true).appendChild(Object.assign(document.createElement("img"), { src: data, alt: file.name }));
+      for (let index = 0; index < total; index += 1) {
+        sendPacket({ type: "image", id, index, total, data: data.slice(index * size, (index + 1) * size), name: file.name, mime: file.type, sender: displayName() });
+        if (index % 20 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    });
+
+    document.getElementById("copySignalButton").addEventListener("click", () => navigator.clipboard.writeText(signalOutput.value));
+    document.getElementById("disconnectButton").addEventListener("click", () => {
+      for (const channel of channels) channel.close();
+      for (const peer of peers) peer.close();
+      channels.clear(); peers.clear(); pendingHost = null; signalInput.value = ""; signalOutput.value = "";
+      UsefulTool.status(status, "Disconnected all peers.", "warn");
+    });
+    document.getElementById("messageInput").addEventListener("keydown", (event) => { if (event.key === "Enter") document.getElementById("sendButton").click(); });
+  </script>
+</body>
+</html>

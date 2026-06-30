@@ -216,12 +216,16 @@
     <section class="panel">
       <div class="intro">
         <h1>Image and Video Metadata</h1>
-        <p class="lead">Visualize, erase, and inject simple metadata locally. Files stay inside the browser.</p>
+        <p class="lead">Decode metadata and privacy-sensitive fields locally, erase image metadata, or inject a controlled note. Files stay inside the browser.</p>
       </div>
       <div class="controls">
         <label>Choose image or video
-          <input id="fileInput" type="file" accept="image/jpeg,image/png,video/mp4,video/webm">
+          <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/tiff,image/bmp,image/heic,image/heif,image/avif,video/mp4,video/webm,.jpg,.jpeg,.png,.webp,.gif,.tif,.tiff,.bmp,.heic,.heif,.avif,.mp4,.webm">
         </label>
+        <label>Or paste Base64 / Data URI
+          <textarea id="base64Input" placeholder="data:image/jpeg;base64,... or raw Base64"></textarea>
+        </label>
+        <button class="button" id="decodeBase64Button" type="button">Decode Base64 and inspect</button>
         <div class="tabs" role="group" aria-label="Mode">
           <button class="button" id="inspectMode" type="button" aria-pressed="true">Inspect</button>
           <button class="button" id="eraseMode" type="button" aria-pressed="false">Erase</button>
@@ -241,7 +245,7 @@
           <button class="button" id="downloadButton" type="button" disabled>Download Result</button>
           <button class="button" id="sourceButton" type="button">View Source</button>
         </div>
-        <p class="muted" id="supportText">Images: JPEG/PNG inspect, erase by canvas re-encode, inject JPEG comment or PNG text. Video: MP4/WebM inspect; MP4 top-level free/skip/uuid and moov udta/meta stripping; MP4 custom free note injection.</p>
+        <p class="muted" id="supportText">Inspect: JPEG, PNG, WebP, GIF, TIFF, BMP, HEIF/HEIC/AVIF, MP4, and WebM. Decoders cover EXIF/TIFF/GPS, XMP, ICC, IPTC, text chunks, and major container metadata. Privacy findings flag common location, identity, timestamp, email, and secret-like fields.</p>
       </div>
     </section>
 
@@ -266,6 +270,8 @@
     })();
 
     const fileInput = document.getElementById("fileInput");
+    const base64Input = document.getElementById("base64Input");
+    const decodeBase64Button = document.getElementById("decodeBase64Button");
     const inspectMode = document.getElementById("inspectMode");
     const eraseMode = document.getElementById("eraseMode");
     const injectMode = document.getElementById("injectMode");
@@ -281,13 +287,16 @@
 
     const textDecoder = new TextDecoder("latin1");
     const utf8Decoder = new TextDecoder("utf-8");
+    const utf16leDecoder = new TextDecoder("utf-16le");
     const textEncoder = new TextEncoder();
+    const MAX_DECOMPRESSED_METADATA = 16 * 1024 * 1024;
     let currentFile = null;
     let currentBytes = null;
     let currentMode = "inspect";
     let resultBlob = null;
     let resultName = "metadata-result.bin";
     let objectUrl = null;
+    let privacyFindings = new Set();
 
     function setMode(mode) {
       currentMode = mode;
@@ -296,6 +305,22 @@
       injectMode.setAttribute("aria-pressed", String(mode === "inject"));
       resultBlob = null;
       downloadButton.disabled = true;
+    }
+
+    function decodeBase64Payload(value) {
+      let text = value.trim();
+      let mime = "";
+      const match = /^data:([^;,]+)?(?:;charset=[^;,]+)?;base64,(.*)$/is.exec(text);
+      if (match) {
+        mime = match[1] || "";
+        text = match[2];
+      }
+      text = text.replace(/\s+/g, "").replace(/-/g, "+").replace(/_/g, "/");
+      if (!/^[A-Za-z0-9+/]*={0,2}$/.test(text) || text.length % 4 === 1) throw new Error("Invalid Base64 characters or length");
+      text = text.replace(/=+$/, "") + "=".repeat((4 - text.replace(/=+$/, "").length % 4) % 4);
+      const binary = atob(text);
+      if (binary.length > 100 * 1024 * 1024) throw new Error("Decoded payload exceeds 100 MB");
+      return { bytes: Uint8Array.from(binary, (character) => character.charCodeAt(0)), mime };
     }
 
     function clearObjectUrl() {
@@ -307,7 +332,8 @@
       clearObjectUrl();
       preview.replaceChildren();
       objectUrl = URL.createObjectURL(file);
-      if (file.type.startsWith("image/")) {
+      const detected = currentBytes ? detectFormat(currentBytes, file) : "Unknown";
+      if (file.type.startsWith("image/") || ["JPEG", "PNG", "WebP", "GIF", "TIFF", "BMP", "HEIF", "AVIF"].includes(detected)) {
         const img = document.createElement("img");
         img.alt = "Selected image preview";
         img.src = objectUrl;
@@ -352,9 +378,42 @@
       metadataList.appendChild(li);
     }
 
+    function addPrivacy(name, value) {
+      const key = name + "\n" + value;
+      if (privacyFindings.has(key)) return;
+      privacyFindings.add(key);
+      addMetadata("privacy", name, value);
+    }
+
+    function scanSensitiveText(source, value) {
+      const text = String(value || "");
+      if (!text) return;
+      if (/GPS(?:Latitude|Longitude|Altitude)|location(?:Shown|Created)?|latitude|longitude/i.test(text)) {
+        addPrivacy("Location metadata", source + " contains a location or GPS field.");
+      }
+      const genericSecret = /(?:api[_-]?key|access[_-]?token|auth(?:orization)?|password|passwd|secret|private[_-]?key)\s*[:=]/i;
+      const knownToken = /(?:bearer\s+[A-Z0-9._~-]{8,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,}|(?:ghp|github_pat)_[0-9A-Za-z_]{20,}|sk-[0-9A-Za-z_-]{20,}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})/i;
+      if (genericSecret.test(text) || knownToken.test(text) || /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(text)) {
+        addPrivacy("Possible secret", source + " contains a secret-like key or credential pattern. Review the decoded value.");
+      }
+      if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(text)) {
+        addPrivacy("Email address", source + " contains an email-like value.");
+      }
+    }
+
+    function finalizePrivacy() {
+      addFact("Privacy scan", privacyFindings.size
+        ? privacyFindings.size + " potential issue(s)"
+        : "No common sensitive fields detected");
+      if (!privacyFindings.size) {
+        addMetadata("privacy", "No common sensitive metadata detected", "This is a best-effort local scan, not proof that the file is anonymous.");
+      }
+    }
+
     function resetView() {
       facts.replaceChildren();
       metadataList.replaceChildren();
+      privacyFindings = new Set();
       resultBlob = null;
       downloadButton.disabled = true;
     }
@@ -421,35 +480,332 @@
       return out;
     }
 
-    function inspectJpeg(bytes) {
-      addMetadata("format", "JPEG", "Segment metadata scan");
-      let pos = 2;
-      while (pos + 4 <= bytes.length && bytes[pos] === 255) {
-        const marker = bytes[pos + 1];
-        if (marker === 218 || marker === 217) break;
-        const len = (bytes[pos + 2] << 8) | bytes[pos + 3];
-        if (len < 2 || pos + 2 + len > bytes.length) break;
-        const payloadStart = pos + 4;
-        const payloadEnd = pos + 2 + len;
-        const label = "0x" + marker.toString(16).padStart(2, "0");
-        if (marker === 225) {
-          const head = byteString(bytes, payloadStart, Math.min(payloadStart + 36, payloadEnd));
-          addMetadata("APP1", head.startsWith("Exif") ? "EXIF" : "XMP or APP1", head.replace(/\0/g, " ").slice(0, 160));
-        } else if (marker === 226) {
-          addMetadata("APP2", "ICC profile", String(payloadEnd - payloadStart) + " bytes");
-        } else if (marker === 237) {
-          addMetadata("APP13", "IPTC or Photoshop", String(payloadEnd - payloadStart) + " bytes");
-        } else if (marker === 254) {
-          addMetadata("comment", "JPEG comment", byteString(bytes, payloadStart, payloadEnd).slice(0, 500));
-        } else if (marker >= 224 && marker <= 239) {
-          addMetadata("APP", "JPEG APP marker " + label, String(payloadEnd - payloadStart) + " bytes");
+    const TIFF_TAGS = {
+      0x010e: "ImageDescription", 0x010f: "Make", 0x0110: "Model", 0x0112: "Orientation",
+      0x011a: "XResolution", 0x011b: "YResolution", 0x0128: "ResolutionUnit", 0x0131: "Software",
+      0x0132: "DateTime", 0x013b: "Artist", 0x8298: "Copyright", 0x8769: "ExifIFDPointer",
+      0x8825: "GPSInfoIFDPointer", 0x9c9b: "XPTitle", 0x9c9c: "XPComment", 0x9c9d: "XPAuthor",
+      0x9c9e: "XPKeywords", 0x9c9f: "XPSubject"
+    };
+    const EXIF_TAGS = {
+      0x829a: "ExposureTime", 0x829d: "FNumber", 0x8822: "ExposureProgram", 0x8827: "ISO",
+      0x9003: "DateTimeOriginal", 0x9004: "DateTimeDigitized", 0x9101: "ComponentsConfiguration",
+      0x9201: "ShutterSpeedValue", 0x9202: "ApertureValue", 0x9203: "BrightnessValue",
+      0x9204: "ExposureBiasValue", 0x9205: "MaxApertureValue", 0x9206: "SubjectDistance",
+      0x9207: "MeteringMode", 0x9208: "LightSource", 0x9209: "Flash", 0x920a: "FocalLength",
+      0x927c: "MakerNote", 0x9286: "UserComment", 0x9290: "SubSecTime", 0x9291: "SubSecTimeOriginal",
+      0x9292: "SubSecTimeDigitized", 0xa001: "ColorSpace", 0xa002: "PixelXDimension",
+      0xa003: "PixelYDimension", 0xa005: "InteropIFDPointer", 0xa20e: "FocalPlaneXResolution",
+      0xa20f: "FocalPlaneYResolution", 0xa210: "FocalPlaneResolutionUnit", 0xa217: "SensingMethod",
+      0xa300: "FileSource", 0xa301: "SceneType", 0xa401: "CustomRendered", 0xa402: "ExposureMode",
+      0xa403: "WhiteBalance", 0xa404: "DigitalZoomRatio", 0xa405: "FocalLengthIn35mmFilm",
+      0xa406: "SceneCaptureType", 0xa407: "GainControl", 0xa408: "Contrast", 0xa409: "Saturation",
+      0xa40a: "Sharpness", 0xa40c: "SubjectDistanceRange", 0xa420: "ImageUniqueID",
+      0xa430: "CameraOwnerName", 0xa431: "BodySerialNumber", 0xa432: "LensSpecification",
+      0xa433: "LensMake", 0xa434: "LensModel", 0xa435: "LensSerialNumber"
+    };
+    const GPS_TAGS = {
+      0x0000: "GPSVersionID", 0x0001: "GPSLatitudeRef", 0x0002: "GPSLatitude",
+      0x0003: "GPSLongitudeRef", 0x0004: "GPSLongitude", 0x0005: "GPSAltitudeRef",
+      0x0006: "GPSAltitude", 0x0007: "GPSTimeStamp", 0x0008: "GPSSatellites",
+      0x0009: "GPSStatus", 0x000a: "GPSMeasureMode", 0x000b: "GPSDOP", 0x000c: "GPSSpeedRef",
+      0x000d: "GPSSpeed", 0x000e: "GPSTrackRef", 0x000f: "GPSTrack", 0x0010: "GPSImgDirectionRef",
+      0x0011: "GPSImgDirection", 0x0012: "GPSMapDatum", 0x0013: "GPSDestLatitudeRef",
+      0x0014: "GPSDestLatitude", 0x0015: "GPSDestLongitudeRef", 0x0016: "GPSDestLongitude",
+      0x001d: "GPSDateStamp", 0x001f: "GPSHPositioningError"
+    };
+    const IPTC_TAGS = {
+      "2:5": "ObjectName", "2:25": "Keywords", "2:55": "DateCreated", "2:80": "Byline",
+      "2:90": "City", "2:92": "SubLocation", "2:95": "ProvinceState", "2:101": "CountryCode",
+      "2:105": "Headline", "2:110": "Credit", "2:115": "Source", "2:116": "CopyrightNotice",
+      "2:120": "Caption", "2:122": "WriterEditor"
+    };
+
+    function inspectExif(bytes, tiffStart, source) {
+      if (tiffStart < 0 || tiffStart + 8 > bytes.length) {
+        addMetadata("EXIF", source, "Invalid TIFF header offset");
+        return;
+      }
+      const order = byteString(bytes, tiffStart, tiffStart + 2);
+      const little = order === "II";
+      if (!little && order !== "MM") {
+        addMetadata("EXIF", source, "Invalid TIFF byte order");
+        return;
+      }
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      const u16 = (offset) => offset + 2 <= bytes.length ? view.getUint16(offset, little) : null;
+      const u32 = (offset) => offset + 4 <= bytes.length ? view.getUint32(offset, little) : null;
+      if (u16(tiffStart + 2) !== 42) {
+        addMetadata("EXIF", source, "Unsupported TIFF magic");
+        return;
+      }
+      const typeSize = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8 };
+      const visited = new Set();
+      const gps = {};
+
+      function valueAt(entry, tag, type, count) {
+        const size = typeSize[type];
+        if (!size || count < 0 || count > 1000000) return null;
+        const byteLength = size * count;
+        const relative = byteLength <= 4 ? entry + 8 : tiffStart + u32(entry + 8);
+        if (!Number.isFinite(relative) || relative < 0 || relative + byteLength > bytes.length) return null;
+        if (type === 2) {
+          const text = utf8String(bytes, relative, relative + byteLength).replace(/\0+$/, "");
+          return { display: text, values: [text] };
         }
-        pos = payloadEnd;
+        if ((type === 1 || type === 7) && tag >= 0x9c9b && tag <= 0x9c9f) {
+          const text = utf16leDecoder.decode(bytes.slice(relative, relative + byteLength)).replace(/\0+$/, "");
+          return { display: text, values: [text] };
+        }
+        if (type === 7 && tag === 0x9286) {
+          let start = relative;
+          const prefix = byteString(bytes, relative, Math.min(relative + 8, relative + byteLength));
+          if (/^(ASCII|UNICODE|JIS)/.test(prefix)) start += 8;
+          const text = utf8String(bytes, start, relative + byteLength).replace(/\0/g, "").trim();
+          return { display: text || byteLength + " undefined bytes", values: [text] };
+        }
+        const values = [];
+        const limit = Math.min(count, 64);
+        for (let i = 0; i < limit; i += 1) {
+          const pos = relative + i * size;
+          let value;
+          if (type === 1 || type === 7) value = view.getUint8(pos);
+          else if (type === 3) value = view.getUint16(pos, little);
+          else if (type === 4) value = view.getUint32(pos, little);
+          else if (type === 5) {
+            const numerator = view.getUint32(pos, little);
+            const denominator = view.getUint32(pos + 4, little);
+            value = denominator ? numerator / denominator : null;
+          } else if (type === 6) value = view.getInt8(pos);
+          else if (type === 8) value = view.getInt16(pos, little);
+          else if (type === 9) value = view.getInt32(pos, little);
+          else if (type === 10) {
+            const numerator = view.getInt32(pos, little);
+            const denominator = view.getInt32(pos + 4, little);
+            value = denominator ? numerator / denominator : null;
+          } else if (type === 11) value = view.getFloat32(pos, little);
+          else if (type === 12) value = view.getFloat64(pos, little);
+          values.push(value);
+        }
+        const suffix = count > limit ? " ... (" + count + " values)" : "";
+        return { display: values.map((value) => value === null ? "undefined" : String(value)).join(", ") + suffix, values };
+      }
+
+      function flagExifPrivacy(group, name, display) {
+        if (group === "GPS") addPrivacy("GPS metadata", "EXIF contains " + name + ": " + display);
+        if (/Owner|Artist|Copyright|Serial|UniqueID/i.test(name)) {
+          addPrivacy("Identity or device identifier", name + ": " + display);
+        }
+        if (/DateTime|DateStamp|TimeStamp/i.test(name)) {
+          addPrivacy("Capture timestamp", name + ": " + display);
+        }
+        if (/UserComment|Description|XPComment|XPAuthor|XPKeywords/i.test(name)) {
+          scanSensitiveText("EXIF " + name, display);
+        }
+        if (name === "MakerNote") {
+          addPrivacy("Opaque maker metadata", "MakerNote may contain device-specific identifiers not decoded by this scanner.");
+        }
+      }
+
+      function parseIfd(relativeOffset, group, tags, depth) {
+        const offset = tiffStart + relativeOffset;
+        if (depth > 5 || visited.has(offset) || offset < 0 || offset + 2 > bytes.length) return;
+        visited.add(offset);
+        const count = u16(offset);
+        if (count === null || count > 512 || offset + 2 + count * 12 + 4 > bytes.length) return;
+        for (let i = 0; i < count; i += 1) {
+          const entry = offset + 2 + i * 12;
+          const tag = u16(entry);
+          const type = u16(entry + 2);
+          const valueCount = u32(entry + 4);
+          const decoded = valueAt(entry, tag, type, valueCount);
+          if (!decoded) continue;
+          const name = tags[tag] || "Tag0x" + tag.toString(16).padStart(4, "0");
+          addMetadata("EXIF", group + "." + name, decoded.display.slice(0, 4000));
+          scanSensitiveText(group + "." + name, decoded.display);
+          flagExifPrivacy(group, name, decoded.display);
+          if (group === "GPS") gps[name] = decoded.values;
+          const pointer = decoded.values[0];
+          if (tag === 0x8769 && Number.isFinite(pointer)) parseIfd(pointer, "Exif", EXIF_TAGS, depth + 1);
+          if (tag === 0x8825 && Number.isFinite(pointer)) parseIfd(pointer, "GPS", GPS_TAGS, depth + 1);
+          if (tag === 0xa005 && Number.isFinite(pointer)) parseIfd(pointer, "Interop", {}, depth + 1);
+        }
+        const next = u32(offset + 2 + count * 12);
+        if (next && group === "IFD0") parseIfd(next, "Thumbnail", TIFF_TAGS, depth + 1);
+      }
+
+      const firstIfd = u32(tiffStart + 4);
+      if (firstIfd) parseIfd(firstIfd, "IFD0", TIFF_TAGS, 0);
+      const lat = gps.GPSLatitude;
+      const lon = gps.GPSLongitude;
+      if (lat && lat.length >= 3 && lon && lon.length >= 3) {
+        let latitude = lat[0] + lat[1] / 60 + lat[2] / 3600;
+        let longitude = lon[0] + lon[1] / 60 + lon[2] / 3600;
+        const latRef = gps.GPSLatitudeRef && String(gps.GPSLatitudeRef[0]).toUpperCase();
+        const lonRef = gps.GPSLongitudeRef && String(gps.GPSLongitudeRef[0]).toUpperCase();
+        if (latRef === "S") latitude *= -1;
+        if (lonRef === "W") longitude *= -1;
+        const coordinates = latitude.toFixed(7) + ", " + longitude.toFixed(7);
+        addMetadata("GPS", "Decimal coordinates", coordinates);
+        addPrivacy("Precise GPS coordinates", coordinates);
       }
     }
 
-    function inspectPng(bytes) {
-      addMetadata("format", "PNG", "Chunk metadata scan");
+    function inspectXmpText(text, source) {
+      const clean = String(text || "").replace(/^.*?<\?xpacket/s, "<?xpacket").trim();
+      if (!clean) return;
+      addMetadata("XMP", source + " raw packet", clean.slice(0, 12000));
+      scanSensitiveText(source + " XMP", clean);
+      const documentNode = new DOMParser().parseFromString(clean, "application/xml");
+      if (documentNode.querySelector("parsererror")) return;
+      const seen = new Set();
+      let shown = 0;
+      for (const element of documentNode.querySelectorAll("*")) {
+        for (const attribute of element.attributes) {
+          if (attribute.name.startsWith("xmlns") || !attribute.value.trim()) continue;
+          const key = attribute.name + "=" + attribute.value;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          addMetadata("XMP", attribute.name, attribute.value.slice(0, 2000));
+          scanSensitiveText("XMP " + attribute.name, attribute.value);
+          shown += 1;
+          if (shown >= 160) return;
+        }
+        if (!element.children.length && element.textContent.trim()) {
+          const value = element.textContent.trim();
+          const key = element.tagName + "=" + value;
+          if (!seen.has(key)) {
+            seen.add(key);
+            addMetadata("XMP", element.tagName, value.slice(0, 2000));
+            scanSensitiveText("XMP " + element.tagName, value);
+            shown += 1;
+            if (shown >= 160) return;
+          }
+        }
+      }
+    }
+
+    function inspectIcc(profile, source) {
+      if (profile.length < 132) {
+        addMetadata("ICC", source, profile.length + " bytes (header too short)");
+        return;
+      }
+      const declared = readU32(profile, 0);
+      const version = profile[8] + "." + (profile[9] >> 4) + "." + (profile[9] & 15);
+      addMetadata("ICC", source + " profile", "declared " + declared + " bytes; version " + version +
+        "; class " + byteString(profile, 12, 16) + "; color " + byteString(profile, 16, 20) +
+        "; PCS " + byteString(profile, 20, 24) + "; platform " + byteString(profile, 40, 44) +
+        "; creator " + byteString(profile, 80, 84));
+      const count = Math.min(readU32(profile, 128), 128);
+      for (let i = 0; i < count; i += 1) {
+        const offset = 132 + i * 12;
+        if (offset + 12 > profile.length) break;
+        const signature = byteString(profile, offset, offset + 4);
+        const tagOffset = readU32(profile, offset + 4);
+        const size = readU32(profile, offset + 8);
+        addMetadata("ICC tag", signature, "offset " + tagOffset + ", " + size + " bytes");
+      }
+    }
+
+    function inspectIptc(bytes, start, end, source) {
+      let found = 0;
+      for (let pos = start; pos + 5 <= end && found < 200; pos += 1) {
+        if (bytes[pos] !== 0x1c) continue;
+        const record = bytes[pos + 1];
+        const dataset = bytes[pos + 2];
+        let length = (bytes[pos + 3] << 8) | bytes[pos + 4];
+        let valueStart = pos + 5;
+        if (length & 0x8000) continue;
+        if (valueStart + length > end) continue;
+        const key = record + ":" + dataset;
+        const value = utf8String(bytes, valueStart, valueStart + length).replace(/\0/g, "").trim();
+        if (value) {
+          const name = IPTC_TAGS[key] || "Dataset " + key;
+          addMetadata("IPTC", source + "." + name, value.slice(0, 4000));
+          scanSensitiveText("IPTC " + name, value);
+          if (/Byline|Copyright|Writer|Credit/i.test(name)) addPrivacy("Creator identity", name + ": " + value);
+          if (/City|Location|Country|Province/i.test(name)) addPrivacy("Location metadata", name + ": " + value);
+          if (/Date/i.test(name)) addPrivacy("Capture timestamp", name + ": " + value);
+          found += 1;
+        }
+        pos = valueStart + length - 1;
+      }
+      if (!found) addMetadata("IPTC", source, "No decodable IIM datasets found");
+    }
+
+    function inspectJpeg(bytes) {
+      addMetadata("format", "JPEG", "Segment scan with EXIF, XMP, ICC, IPTC, and comment decoding");
+      const iccParts = [];
+      let pos = 2;
+      while (pos + 4 <= bytes.length && bytes[pos] === 255) {
+        while (bytes[pos] === 255) pos += 1;
+        const marker = bytes[pos];
+        pos += 1;
+        if (marker === 218 || marker === 217) break;
+        if (pos + 2 > bytes.length) break;
+        const len = (bytes[pos] << 8) | bytes[pos + 1];
+        if (len < 2 || pos + len > bytes.length) break;
+        const payloadStart = pos + 2;
+        const payloadEnd = pos + len;
+        const head = byteString(bytes, payloadStart, Math.min(payloadStart + 80, payloadEnd));
+        if (marker === 225 && head.startsWith("Exif\0\0")) {
+          inspectExif(bytes, payloadStart + 6, "JPEG APP1");
+        } else if (marker === 225 && /xmp|xap|<\?xpacket|<rdf:RDF/i.test(head)) {
+          const xmlStart = Math.max(payloadStart, bytes.indexOf(60, payloadStart));
+          inspectXmpText(utf8String(bytes, xmlStart, payloadEnd), "JPEG APP1");
+        } else if (marker === 226 && head.startsWith("ICC_PROFILE\0")) {
+          const sequence = bytes[payloadStart + 12] || 1;
+          iccParts.push({ sequence, bytes: bytes.slice(payloadStart + 14, payloadEnd) });
+        } else if (marker === 237) {
+          inspectIptc(bytes, payloadStart, payloadEnd, "JPEG APP13");
+        } else if (marker === 254) {
+          const comment = utf8String(bytes, payloadStart, payloadEnd).replace(/\0/g, "").trim();
+          addMetadata("comment", "JPEG comment", comment.slice(0, 4000));
+          scanSensitiveText("JPEG comment", comment);
+        } else if ([192, 193, 194, 195, 197, 198, 199, 201, 202, 203, 205, 206, 207].includes(marker) && payloadEnd - payloadStart >= 5) {
+          addFact("Pixel size", ((bytes[payloadStart + 1] << 8) | bytes[payloadStart + 2]) + " x " +
+            ((bytes[payloadStart + 3] << 8) | bytes[payloadStart + 4]));
+        } else if (marker >= 224 && marker <= 239) {
+          addMetadata("APP", "JPEG APP" + (marker - 224), (payloadEnd - payloadStart) + " bytes; header " + head.replace(/\0/g, " ").slice(0, 120));
+        }
+        pos = payloadEnd;
+      }
+      if (iccParts.length) {
+        iccParts.sort((a, b) => a.sequence - b.sequence);
+        inspectIcc(concatBytes(iccParts.map((part) => part.bytes)), "JPEG APP2");
+      }
+    }
+
+    async function inflateBytes(bytes) {
+      if (!("DecompressionStream" in window)) return null;
+      try {
+        const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate"));
+        const reader = stream.getReader();
+        const chunks = [];
+        let total = 0;
+        while (true) {
+          const item = await reader.read();
+          if (item.done) break;
+          total += item.value.length;
+          if (total > MAX_DECOMPRESSED_METADATA) {
+            await reader.cancel();
+            throw new Error("Compressed metadata expands beyond 16 MB");
+          }
+          chunks.push(item.value);
+        }
+        return concatBytes(chunks);
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function zeroIndex(bytes, start, end) {
+      for (let i = start; i < end; i += 1) if (bytes[i] === 0) return i;
+      return -1;
+    }
+
+    async function inspectPng(bytes) {
+      addMetadata("format", "PNG", "Chunk scan with text, EXIF, ICC, time, and physical-pixel decoding");
       let pos = 8;
       while (pos + 12 <= bytes.length) {
         const len = readU32(bytes, pos);
@@ -457,15 +813,168 @@
         const start = pos + 8;
         const end = start + len;
         if (end + 4 > bytes.length) break;
-        if (["tEXt", "zTXt", "iTXt", "pHYs", "tIME", "gAMA", "cHRM", "sRGB"].includes(type)) {
-          const raw = type === "tEXt" || type === "iTXt" ? utf8String(bytes, start, end).replace(/\0/g, " | ") : String(len) + " bytes";
-          addMetadata("chunk", type, raw.slice(0, 700));
-        }
-        if (type === "IHDR" && len >= 8) {
+        if (type === "IHDR" && len >= 13) {
           addFact("Pixel size", readU32(bytes, start) + " x " + readU32(bytes, start + 4));
+          addMetadata("PNG", "IHDR", "bit depth " + bytes[start + 8] + ", color type " + bytes[start + 9] +
+            ", compression " + bytes[start + 10] + ", filter " + bytes[start + 11] + ", interlace " + bytes[start + 12]);
+        } else if (type === "tEXt") {
+          const split = zeroIndex(bytes, start, end);
+          const key = split >= 0 ? byteString(bytes, start, split) : "text";
+          const value = split >= 0 ? utf8String(bytes, split + 1, end) : utf8String(bytes, start, end);
+          addMetadata("PNG text", key, value.slice(0, 8000));
+          scanSensitiveText("PNG tEXt " + key, value);
+          if (/xmp|xml/i.test(key) || /<rdf:RDF|<\?xpacket/i.test(value)) inspectXmpText(value, "PNG tEXt");
+        } else if (type === "zTXt") {
+          const split = zeroIndex(bytes, start, end);
+          const key = split >= 0 ? byteString(bytes, start, split) : "compressed text";
+          const inflated = split >= 0 ? await inflateBytes(bytes.slice(split + 2, end)) : null;
+          const value = inflated ? utf8String(inflated, 0, inflated.length) : "Compressed text could not be decoded in this browser";
+          addMetadata("PNG zTXt", key, value.slice(0, 8000));
+          scanSensitiveText("PNG zTXt " + key, value);
+          if (/xmp|xml/i.test(key) || /<rdf:RDF|<\?xpacket/i.test(value)) inspectXmpText(value, "PNG zTXt");
+        } else if (type === "iTXt") {
+          const keywordEnd = zeroIndex(bytes, start, end);
+          let cursor = keywordEnd + 1;
+          const compressed = keywordEnd >= 0 && bytes[cursor] === 1;
+          cursor += 2;
+          const languageEnd = zeroIndex(bytes, cursor, end);
+          cursor = languageEnd >= 0 ? languageEnd + 1 : end;
+          const translatedEnd = zeroIndex(bytes, cursor, end);
+          cursor = translatedEnd >= 0 ? translatedEnd + 1 : end;
+          const payload = bytes.slice(cursor, end);
+          const decoded = compressed ? await inflateBytes(payload) : payload;
+          const key = keywordEnd >= 0 ? byteString(bytes, start, keywordEnd) : "international text";
+          const value = decoded ? utf8String(decoded, 0, decoded.length) : "Compressed text could not be decoded in this browser";
+          addMetadata("PNG iTXt", key, value.slice(0, 12000));
+          scanSensitiveText("PNG iTXt " + key, value);
+          if (/xmp/i.test(key) || /<rdf:RDF|<\?xpacket/i.test(value)) inspectXmpText(value, "PNG iTXt");
+        } else if (type === "eXIf") {
+          inspectExif(bytes, start, "PNG eXIf");
+        } else if (type === "iCCP") {
+          const split = zeroIndex(bytes, start, end);
+          const inflated = split >= 0 ? await inflateBytes(bytes.slice(split + 2, end)) : null;
+          if (inflated) inspectIcc(inflated, "PNG iCCP");
+          else addMetadata("ICC", "PNG iCCP", len + " compressed bytes; decode unavailable");
+        } else if (type === "pHYs" && len >= 9) {
+          addMetadata("PNG", "Physical pixel density", readU32(bytes, start) + " x " + readU32(bytes, start + 4) +
+            " pixels per " + (bytes[start + 8] === 1 ? "meter" : "unknown unit"));
+        } else if (type === "tIME" && len >= 7) {
+          const stamp = ((bytes[start] << 8) | bytes[start + 1]) + "-" + String(bytes[start + 2]).padStart(2, "0") + "-" +
+            String(bytes[start + 3]).padStart(2, "0") + " " + String(bytes[start + 4]).padStart(2, "0") + ":" +
+            String(bytes[start + 5]).padStart(2, "0") + ":" + String(bytes[start + 6]).padStart(2, "0") + " UTC";
+          addMetadata("PNG", "Last modification time", stamp);
+          addPrivacy("File timestamp", "PNG tIME: " + stamp);
+        } else if (["gAMA", "cHRM", "sRGB", "sBIT", "bKGD"].includes(type)) {
+          addMetadata("PNG chunk", type, len + " bytes");
+        } else if (type !== "IDAT" && type !== "IEND") {
+          addMetadata("PNG chunk", type, len + " bytes (unrecognized or structural ancillary data)");
         }
         pos = end + 4;
         if (type === "IEND") break;
+      }
+    }
+
+    function inspectWebp(bytes) {
+      addMetadata("format", "WebP", "RIFF chunk scan with EXIF, XMP, and ICC decoding");
+      let pos = 12;
+      while (pos + 8 <= bytes.length) {
+        const type = byteString(bytes, pos, pos + 4);
+        const len = (bytes[pos + 4] | (bytes[pos + 5] << 8) | (bytes[pos + 6] << 16) | (bytes[pos + 7] << 24)) >>> 0;
+        const start = pos + 8;
+        const end = start + len;
+        if (end > bytes.length) break;
+        if (type === "EXIF") {
+          const exifOffset = byteString(bytes, start, Math.min(start + 6, end)) === "Exif\0\0" ? start + 6 : start;
+          inspectExif(bytes, exifOffset, "WebP EXIF");
+        } else if (type === "XMP ") {
+          inspectXmpText(utf8String(bytes, start, end), "WebP XMP");
+        } else if (type === "ICCP") {
+          inspectIcc(bytes.slice(start, end), "WebP ICCP");
+        } else if (type === "VP8X" && len >= 10) {
+          const width = 1 + bytes[start + 4] + (bytes[start + 5] << 8) + (bytes[start + 6] << 16);
+          const height = 1 + bytes[start + 7] + (bytes[start + 8] << 8) + (bytes[start + 9] << 16);
+          addFact("Pixel size", width + " x " + height);
+          addMetadata("WebP", "VP8X flags", "0x" + bytes[start].toString(16).padStart(2, "0"));
+        } else {
+          addMetadata("WebP chunk", type, len + " bytes");
+        }
+        pos = end + (len % 2);
+      }
+    }
+
+    function readGifSubBlocks(bytes, offset) {
+      const parts = [];
+      let pos = offset;
+      while (pos < bytes.length) {
+        const size = bytes[pos++];
+        if (!size) break;
+        if (pos + size > bytes.length) break;
+        parts.push(bytes.slice(pos, pos + size));
+        pos += size;
+      }
+      return { bytes: concatBytes(parts), next: pos };
+    }
+
+    function inspectGif(bytes) {
+      addMetadata("format", "GIF", "Extension and comment scan");
+      if (bytes.length < 13) return;
+      addFact("Pixel size", (bytes[6] | (bytes[7] << 8)) + " x " + (bytes[8] | (bytes[9] << 8)));
+      let pos = 13;
+      if (bytes[10] & 0x80) pos += 3 * (1 << ((bytes[10] & 7) + 1));
+      while (pos < bytes.length) {
+        const marker = bytes[pos++];
+        if (marker === 0x3b) break;
+        if (marker === 0x21 && pos < bytes.length) {
+          const label = bytes[pos++];
+          if (label === 0xfe) {
+            const blocks = readGifSubBlocks(bytes, pos);
+            const comment = utf8String(blocks.bytes, 0, blocks.bytes.length);
+            addMetadata("GIF comment", "Comment extension", comment.slice(0, 8000));
+            scanSensitiveText("GIF comment", comment);
+            pos = blocks.next;
+          } else if (label === 0xff && pos < bytes.length) {
+            const headerSize = bytes[pos++];
+            const app = byteString(bytes, pos, Math.min(pos + headerSize, bytes.length));
+            pos += headerSize;
+            const blocks = readGifSubBlocks(bytes, pos);
+            addMetadata("GIF application", app, blocks.bytes.length + " data bytes");
+            pos = blocks.next;
+          } else {
+            if (label === 0xf9) {
+              const size = bytes[pos] || 0;
+              pos += 1 + size + 1;
+            } else {
+              const blocks = readGifSubBlocks(bytes, pos);
+              pos = blocks.next;
+            }
+          }
+        } else if (marker === 0x2c) {
+          if (pos + 9 > bytes.length) break;
+          const packed = bytes[pos + 8];
+          pos += 9;
+          if (packed & 0x80) pos += 3 * (1 << ((packed & 7) + 1));
+          pos += 1;
+          const blocks = readGifSubBlocks(bytes, pos);
+          pos = blocks.next;
+        } else break;
+      }
+    }
+
+    function inspectBmp(bytes) {
+      addMetadata("format", "BMP", "DIB header and color-profile scan");
+      if (bytes.length < 26) return;
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      const dib = view.getUint32(14, true);
+      const width = dib >= 40 ? view.getInt32(18, true) : view.getUint16(18, true);
+      const height = dib >= 40 ? Math.abs(view.getInt32(22, true)) : view.getUint16(20, true);
+      addFact("Pixel size", width + " x " + height);
+      addMetadata("BMP", "DIB header", dib + " bytes");
+      if (dib >= 124 && bytes.length >= 14 + 124) {
+        const profileOffset = view.getUint32(14 + 112, true);
+        const profileSize = view.getUint32(14 + 116, true);
+        if (profileSize && 14 + profileOffset + profileSize <= bytes.length) {
+          inspectIcc(bytes.slice(14 + profileOffset, 14 + profileOffset + profileSize), "BMP V5 profile");
+        }
       }
     }
 
@@ -484,44 +993,109 @@
         }
         if (!size || pos + size > end || size < header) break;
         boxes.push({ type, start: pos, end: pos + size, header, depth });
-        if (["moov", "trak", "mdia", "minf", "stbl", "udta"].includes(type)) {
-          boxes.push(...parseMp4Boxes(bytes, pos + header, pos + size, depth + 1));
+        if (depth < 8 && ["moov", "trak", "mdia", "minf", "stbl", "udta", "meta", "ilst", "iinf", "iprp", "ipco"].includes(type)) {
+          const extra = type === "meta" ? 4 : 0;
+          boxes.push(...parseMp4Boxes(bytes, pos + header + extra, pos + size, depth + 1));
         }
         pos += size;
+        if (boxes.length >= 2000) break;
       }
       return boxes;
     }
 
-    function inspectMp4(bytes) {
-      addMetadata("format", "MP4", "ISO BMFF box scan");
+    function scanEmbeddedPackets(bytes, source) {
+      const ascii = byteString(bytes, 0, Math.min(bytes.length, 8 * 1024 * 1024));
+      const exifIndex = ascii.indexOf("Exif\0\0");
+      if (exifIndex >= 0) inspectExif(bytes, exifIndex + 6, source + " embedded EXIF");
+      const xmpStart = Math.max(ascii.indexOf("<?xpacket"), ascii.indexOf("<x:xmpmeta"), ascii.indexOf("<rdf:RDF"));
+      if (xmpStart >= 0) {
+        const xmpEnd = ascii.indexOf("<?xpacket end", xmpStart);
+        inspectXmpText(ascii.slice(xmpStart, xmpEnd >= 0 ? xmpEnd + 200 : xmpStart + 120000), source + " embedded XMP");
+      }
+    }
+
+    function inspectIsoBmff(bytes, label) {
+      addMetadata("format", label, "ISO BMFF recursive box scan");
       const boxes = parseMp4Boxes(bytes, 0, bytes.length, 0);
-      boxes.slice(0, 80).forEach((box) => {
-        const privacy = ["udta", "meta", "uuid", "free", "skip"].includes(box.type) ? " possible metadata" : "";
-        addMetadata("box", " ".repeat(box.depth * 2) + box.type, (box.end - box.start) + " bytes" + privacy);
+      boxes.slice(0, 180).forEach((box) => {
+        const metadata = ["udta", "meta", "ilst", "uuid", "free", "skip", "Exif", "xml ", "mime"].includes(box.type);
+        addMetadata("box", " ".repeat(box.depth * 2) + box.type,
+          (box.end - box.start) + " bytes" + (metadata ? "; metadata-bearing box" : ""));
+        if (metadata) scanSensitiveText(label + " box " + box.type, byteString(bytes, box.start, Math.min(box.end, box.start + 16000)));
+      });
+      scanEmbeddedPackets(bytes, label);
+    }
+
+    function inspectMp4(bytes) {
+      inspectIsoBmff(bytes, "MP4");
+      const text = byteString(bytes, 0, Math.min(bytes.length, 8 * 1024 * 1024));
+      ["location", "com.apple.quicktime.location.ISO6709", "artist", "author", "title", "comment", "copyright"].forEach((term) => {
+        const index = text.toLowerCase().indexOf(term.toLowerCase());
+        if (index >= 0) {
+          const value = text.slice(index, index + 500).replace(/[^\x20-\x7e]+/g, " ");
+          addMetadata("MP4 text", term, value);
+          scanSensitiveText("MP4 " + term, value);
+        }
       });
     }
 
     function inspectWebm(bytes) {
-      addMetadata("format", "WebM", "Container signature scan");
-      const head = byteString(bytes, 0, Math.min(bytes.length, 256));
-      addMetadata("ebml", "Header", head.includes("webm") ? "WebM marker found" : "EBML-style file");
-      ["TITLE", "ARTIST", "DATE", "ENCODER", "DESCRIPTION"].forEach((term) => {
-        const idx = head.toUpperCase().indexOf(term);
-        if (idx >= 0) addMetadata("tag", term, "Potential tag marker near byte " + idx);
+      addMetadata("format", "WebM", "EBML signature and textual metadata scan");
+      const scanLength = Math.min(bytes.length, 8 * 1024 * 1024);
+      const text = byteString(bytes, 0, scanLength).replace(/[^\x20-\x7e]+/g, " ");
+      addMetadata("EBML", "Header", text.toLowerCase().includes("webm") ? "WebM marker found" : "EBML-style file");
+      ["TITLE", "ARTIST", "DATE", "ENCODER", "DESCRIPTION", "COMMENT", "COPYRIGHT", "LOCATION"].forEach((term) => {
+        const index = text.toUpperCase().indexOf(term);
+        if (index >= 0) {
+          const value = text.slice(index, index + 500).trim();
+          addMetadata("WebM tag", term, value);
+          scanSensitiveText("WebM " + term, value);
+        }
       });
     }
 
-    function inspectFile() {
+    function detectFormat(bytes, file) {
+      if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "JPEG";
+      if (bytes.length >= 8 && bytes[0] === 137 && byteString(bytes, 1, 4) === "PNG" &&
+          bytes[4] === 13 && bytes[5] === 10 && bytes[6] === 26 && bytes[7] === 10) return "PNG";
+      if (bytes.length >= 12 && byteString(bytes, 0, 4) === "RIFF" && byteString(bytes, 8, 12) === "WEBP") return "WebP";
+      if (bytes.length >= 6 && /^GIF8[79]a$/.test(byteString(bytes, 0, 6))) return "GIF";
+      if (bytes.length >= 4 && ((byteString(bytes, 0, 2) === "II" && bytes[2] === 42) || (byteString(bytes, 0, 2) === "MM" && bytes[3] === 42))) return "TIFF";
+      if (bytes.length >= 2 && byteString(bytes, 0, 2) === "BM") return "BMP";
+      if (bytes.length >= 12 && byteString(bytes, 4, 8) === "ftyp") {
+        const brand = byteString(bytes, 8, 12).toLowerCase();
+        if (/avif|avis/.test(brand)) return "AVIF";
+        if (/heic|heix|hevc|hevx|mif1|msf1/.test(brand)) return "HEIF";
+        return "MP4";
+      }
+      if (bytes.length >= 4 && bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3) return "WebM";
+      const name = (file && file.name || "").toLowerCase();
+      if (/\.(heic|heif)$/.test(name)) return "HEIF";
+      if (/\.avif$/.test(name)) return "AVIF";
+      return "Unknown";
+    }
+
+    async function inspectFile() {
       resetView();
       if (!currentFile || !currentBytes) return;
+      const format = detectFormat(currentBytes, currentFile);
       addFact("Name", currentFile.name);
-      addFact("Type", currentFile.type || "unknown");
+      addFact("Browser type", currentFile.type || "unknown");
+      addFact("Detected format", format);
       addFact("Size", currentFile.size + " bytes");
-      if (currentFile.type === "image/jpeg") inspectJpeg(currentBytes);
-      else if (currentFile.type === "image/png") inspectPng(currentBytes);
-      else if (currentFile.type === "video/mp4") inspectMp4(currentBytes);
-      else if (currentFile.type === "video/webm") inspectWebm(currentBytes);
-      else addMetadata("status", "Unsupported", "Use JPG, PNG, MP4, or WebM.");
+      if (format === "JPEG") inspectJpeg(currentBytes);
+      else if (format === "PNG") await inspectPng(currentBytes);
+      else if (format === "WebP") inspectWebp(currentBytes);
+      else if (format === "GIF") inspectGif(currentBytes);
+      else if (format === "TIFF") {
+        addMetadata("format", "TIFF", "Direct TIFF/EXIF directory decode");
+        inspectExif(currentBytes, 0, "TIFF");
+      } else if (format === "BMP") inspectBmp(currentBytes);
+      else if (format === "HEIF" || format === "AVIF") inspectIsoBmff(currentBytes, format);
+      else if (format === "MP4") inspectMp4(currentBytes);
+      else if (format === "WebM") inspectWebm(currentBytes);
+      else addMetadata("status", "Unsupported", "The file signature does not match a supported image or video format.");
+      finalizePrivacy();
     }
 
     function stripImageByCanvas(file, type) {
@@ -636,7 +1210,7 @@
       resultBlob = null;
       downloadButton.disabled = true;
       if (currentMode === "inspect") {
-        inspectFile();
+        await inspectFile();
         return;
       }
       try {
@@ -687,7 +1261,32 @@
       if (!currentFile) return;
       currentBytes = new Uint8Array(await currentFile.arrayBuffer());
       setPreview(currentFile);
-      inspectFile();
+      await inspectFile();
+    });
+    decodeBase64Button.addEventListener("click", async () => {
+      try {
+        const payload = decodeBase64Payload(base64Input.value);
+        const format = detectFormat(payload.bytes, { name: "base64.bin" });
+        const mimeByFormat = {
+          JPEG: "image/jpeg", PNG: "image/png", WebP: "image/webp", GIF: "image/gif",
+          TIFF: "image/tiff", BMP: "image/bmp", HEIF: "image/heif", AVIF: "image/avif",
+          MP4: "video/mp4", WebM: "video/webm"
+        };
+        const extensionByFormat = {
+          JPEG: "jpg", PNG: "png", WebP: "webp", GIF: "gif", TIFF: "tiff", BMP: "bmp",
+          HEIF: "heif", AVIF: "avif", MP4: "mp4", WebM: "webm", Unknown: "bin"
+        };
+        const mime = payload.mime || mimeByFormat[format] || "application/octet-stream";
+        currentBytes = payload.bytes;
+        currentFile = new File([payload.bytes], "base64-decoded." + extensionByFormat[format], { type: mime });
+        fileInput.value = "";
+        resetView();
+        setPreview(currentFile);
+        await inspectFile();
+      } catch (error) {
+        resetView();
+        addMetadata("error", "Base64 decode failed", error.message);
+      }
     });
     inspectMode.addEventListener("click", () => setMode("inspect"));
     eraseMode.addEventListener("click", () => setMode("erase"));
@@ -706,6 +1305,21 @@
     sourceButton.addEventListener("click", () => {
       window.open("view-source:" + location.href, "_blank", "noopener,noreferrer");
     });
+    window.UsefulToolMetadata = {
+      inspectExif,
+      inspectPng,
+      inspectWebp,
+      inspectGif,
+      inspectBmp,
+      inspectIcc,
+      inspectIptc,
+      inspectIsoBmff,
+      inspectXmpText,
+      scanSensitiveText,
+      resetView,
+      finalizePrivacy,
+      detectFormat
+    };
   </script>
 </body>
 </html>

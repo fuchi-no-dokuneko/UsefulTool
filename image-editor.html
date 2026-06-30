@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self'; connect-src 'none'; img-src 'self' data: blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>Layered Image Editor | UsefulTool</title>
+  <link rel="stylesheet" href="toolkit.css">
+  <style>
+    .editor-shell { display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: calc(100vh - 180px); }
+    .stage { min-width: 0; padding: 18px; overflow: auto; }
+    .layer-button { width: 100%; display: flex; justify-content: space-between; text-align: left; }
+    .layer-button[aria-current="true"] { border-color: var(--green); background: #eaf5ef; }
+    .canvas-container { margin: 0 auto; }
+    @media (max-width: 820px) { .editor-shell { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="index.html"><span class="mark">UT</span><span>Image Editor</span></a><nav><a href="index.html">Home</a><a href="image-converter.html">Background Tool</a><a href="images-to-pdf.html">Images to PDF</a></nav></header>
+  <section class="page-head"><h1>Layered Image Editor</h1><p>Load multiple local images, arrange and transform layers on an interactive canvas, then export PNG, JPEG, or WebP with configurable quality.</p></section>
+  <main class="editor-shell">
+    <aside class="controls stack">
+      <label>Add image layers<input id="imageInput" type="file" accept="image/*" multiple></label>
+      <div class="row"><label class="grow">Canvas width<input id="canvasWidth" type="number" min="64" max="8000" value="1200"></label><label class="grow">Height<input id="canvasHeight" type="number" min="64" max="8000" value="800"></label></div>
+      <label>Canvas background<input id="background" type="color" value="#ffffff"></label>
+      <button id="resizeCanvas" type="button">Apply canvas settings</button>
+      <h2>Selected layer</h2>
+      <div class="row"><label class="grow">X<input id="left" type="number" step="1"></label><label class="grow">Y<input id="top" type="number" step="1"></label></div>
+      <div class="row"><label class="grow">Width<input id="width" type="number" min="1"></label><label class="grow">Height<input id="height" type="number" min="1"></label></div>
+      <div class="row"><label class="grow">Rotation<input id="angle" type="number" step="1"></label><label class="grow">Opacity<input id="opacity" type="number" min="0" max="1" step="0.05"></label></div>
+      <div class="row"><button id="flipX" type="button">Flip horizontal</button><button id="flipY" type="button">Flip vertical</button></div>
+      <div class="row"><button id="layerUp" type="button">Move forward</button><button id="layerDown" type="button">Move backward</button></div>
+      <div class="row"><button id="duplicate" type="button">Duplicate</button><button class="danger" id="deleteLayer" type="button">Delete layer</button></div>
+      <h2>Layers</h2>
+      <div class="stack" id="layers"></div>
+      <h2>Export</h2>
+      <label>Format<select id="format"><option value="png">PNG lossless</option><option value="jpeg">JPEG</option><option value="webp">WebP</option></select></label>
+      <label>Compression quality <span id="qualityLabel">0.90</span><input id="quality" type="range" min="0.1" max="1" step="0.05" value="0.9"></label>
+      <button class="primary" id="exportButton" type="button">Export image</button>
+      <button class="danger" id="clearButton" type="button">Clear canvas</button>
+      <div class="status" id="status">Add one or more images.</div>
+    </aside>
+    <section class="stage"><div class="canvas-wrap"><canvas id="canvas" width="1200" height="800"></canvas></div></section>
+  </main>
+  <footer>Fabric.js handles interactive transforms locally. Images remain in browser memory.</footer>
+  <script src="toolkit.js"></script>
+  <script type="module">
+    import { Canvas, FabricImage } from "./vendor/fabric.min.mjs";
+    const canvas = new Canvas("canvas", { width: 1200, height: 800, backgroundColor: "#ffffff", preserveObjectStacking: true });
+    const status = document.getElementById("status");
+    const propertyIds = ["left", "top", "width", "height", "angle", "opacity"];
+
+    function active() { return canvas.getActiveObject(); }
+    function renderLayers() {
+      const container = document.getElementById("layers");
+      container.replaceChildren();
+      const objects = [...canvas.getObjects()].reverse();
+      objects.forEach((object, index) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "layer-button";
+        button.setAttribute("aria-current", String(object === active()));
+        button.textContent = (objects.length - index) + ". " + (object._fileName || "Image layer");
+        button.addEventListener("click", () => { canvas.setActiveObject(object); canvas.requestRenderAll(); syncProperties(); });
+        container.appendChild(button);
+      });
+    }
+
+    function syncProperties() {
+      const object = active();
+      for (const id of propertyIds) document.getElementById(id).disabled = !object;
+      if (!object) { renderLayers(); return; }
+      document.getElementById("left").value = Math.round(object.left || 0);
+      document.getElementById("top").value = Math.round(object.top || 0);
+      document.getElementById("width").value = Math.max(1, Math.round(object.getScaledWidth()));
+      document.getElementById("height").value = Math.max(1, Math.round(object.getScaledHeight()));
+      document.getElementById("angle").value = Math.round(object.angle || 0);
+      document.getElementById("opacity").value = object.opacity == null ? 1 : object.opacity;
+      renderLayers();
+    }
+
+    function applyProperties() {
+      const object = active();
+      if (!object) return;
+      const targetWidth = Math.max(1, Number(document.getElementById("width").value) || object.getScaledWidth());
+      const targetHeight = Math.max(1, Number(document.getElementById("height").value) || object.getScaledHeight());
+      object.set({
+        left: Number(document.getElementById("left").value) || 0,
+        top: Number(document.getElementById("top").value) || 0,
+        scaleX: targetWidth / object.width,
+        scaleY: targetHeight / object.height,
+        angle: Number(document.getElementById("angle").value) || 0,
+        opacity: Math.max(0, Math.min(1, Number(document.getElementById("opacity").value)))
+      });
+      object.setCoords(); canvas.requestRenderAll(); renderLayers();
+    }
+
+    document.getElementById("imageInput").addEventListener("change", async (event) => {
+      for (const file of event.target.files) {
+        if (!file.type.startsWith("image/") || file.size > 30 * 1024 * 1024) continue;
+        const url = URL.createObjectURL(file);
+        try {
+          const image = await FabricImage.fromURL(url);
+          image._fileName = file.name;
+          const scale = Math.min(1, (canvas.width * 0.8) / image.width, (canvas.height * 0.8) / image.height);
+          image.set({ left: 40 + canvas.getObjects().length * 18, top: 40 + canvas.getObjects().length * 18, scaleX: scale, scaleY: scale });
+          canvas.add(image); canvas.setActiveObject(image);
+        } finally { URL.revokeObjectURL(url); }
+      }
+      canvas.requestRenderAll(); syncProperties(); UsefulTool.status(status, canvas.getObjects().length + " layer(s) loaded."); event.target.value = "";
+    });
+
+    for (const id of propertyIds) document.getElementById(id).addEventListener("input", applyProperties);
+    canvas.on("selection:created", syncProperties); canvas.on("selection:updated", syncProperties); canvas.on("selection:cleared", syncProperties); canvas.on("object:modified", syncProperties);
+    document.getElementById("flipX").addEventListener("click", () => { const object = active(); if (object) { object.set("flipX", !object.flipX); canvas.requestRenderAll(); } });
+    document.getElementById("flipY").addEventListener("click", () => { const object = active(); if (object) { object.set("flipY", !object.flipY); canvas.requestRenderAll(); } });
+    document.getElementById("layerUp").addEventListener("click", () => { const object = active(); if (object) { canvas.bringObjectForward(object); canvas.requestRenderAll(); renderLayers(); } });
+    document.getElementById("layerDown").addEventListener("click", () => { const object = active(); if (object) { canvas.sendObjectBackwards(object); canvas.requestRenderAll(); renderLayers(); } });
+    document.getElementById("duplicate").addEventListener("click", async () => { const object = active(); if (!object) return; const clone = await object.clone(); clone._fileName = (object._fileName || "Layer") + " copy"; clone.set({ left: (object.left || 0) + 24, top: (object.top || 0) + 24 }); canvas.add(clone); canvas.setActiveObject(clone); syncProperties(); });
+    document.getElementById("deleteLayer").addEventListener("click", () => { const object = active(); if (object) { canvas.remove(object); canvas.discardActiveObject(); syncProperties(); } });
+    document.getElementById("resizeCanvas").addEventListener("click", () => {
+      const width = Math.max(64, Math.min(8000, Number(document.getElementById("canvasWidth").value) || 1200));
+      const height = Math.max(64, Math.min(8000, Number(document.getElementById("canvasHeight").value) || 800));
+      canvas.setDimensions({ width, height }); canvas.backgroundColor = document.getElementById("background").value; canvas.requestRenderAll();
+    });
+    document.getElementById("quality").addEventListener("input", (event) => document.getElementById("qualityLabel").textContent = Number(event.target.value).toFixed(2));
+    document.getElementById("exportButton").addEventListener("click", () => {
+      const format = document.getElementById("format").value;
+      const quality = Number(document.getElementById("quality").value);
+      const dataUrl = canvas.toDataURL({ format, quality, multiplier: 1 });
+      const [header, encoded] = dataUrl.split(",");
+      const mime = /data:([^;]+)/.exec(header)[1];
+      const bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
+      UsefulTool.download(new Blob([bytes], { type: mime }), "usefultool-canvas." + (format === "jpeg" ? "jpg" : format));
+      UsefulTool.status(status, "Exported " + format.toUpperCase() + " at quality " + quality.toFixed(2) + ".");
+    });
+    document.getElementById("clearButton").addEventListener("click", () => { canvas.clear(); canvas.backgroundColor = document.getElementById("background").value; canvas.requestRenderAll(); syncProperties(); });
+    syncProperties();
+    window.UsefulToolImageEditor = { canvas };
+    document.documentElement.dataset.editorReady = "true";
+  </script>
+</body>
+</html>

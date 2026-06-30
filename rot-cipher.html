@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>ROT Cipher | UsefulTool</title>
+  <link rel="stylesheet" href="toolkit.css">
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="index.html"><span class="mark">UT</span><span>ROT Cipher</span></a><nav><a href="index.html">Home</a><a href="base64-converter.html">Base64</a><a href="file-diff.html">Diff</a></nav></header>
+  <section class="page-head"><h1>ROT Cipher and Password Transformer</h1><p>Apply Caesar rotations, ROT13, or ROT47 locally. ROT is reversible obfuscation, not secure encryption.</p></section>
+  <main class="tool-shell">
+    <section class="controls stack">
+      <label>Algorithm<select id="algorithm"><option value="alpha">Alphabetic ROT / Caesar</option><option value="rot47">ROT47 printable ASCII</option></select></label>
+      <label>Alphabet shift<input id="shift" type="number" min="0" max="25" value="13"></label>
+      <label>Direction<select id="direction"><option value="encode">Encode</option><option value="decode">Decode</option></select></label>
+      <label>Password length<input id="passwordLength" type="number" min="8" max="128" value="20"></label>
+      <button id="generateButton" type="button">Generate random password input</button>
+      <button class="primary" id="runButton" type="button">Transform</button>
+      <button id="bruteButton" type="button">Show all 26 alphabet shifts</button>
+      <div class="status warn" id="status">Do not use ROT to protect real credentials. Anyone can reverse it.</div>
+    </section>
+    <section class="workspace stack">
+      <label>Input<textarea id="input" spellcheck="false" placeholder="Text or password"></textarea></label>
+      <div class="toolbar"><button id="copyButton" type="button">Copy output</button><button id="swapButton" type="button">Use output as input</button><button id="clearButton" type="button">Clear</button></div>
+      <label>Output<textarea id="output" spellcheck="false" readonly></textarea></label>
+      <section class="output mono" id="allShifts">All-shift analysis appears here.</section>
+    </section>
+  </main>
+  <footer>No input is stored or transmitted.</footer>
+  <script src="toolkit.js"></script>
+  <script>
+    const input = document.getElementById("input");
+    const output = document.getElementById("output");
+    const algorithm = document.getElementById("algorithm");
+    const shift = document.getElementById("shift");
+    const direction = document.getElementById("direction");
+    const allShifts = document.getElementById("allShifts");
+    const status = document.getElementById("status");
+
+    function rotateAlpha(text, amount) {
+      const normalized = ((amount % 26) + 26) % 26;
+      return Array.from(text, (character) => {
+        const code = character.charCodeAt(0);
+        if (code >= 65 && code <= 90) return String.fromCharCode(65 + (code - 65 + normalized) % 26);
+        if (code >= 97 && code <= 122) return String.fromCharCode(97 + (code - 97 + normalized) % 26);
+        return character;
+      }).join("");
+    }
+
+    function rot47(text) {
+      return Array.from(text, (character) => {
+        const code = character.charCodeAt(0);
+        return code >= 33 && code <= 126 ? String.fromCharCode(33 + (code - 33 + 47) % 94) : character;
+      }).join("");
+    }
+
+    function transform() {
+      const amount = Number(shift.value);
+      if (!Number.isInteger(amount) || amount < 0 || amount > 25) {
+        UsefulTool.status(status, "Shift must be an integer from 0 through 25.", "error");
+        return;
+      }
+      output.value = algorithm.value === "rot47" ? rot47(input.value) : rotateAlpha(input.value, direction.value === "decode" ? -amount : amount);
+      UsefulTool.status(status, "Transformed " + input.value.length + " characters. ROT remains reversible obfuscation.", "warn");
+    }
+
+    function randomPassword(length) {
+      const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*()-_=+";
+      const values = new Uint32Array(length);
+      crypto.getRandomValues(values);
+      return Array.from(values, (value) => alphabet[value % alphabet.length]).join("");
+    }
+
+    document.getElementById("runButton").addEventListener("click", transform);
+    document.getElementById("generateButton").addEventListener("click", () => {
+      const length = Math.max(8, Math.min(128, Number(document.getElementById("passwordLength").value) || 20));
+      input.value = randomPassword(length); transform();
+    });
+    document.getElementById("bruteButton").addEventListener("click", () => {
+      allShifts.textContent = Array.from({ length: 26 }, (_, amount) => "ROT" + amount.toString().padStart(2, "0") + "  " + rotateAlpha(input.value, -amount)).join("\n");
+    });
+    document.getElementById("copyButton").addEventListener("click", async () => { await navigator.clipboard.writeText(output.value); UsefulTool.status(status, "Output copied.", "warn"); });
+    document.getElementById("swapButton").addEventListener("click", () => { input.value = output.value; output.value = ""; });
+    document.getElementById("clearButton").addEventListener("click", () => { input.value = ""; output.value = ""; allShifts.textContent = "All-shift analysis appears here."; });
+    algorithm.addEventListener("change", () => { shift.disabled = algorithm.value === "rot47"; direction.disabled = algorithm.value === "rot47"; });
+    window.UsefulToolRot = { rotateAlpha, rot47, randomPassword };
+  </script>
+</body>
+</html>

@@ -17,6 +17,19 @@ jobs:
           test -f calculator.html
           test -f unit-converter.html
           test -f metadata-lab.html
+          test -f base64-converter.html
+          test -f file-diff.html
+          test -f rot-cipher.html
+          test -f lan-chat.html
+          test -f image-editor.html
+          test -f pdf-merge.html
+          test -f images-to-pdf.html
+          test -f toolkit.js
+          test -f toolkit.css
+          test -f vendor/diff.min.js
+          test -f vendor/fabric.min.mjs
+          test -f vendor/pdf-lib.min.js
+          test -f tests/browser-smoke.html
           test -x serve-local.sh
       - name: Check for external runtime URLs
         run: |
@@ -26,6 +39,31 @@ jobs:
           fi
       - name: Check connect-src lock
         run: grep -R "connect-src 'none'" *.html _headers
+      - name: Check inline JavaScript syntax
+        run: |
+          for file in unit-converter.html metadata-lab.html base64-converter.html file-diff.html rot-cipher.html lan-chat.html pdf-merge.html images-to-pdf.html; do
+            perl -0777 -ne 'while (/<script>(.*?)<\/script>/sg) { print $1 }' "$file" | node --check
+          done
+      - name: Run browser smoke tests
+        run: |
+          python3 -m http.server 8765 --bind 127.0.0.1 >/tmp/usefultool-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          for attempt in {1..20}; do
+            if curl -fsS http://127.0.0.1:8765/tests/browser-smoke.html >/dev/null; then
+              break
+            fi
+            sleep 0.2
+          done
+          browser="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          "$browser" --headless --no-sandbox --disable-gpu --disable-dev-shm-usage \
+            --virtual-time-budget=8000 --dump-dom \
+            http://127.0.0.1:8765/tests/browser-smoke.html > /tmp/usefultool-smoke.html
+          grep '<pre id="result">PASS' /tmp/usefultool-smoke.html
+          if grep -q 'FAIL ' /tmp/usefultool-smoke.html; then
+            sed -n '/<pre id="result">/,/<\/pre>/p' /tmp/usefultool-smoke.html
+            exit 1
+          fi
 
   deploy:
     needs: validate

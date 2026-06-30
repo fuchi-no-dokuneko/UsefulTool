@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'none'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>File Diff | UsefulTool</title>
+  <link rel="stylesheet" href="toolkit.css">
+  <style>
+    .editors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .editors textarea { min-height: 260px; }
+    .diff-grid { display: grid; grid-template-columns: 52px minmax(0, 1fr) 52px minmax(0, 1fr); min-width: 760px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+    .diff-grid > div { min-height: 24px; padding: 2px 8px; border-bottom: 1px solid #e6ebe7; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .line-number { color: #7b8580; text-align: right; user-select: none; background: #f3f5f3; }
+    .same { background: #fff; }
+    .removed { background: #fde9e7; color: #72221d; }
+    .added { background: #e5f5eb; color: #17562e; }
+    .empty { background: #f2f4f2; }
+    .diff-output { overflow: auto; border: 1px solid var(--line); background: #fff; }
+    @media (max-width: 800px) { .editors { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="index.html"><span class="mark">UT</span><span>File Diff</span></a><nav><a href="index.html">Home</a><a href="base64-converter.html">Base64</a><a href="rot-cipher.html">ROT</a></nav></header>
+  <section class="page-head"><h1>Side-by-Side File Diff</h1><p>Compare two text files line by line with aligned additions and removals using the jsdiff Myers implementation.</p></section>
+  <main class="stack" style="padding:22px clamp(16px,4vw,48px)">
+    <div class="editors">
+      <section class="stack">
+        <label>Left file<input id="leftFile" type="file" accept="text/*,.json,.js,.ts,.java,.kt,.md,.html,.css,.xml,.yml,.yaml,.csv"></label>
+        <label>Left text<textarea id="leftText" spellcheck="false"></textarea></label>
+      </section>
+      <section class="stack">
+        <label>Right file<input id="rightFile" type="file" accept="text/*,.json,.js,.ts,.java,.kt,.md,.html,.css,.xml,.yml,.yaml,.csv"></label>
+        <label>Right text<textarea id="rightText" spellcheck="false"></textarea></label>
+      </section>
+    </div>
+    <div class="toolbar">
+      <button class="primary" id="compareButton" type="button">Compare</button>
+      <button id="swapButton" type="button">Swap sides</button>
+      <label class="check"><input id="ignoreWhitespace" type="checkbox"> Ignore whitespace-only changes</label>
+      <button id="patchButton" type="button" disabled>Download unified patch</button>
+    </div>
+    <div class="status" id="status">Load or paste two text documents.</div>
+    <section class="diff-output" aria-label="Side-by-side differences"><div class="diff-grid" id="diffGrid"></div></section>
+  </main>
+  <footer>Comparison is local. Files are not uploaded.</footer>
+  <script src="toolkit.js"></script>
+  <script src="vendor/diff.min.js"></script>
+  <script>
+    const leftText = document.getElementById("leftText");
+    const rightText = document.getElementById("rightText");
+    const grid = document.getElementById("diffGrid");
+    const status = document.getElementById("status");
+    const patchButton = document.getElementById("patchButton");
+    let patchText = "";
+
+    async function loadText(file, target) {
+      if (!file) return;
+      if (file.size > 5 * 1024 * 1024) throw new Error("Text file exceeds 5 MiB");
+      target.value = await file.text();
+    }
+
+    function lines(value) {
+      if (!value) return [];
+      const result = value.split(/\r?\n/);
+      if (result[result.length - 1] === "") result.pop();
+      return result;
+    }
+
+    function appendCell(value, className, number) {
+      const numberCell = document.createElement("div");
+      numberCell.className = "line-number";
+      numberCell.textContent = number == null ? "" : number;
+      const content = document.createElement("div");
+      content.className = className;
+      content.textContent = value == null ? "" : value;
+      grid.append(numberCell, content);
+    }
+
+    function appendRow(left, right, leftClass, rightClass, leftNumber, rightNumber) {
+      appendCell(left, leftClass, leftNumber);
+      appendCell(right, rightClass, rightNumber);
+    }
+
+    function compare() {
+      const changes = Diff.diffLines(leftText.value, rightText.value, { ignoreWhitespace: document.getElementById("ignoreWhitespace").checked });
+      grid.replaceChildren();
+      let leftNumber = 1;
+      let rightNumber = 1;
+      let additions = 0;
+      let removals = 0;
+      for (let index = 0; index < changes.length; index += 1) {
+        const change = changes[index];
+        if (change.removed && changes[index + 1] && changes[index + 1].added) {
+          const removed = lines(change.value);
+          const added = lines(changes[index + 1].value);
+          const count = Math.max(removed.length, added.length);
+          for (let line = 0; line < count; line += 1) {
+            appendRow(
+              removed[line], added[line], removed[line] == null ? "empty" : "removed", added[line] == null ? "empty" : "added",
+              removed[line] == null ? null : leftNumber++, added[line] == null ? null : rightNumber++
+            );
+          }
+          removals += removed.length;
+          additions += added.length;
+          index += 1;
+        } else if (change.removed) {
+          for (const value of lines(change.value)) { appendRow(value, null, "removed", "empty", leftNumber++, null); removals += 1; }
+        } else if (change.added) {
+          for (const value of lines(change.value)) { appendRow(null, value, "empty", "added", null, rightNumber++); additions += 1; }
+        } else {
+          for (const value of lines(change.value)) appendRow(value, value, "same", "same", leftNumber++, rightNumber++);
+        }
+      }
+      patchText = Diff.createTwoFilesPatch("left", "right", leftText.value, rightText.value, "", "", { context: 3 });
+      patchButton.disabled = false;
+      UsefulTool.status(status, additions + " added line(s), " + removals + " removed line(s).", additions || removals ? "warn" : "");
+    }
+
+    document.getElementById("leftFile").addEventListener("change", async (event) => { try { await loadText(event.target.files[0], leftText); } catch (error) { UsefulTool.status(status, error.message, "error"); } });
+    document.getElementById("rightFile").addEventListener("change", async (event) => { try { await loadText(event.target.files[0], rightText); } catch (error) { UsefulTool.status(status, error.message, "error"); } });
+    document.getElementById("compareButton").addEventListener("click", compare);
+    document.getElementById("swapButton").addEventListener("click", () => { const value = leftText.value; leftText.value = rightText.value; rightText.value = value; compare(); });
+    patchButton.addEventListener("click", () => UsefulTool.download(new Blob([patchText], { type: "text/x-diff" }), "comparison.patch"));
+    leftText.value = "line one\nline two\nshared line\n";
+    rightText.value = "line one\nline 2 edited\nshared line\nnew line\n";
+    compare();
+    window.UsefulToolDiff = { compare };
+  </script>
+</body>
+</html>

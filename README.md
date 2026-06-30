@@ -1,14 +1,23 @@
 # UsefulTool
 
-UsefulTool is a Cloudflare Pages-ready static tool collection. It is designed as a private, portable set of single-file HTML tools: every page keeps its CSS and JavaScript inline, uses browser APIs only, and does not send user data to any API.
+UsefulTool is a Cloudflare Pages-ready static tool collection. It is designed as a private, portable browser toolkit: pages use browser APIs and pinned local dependencies, and do not send user data to any API.
 
 ## Pages
 
 - `index.html` - Intro and navigation.
 - `image-converter.html` - JPG/PNG converter with canvas background removal and manual alpha mask brushing.
 - `calculator.html` - Scientific calculator with trig functions and Simpson-rule definite integration.
-- `unit-converter.html` - Offline unit converter for common measurement categories.
-- `metadata-lab.html` - Image/video metadata inspection, erasing, and controlled injection for supported formats.
+- `unit-converter.html` - Offline converter covering 18 common, scientific, mechanical, and digital measurement categories.
+- `metadata-lab.html` - Local file or Base64 JPEG/PNG/WebP/GIF/TIFF/BMP/HEIF/AVIF/MP4/WebM inspection with EXIF/GPS, XMP, ICC, IPTC, text metadata, and privacy-risk decoding.
+- `base64-converter.html` - UTF-8/file Base64 encoder and standard, URL-safe, or Data URI decoder.
+- `file-diff.html` - Side-by-side line diff and unified patch export using vendored jsdiff.
+- `rot-cipher.html` - Caesar/ROT13/ROT47 transformer, all-shift analysis, and random password input generation.
+- `lan-chat.html` - Manual-signaling WebRTC room for direct peer text and image transfer.
+- `image-editor.html` - Multi-image Fabric.js canvas with layer transforms and quality-controlled export.
+- `pdf-merge.html` - Ordered PDF and selected-page merge using pdf-lib.
+- `images-to-pdf.html` - Ordered image-to-PDF conversion with page, margin, caption, DPI, and quality controls.
+
+Advanced tools load browser builds from `vendor/`; they never use runtime CDNs. Licenses and pinned versions are documented in `vendor/README.md`.
 
 ## Local Run
 
