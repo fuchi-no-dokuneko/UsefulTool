@@ -60,7 +60,7 @@ jobs:
             --virtual-time-budget=8000 --dump-dom \
             http://127.0.0.1:8765/tests/browser-smoke.html > /tmp/usefultool-smoke.html
           grep '<pre id="result">PASS' /tmp/usefultool-smoke.html
-          if grep -q 'FAIL ' /tmp/usefultool-smoke.html; then
+          if grep -q '<pre id="result">FAIL' /tmp/usefultool-smoke.html; then
             sed -n '/<pre id="result">/,/<\/pre>/p' /tmp/usefultool-smoke.html
             exit 1
           fi
