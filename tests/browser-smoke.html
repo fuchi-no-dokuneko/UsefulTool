@@ -9,6 +9,7 @@
   <iframe id="metadata" src="../metadata-lab.html" hidden></iframe>
   <iframe id="base64" src="../base64-converter.html" hidden></iframe>
   <iframe id="diff" src="../file-diff.html" hidden></iframe>
+  <iframe id="words" src="../word-count.html" hidden></iframe>
   <iframe id="rot" src="../rot-cipher.html" hidden></iframe>
   <iframe id="pdf" src="../pdf-merge.html" hidden></iframe>
   <iframe id="imagesPdf" src="../images-to-pdf.html" hidden></iframe>
@@ -74,7 +75,7 @@
       const checks = [];
       const check = (name, pass, detail) => checks.push({ name, pass: Boolean(pass), detail });
 
-      const expectedHomeLinks = ["image-converter.html", "calculator.html", "unit-converter.html", "metadata-lab.html", "base64-converter.html", "file-diff.html", "rot-cipher.html", "lan-chat.html", "image-editor.html", "pdf-merge.html", "images-to-pdf.html"];
+      const expectedHomeLinks = ["image-converter.html", "calculator.html", "unit-converter.html", "metadata-lab.html", "base64-converter.html", "file-diff.html", "word-count.html", "rot-cipher.html", "lan-chat.html", "image-editor.html", "pdf-merge.html", "images-to-pdf.html"];
       const homeLinks = [...document.getElementById("home").contentDocument.querySelectorAll(".hero .actions a")].map((link) => link.getAttribute("href"));
       check("home shortcuts cover every tool", expectedHomeLinks.every((page) => homeLinks.includes(page)), homeLinks.join(", "));
 
@@ -89,6 +90,11 @@
       const encoded = base64.bytesToBase64(new TextEncoder().encode("Useful Tool"));
       check("Base64 UTF-8 round trip", new TextDecoder().decode(base64.base64ToBytes(encoded).bytes) === "Useful Tool");
       check("URL-safe Base64", base64.base64ToBytes("-_8").bytes.join(",") === "251,255");
+
+      const wordCount = document.getElementById("words").contentWindow.UsefulToolWordCount;
+      const wordStats = wordCount.analyze("One fish, two fish.\n\nRed fish blue fish!");
+      check("word-count totals", wordStats.words === 8 && wordStats.sentences === 2 && wordStats.paragraphs === 2);
+      check("word-count frequency", wordStats.frequencies[0][0] === "fish" && wordStats.frequencies[0][1] === 4);
 
       const diffWindow = document.getElementById("diff").contentWindow;
       check("jsdiff loaded locally", typeof diffWindow.Diff.diffLines === "function");

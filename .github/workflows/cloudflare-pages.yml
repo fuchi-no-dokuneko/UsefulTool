@@ -9,7 +9,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Check required files
         run: |
           test -f index.html
@@ -19,6 +19,7 @@ jobs:
           test -f metadata-lab.html
           test -f base64-converter.html
           test -f file-diff.html
+          test -f word-count.html
           test -f rot-cipher.html
           test -f lan-chat.html
           test -f image-editor.html
@@ -30,7 +31,14 @@ jobs:
           test -f vendor/fabric.min.mjs
           test -f vendor/pdf-lib.min.js
           test -f tests/browser-smoke.html
+          test -f scripts/build-offline.mjs
+          test -f scripts/verify-offline.mjs
           test -x serve-local.sh
+      - name: Build and verify offline downloads
+        run: |
+          node scripts/build-offline.mjs
+          node scripts/verify-offline.mjs
+          git diff --exit-code -- offline
       - name: Check for external runtime URLs
         run: |
           if grep -RInE 'https?://|//[^ ]+\.[a-zA-Z]{2,}' -- *.html _headers wrangler.toml; then
@@ -41,7 +49,7 @@ jobs:
         run: grep -R "connect-src 'none'" *.html _headers
       - name: Check inline JavaScript syntax
         run: |
-          for file in unit-converter.html metadata-lab.html base64-converter.html file-diff.html rot-cipher.html lan-chat.html pdf-merge.html images-to-pdf.html; do
+          for file in unit-converter.html metadata-lab.html base64-converter.html file-diff.html word-count.html rot-cipher.html lan-chat.html pdf-merge.html images-to-pdf.html; do
             perl -0777 -ne 'while (/<script>(.*?)<\/script>/sg) { print $1 }' "$file" | node --check
           done
       - name: Run browser smoke tests
@@ -70,7 +78,9 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - name: Build offline downloads
+        run: node scripts/build-offline.mjs
       - name: Check Cloudflare deployment config
         id: config
         env:
@@ -88,7 +98,7 @@ jobs:
           fi
       - name: Deploy to Cloudflare Pages
         if: steps.config.outputs.configured == 'true'
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

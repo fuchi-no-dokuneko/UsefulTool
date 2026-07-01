@@ -11,6 +11,7 @@ UsefulTool is a Cloudflare Pages-ready static tool collection. It is designed as
 - `metadata-lab.html` - Local file or Base64 JPEG/PNG/WebP/GIF/TIFF/BMP/HEIF/AVIF/MP4/WebM inspection with EXIF/GPS, XMP, ICC, IPTC, text metadata, and privacy-risk decoding.
 - `base64-converter.html` - UTF-8/file Base64 encoder and standard, URL-safe, or Data URI decoder.
 - `file-diff.html` - Side-by-side line diff and unified patch export using vendored jsdiff.
+- `word-count.html` - Live word, character, sentence, paragraph, line, reading-time, and frequency analysis.
 - `rot-cipher.html` - Caesar/ROT13/ROT47 transformer, all-shift analysis, and random password input generation.
 - `lan-chat.html` - Manual-signaling WebRTC room for direct peer text and image transfer.
 - `image-editor.html` - Multi-image Fabric.js canvas with layer transforms and quality-controlled export.
@@ -18,6 +19,7 @@ UsefulTool is a Cloudflare Pages-ready static tool collection. It is designed as
 - `images-to-pdf.html` - Ordered image-to-PDF conversion with page, margin, caption, DPI, and quality controls.
 
 Advanced tools load browser builds from `vendor/`; they never use runtime CDNs. Licenses and pinned versions are documented in `vendor/README.md`.
+Every page links to a generated self-contained copy in `offline/`, so one downloaded HTML file includes the local styles and JavaScript it needs.
 
 ## Local Run
 

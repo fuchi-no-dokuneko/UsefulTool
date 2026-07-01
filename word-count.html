@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>Word Count - UsefulTool</title>
+  <link rel="stylesheet" href="toolkit.css">
+  <style>
+    .counter-shell { display: grid; grid-template-columns: minmax(280px, 1.25fr) minmax(260px, .75fr); min-height: calc(100vh - 180px); }
+    .editor { padding: 22px clamp(16px, 3vw, 34px); background: #fff; border-right: 1px solid var(--line); }
+    textarea { width: 100%; min-height: 460px; resize: vertical; padding: 16px; border: 1px solid var(--line); background: #fff; color: var(--ink); font: 16px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .results { padding: 22px clamp(16px, 3vw, 34px); }
+    .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .stat { min-width: 0; padding: 14px; border: 1px solid var(--line); background: #fff; }
+    .stat strong { display: block; overflow-wrap: anywhere; font: 800 25px/1.1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .stat span { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; }
+    table { width: 100%; border-collapse: collapse; background: #fff; }
+    th, td { padding: 9px 10px; border-bottom: 1px solid var(--line); text-align: left; }
+    th:last-child, td:last-child { text-align: right; }
+    .section-title { margin: 24px 0 10px; font-size: 18px; }
+    @media (max-width: 820px) { .counter-shell { grid-template-columns: 1fr; } .editor { border-right: 0; border-bottom: 1px solid var(--line); } textarea { min-height: 340px; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="mark">UT</span><span>Word Count</span></a>
+    <nav aria-label="Tool navigation"><a href="index.html">Home</a><a href="file-diff.html">Diff</a><a href="base64-converter.html">Base64</a><a href="offline/word-count.html" download>Download HTML</a></nav>
+  </header>
+  <section class="page-head"><h1>Word Count</h1><p>Measure text locally and inspect its most frequent words.</p></section>
+  <main class="counter-shell">
+    <section class="editor">
+      <div class="stack">
+        <label>Text<textarea id="text" placeholder="Type or paste text here" autofocus></textarea></label>
+        <div class="row">
+          <label class="button">Open text file<input id="file" type="file" accept="text/*,.md,.csv,.json,.html,.xml" hidden></label>
+          <button id="copy" type="button">Copy summary</button>
+          <button id="download" type="button">Download report</button>
+          <button id="clear" type="button">Clear</button>
+        </div>
+        <div class="status" id="status" aria-live="polite">Ready.</div>
+      </div>
+    </section>
+    <aside class="results" aria-label="Text statistics">
+      <div class="stats">
+        <div class="stat"><strong id="words">0</strong><span>Words</span></div>
+        <div class="stat"><strong id="characters">0</strong><span>Characters</span></div>
+        <div class="stat"><strong id="charactersNoSpaces">0</strong><span>Characters without spaces</span></div>
+        <div class="stat"><strong id="sentences">0</strong><span>Sentences</span></div>
+        <div class="stat"><strong id="paragraphs">0</strong><span>Paragraphs</span></div>
+        <div class="stat"><strong id="lines">0</strong><span>Lines</span></div>
+        <div class="stat"><strong id="readingTime">0 sec</strong><span>Reading time</span></div>
+        <div class="stat"><strong id="speakingTime">0 sec</strong><span>Speaking time</span></div>
+      </div>
+      <h2 class="section-title">Frequent words</h2>
+      <table><thead><tr><th>Word</th><th>Count</th></tr></thead><tbody id="frequency"><tr><td colspan="2">No words yet.</td></tr></tbody></table>
+    </aside>
+  </main>
+  <script src="toolkit.js"></script>
+  <script>
+    const textInput = document.getElementById("text");
+    const status = document.getElementById("status");
+    let current;
+
+    function duration(words, rate) {
+      const seconds = Math.ceil(words / rate * 60);
+      if (!seconds) return "0 sec";
+      if (seconds < 60) return seconds + " sec";
+      const minutes = Math.floor(seconds / 60);
+      const remainder = seconds % 60;
+      return minutes + " min" + (remainder ? " " + remainder + " sec" : "");
+    }
+
+    function analyze(text) {
+      const matches = text.match(/[\p{L}\p{N}]+(?:['’.-][\p{L}\p{N}]+)*/gu) || [];
+      const frequencies = new Map();
+      matches.forEach((word) => {
+        const normalized = word.toLocaleLowerCase();
+        frequencies.set(normalized, (frequencies.get(normalized) || 0) + 1);
+      });
+      let sentences = 0;
+      if (text.trim()) {
+        if (typeof Intl.Segmenter === "function") {
+          sentences = [...new Intl.Segmenter(undefined, { granularity: "sentence" }).segment(text)]
+            .filter((part) => /[\p{L}\p{N}]/u.test(part.segment)).length;
+        } else {
+          sentences = (text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || []).filter((part) => part.trim()).length;
+        }
+      }
+      return {
+        words: matches.length,
+        characters: [...text].length,
+        charactersNoSpaces: [...text.replace(/\s/gu, "")].length,
+        sentences,
+        paragraphs: text.trim() ? text.trim().split(/\n\s*\n/u).filter((part) => part.trim()).length : 0,
+        lines: text ? text.split(/\r\n?|\n/u).length : 0,
+        readingTime: duration(matches.length, 200),
+        speakingTime: duration(matches.length, 130),
+        frequencies: [...frequencies].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 10)
+      };
+    }
+
+    function summary(result) {
+      return [
+        "Words: " + result.words,
+        "Characters: " + result.characters,
+        "Characters without spaces: " + result.charactersNoSpaces,
+        "Sentences: " + result.sentences,
+        "Paragraphs: " + result.paragraphs,
+        "Lines: " + result.lines,
+        "Reading time: " + result.readingTime,
+        "Speaking time: " + result.speakingTime,
+        "",
+        "Frequent words:",
+        ...(result.frequencies.length ? result.frequencies.map(([word, count]) => word + ": " + count) : ["None"])
+      ].join("\n");
+    }
+
+    function render() {
+      current = analyze(textInput.value);
+      ["words", "characters", "charactersNoSpaces", "sentences", "paragraphs", "lines", "readingTime", "speakingTime"]
+        .forEach((key) => { document.getElementById(key).textContent = current[key]; });
+      const body = document.getElementById("frequency");
+      body.replaceChildren();
+      if (!current.frequencies.length) {
+        const row = body.insertRow();
+        const cell = row.insertCell();
+        cell.colSpan = 2;
+        cell.textContent = "No words yet.";
+      } else {
+        current.frequencies.forEach(([word, count]) => {
+          const row = body.insertRow();
+          row.insertCell().textContent = word;
+          row.insertCell().textContent = count;
+        });
+      }
+    }
+
+    textInput.addEventListener("input", render);
+    document.getElementById("clear").addEventListener("click", () => { textInput.value = ""; render(); textInput.focus(); UsefulTool.status(status, "Cleared."); });
+    document.getElementById("file").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      textInput.value = await file.text();
+      render();
+      UsefulTool.status(status, "Loaded " + file.name + ".", "success");
+    });
+    document.getElementById("copy").addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(summary(current)); UsefulTool.status(status, "Summary copied.", "success"); }
+      catch (error) { UsefulTool.status(status, "Clipboard access was denied.", "error"); }
+    });
+    document.getElementById("download").addEventListener("click", () => {
+      UsefulTool.download(new Blob([summary(current)], { type: "text/plain;charset=utf-8" }), "usefultool-word-count.txt");
+      UsefulTool.status(status, "Report downloaded.", "success");
+    });
+
+    window.UsefulToolWordCount = { analyze };
+    render();
+  </script>
+</body>
+</html>
