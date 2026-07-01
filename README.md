@@ -46,3 +46,7 @@ The app is static-only. Runtime security headers are in `_headers`, and the page
 - Variable: `CLOUDFLARE_PROJECT_NAME`
 
 If those values are not configured, the workflow still performs static validation and skips deployment.
+
+## Credits
+
+See [CREDITS.md](CREDITS.md) and `vendor/` for third-party library attribution and license texts.
