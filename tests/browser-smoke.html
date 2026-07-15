@@ -99,6 +99,13 @@
       const diffWindow = document.getElementById("diff").contentWindow;
       check("jsdiff loaded locally", typeof diffWindow.Diff.diffLines === "function");
       check("side-by-side diff rendered", diffWindow.document.querySelectorAll(".added,.removed").length >= 2);
+      check("word diff highlighting defaults on", diffWindow.document.getElementById("inlineWordDiff").checked);
+      check("word diff highlights inline edits", diffWindow.document.querySelectorAll(".inline-added,.inline-removed").length >= 2);
+      diffWindow.document.getElementById("inlineWordDiff").checked = false;
+      diffWindow.UsefulToolDiff.compare();
+      check("word diff highlighting can be disabled", diffWindow.document.querySelectorAll(".inline-added,.inline-removed").length === 0);
+      diffWindow.document.getElementById("inlineWordDiff").checked = true;
+      diffWindow.UsefulToolDiff.compare();
 
       const rot = document.getElementById("rot").contentWindow.UsefulToolRot;
       check("ROT13 reversible", rot.rotateAlpha(rot.rotateAlpha("Hello, Z!", 13), 13) === "Hello, Z!");

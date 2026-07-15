@@ -115,6 +115,19 @@ footer { padding: 18px clamp(16px, 4vw, 48px); color: var(--muted); border-top: 
     .same { background: #fff; }
     .removed { background: #fde9e7; color: #72221d; }
     .added { background: #e5f5eb; color: #17562e; }
+    .removed.diff-minor { background: #fff1ef; }
+    .removed.diff-medium { background: #fbd8d3; }
+    .removed.diff-heavy { background: #f5b9b0; }
+    .added.diff-minor { background: #effaf3; }
+    .added.diff-medium { background: #d6f0df; }
+    .added.diff-heavy { background: #b8e3c8; }
+    .inline-change { border-radius: 4px; padding: 0 2px; font-weight: 700; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+    .inline-removed { background: #f28b82; color: #5f1712; text-decoration: line-through; }
+    .inline-removed.diff-medium { background: #e95f53; color: #fff8f7; }
+    .inline-removed.diff-heavy { background: #c9342a; color: #fff; }
+    .inline-added { background: #8fd6a6; color: #083c1c; }
+    .inline-added.diff-medium { background: #47b86c; color: #f4fff7; }
+    .inline-added.diff-heavy { background: #168340; color: #fff; }
     .empty { background: #f2f4f2; }
     .diff-output { overflow: auto; border: 1px solid var(--line); background: #fff; }
     @media (max-width: 800px) { .editors { grid-template-columns: 1fr; } }
@@ -138,6 +151,7 @@ footer { padding: 18px clamp(16px, 4vw, 48px); color: var(--muted); border-top: 
       <button class="primary" id="compareButton" type="button">Compare</button>
       <button id="swapButton" type="button">Swap sides</button>
       <label class="check"><input id="ignoreWhitespace" type="checkbox"> Ignore whitespace-only changes</label>
+      <label class="check"><input id="inlineWordDiff" type="checkbox" checked> Highlight word changes</label>
       <button id="patchButton" type="button" disabled>Download unified patch</button>
     </div>
     <div class="status" id="status">Load or paste two text documents.</div>
@@ -186,6 +200,8 @@ window.UsefulTool = {
     const grid = document.getElementById("diffGrid");
     const status = document.getElementById("status");
     const patchButton = document.getElementById("patchButton");
+    const ignoreWhitespace = document.getElementById("ignoreWhitespace");
+    const inlineWordDiff = document.getElementById("inlineWordDiff");
     let patchText = "";
 
     async function loadText(file, target) {
@@ -201,23 +217,73 @@ window.UsefulTool = {
       return result;
     }
 
-    function appendCell(value, className, number) {
+    function inlineChangeFor(left, right, enabled) {
+      if (!enabled || left == null || right == null) return null;
+      if (left.length + right.length > 2400) return null;
+      const parts = Diff.diffWordsWithSpace(left, right);
+      let addedChars = 0;
+      let removedChars = 0;
+      let unchangedChars = 0;
+      for (const part of parts) {
+        if (part.added) addedChars += part.value.length;
+        else if (part.removed) removedChars += part.value.length;
+        else unchangedChars += part.value.length;
+      }
+      const changedChars = addedChars + removedChars;
+      if (!changedChars) return null;
+      const longestLine = Math.max(left.length, right.length, 1);
+      const retainedRatio = unchangedChars / longestLine;
+      const limitedEdit = retainedRatio >= 0.35 || changedChars <= 24;
+      if (!limitedEdit) return null;
+      const ratio = changedChars / Math.max(left.length + right.length, 1);
+      const level = ratio <= 0.22 ? "diff-minor" : ratio <= 0.48 ? "diff-medium" : "diff-heavy";
+      return { parts, level };
+    }
+
+    function appendInlineParts(content, parts, side, level) {
+      for (const part of parts) {
+        if (part.added && side === "right") {
+          const span = document.createElement("span");
+          span.className = "inline-change inline-added " + level;
+          span.textContent = part.value;
+          content.append(span);
+        } else if (part.removed && side === "left") {
+          const span = document.createElement("span");
+          span.className = "inline-change inline-removed " + level;
+          span.textContent = part.value;
+          content.append(span);
+        } else if (!part.added && !part.removed) {
+          content.append(document.createTextNode(part.value));
+        }
+      }
+    }
+
+    function appendCell(value, className, number, inlineChange, side) {
       const numberCell = document.createElement("div");
       numberCell.className = "line-number";
       numberCell.textContent = number == null ? "" : number;
       const content = document.createElement("div");
       content.className = className;
-      content.textContent = value == null ? "" : value;
+      if (inlineChange && value != null && (side === "left" || side === "right")) {
+        appendInlineParts(content, inlineChange.parts, side, inlineChange.level);
+      } else {
+        content.textContent = value == null ? "" : value;
+      }
       grid.append(numberCell, content);
     }
 
-    function appendRow(left, right, leftClass, rightClass, leftNumber, rightNumber) {
-      appendCell(left, leftClass, leftNumber);
-      appendCell(right, rightClass, rightNumber);
+    function appendRow(left, right, leftClass, rightClass, leftNumber, rightNumber, inlineChange) {
+      appendCell(left, leftClass, leftNumber, inlineChange, "left");
+      appendCell(right, rightClass, rightNumber, inlineChange, "right");
+    }
+
+    function changeClass(kind, inlineChange) {
+      return kind + " " + (inlineChange ? inlineChange.level : "diff-heavy");
     }
 
     function compare() {
-      const changes = Diff.diffLines(leftText.value, rightText.value, { ignoreWhitespace: document.getElementById("ignoreWhitespace").checked });
+      const inlineEnabled = inlineWordDiff.checked;
+      const changes = Diff.diffLines(leftText.value, rightText.value, { ignoreWhitespace: ignoreWhitespace.checked });
       grid.replaceChildren();
       let leftNumber = 1;
       let rightNumber = 1;
@@ -230,25 +296,30 @@ window.UsefulTool = {
           const added = lines(changes[index + 1].value);
           const count = Math.max(removed.length, added.length);
           for (let line = 0; line < count; line += 1) {
+            const inlineChange = inlineChangeFor(removed[line], added[line], inlineEnabled);
             appendRow(
-              removed[line], added[line], removed[line] == null ? "empty" : "removed", added[line] == null ? "empty" : "added",
-              removed[line] == null ? null : leftNumber++, added[line] == null ? null : rightNumber++
+              removed[line], added[line],
+              removed[line] == null ? "empty" : changeClass("removed", inlineChange),
+              added[line] == null ? "empty" : changeClass("added", inlineChange),
+              removed[line] == null ? null : leftNumber++,
+              added[line] == null ? null : rightNumber++,
+              inlineChange
             );
           }
           removals += removed.length;
           additions += added.length;
           index += 1;
         } else if (change.removed) {
-          for (const value of lines(change.value)) { appendRow(value, null, "removed", "empty", leftNumber++, null); removals += 1; }
+          for (const value of lines(change.value)) { appendRow(value, null, "removed diff-heavy", "empty", leftNumber++, null); removals += 1; }
         } else if (change.added) {
-          for (const value of lines(change.value)) { appendRow(null, value, "empty", "added", null, rightNumber++); additions += 1; }
+          for (const value of lines(change.value)) { appendRow(null, value, "empty", "added diff-heavy", null, rightNumber++); additions += 1; }
         } else {
           for (const value of lines(change.value)) appendRow(value, value, "same", "same", leftNumber++, rightNumber++);
         }
       }
       patchText = Diff.createTwoFilesPatch("left", "right", leftText.value, rightText.value, "", "", { context: 3 });
       patchButton.disabled = false;
-      UsefulTool.status(status, additions + " added line(s), " + removals + " removed line(s).", additions || removals ? "warn" : "");
+      UsefulTool.status(status, additions + " added line(s), " + removals + " removed line(s). Word highlighting " + (inlineEnabled ? "on." : "off."), additions || removals ? "warn" : "");
     }
 
     document.getElementById("leftFile").addEventListener("change", async (event) => { try { await loadText(event.target.files[0], leftText); } catch (error) { UsefulTool.status(status, error.message, "error"); } });
@@ -259,7 +330,7 @@ window.UsefulTool = {
     leftText.value = "line one\nline two\nshared line\n";
     rightText.value = "line one\nline 2 edited\nshared line\nnew line\n";
     compare();
-    window.UsefulToolDiff = { compare };
+    window.UsefulToolDiff = { compare, inlineChangeFor };
   </script>
 </body>
 </html>

@@ -10,7 +10,7 @@ UsefulTool is a Cloudflare Pages-ready static tool collection. It is designed as
 - `unit-converter.html` - Offline converter covering 18 common, scientific, mechanical, and digital measurement categories.
 - `metadata-lab.html` - Local file or Base64 JPEG/PNG/WebP/GIF/TIFF/BMP/HEIF/AVIF/MP4/WebM inspection with EXIF/GPS, XMP, ICC, IPTC, text metadata, and privacy-risk decoding.
 - `base64-converter.html` - UTF-8/file Base64 encoder and standard, URL-safe, or Data URI decoder.
-- `file-diff.html` - Side-by-side line diff and unified patch export using vendored jsdiff.
+- `file-diff.html` - Side-by-side line diff, default-on inline word highlights, and unified patch export using vendored jsdiff.
 - `word-count.html` - Live word, character, sentence, paragraph, line, reading-time, and frequency analysis.
 - `rot-cipher.html` - Caesar/ROT13/ROT47 transformer, all-shift analysis, and random password input generation.
 - `lan-chat.html` - Manual-signaling WebRTC room for direct peer text and image transfer.
