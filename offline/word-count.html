@@ -192,7 +192,38 @@ window.UsefulTool = {
   <script>
     const textInput = document.getElementById("text");
     const status = document.getElementById("status");
+    const storageKey = "usefultool:word-count:text";
     let current;
+
+    function storageAvailable() {
+      try {
+        const key = "usefultool:storage-test";
+        localStorage.setItem(key, "1");
+        localStorage.removeItem(key);
+        return true;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    const canStoreText = storageAvailable();
+
+    function saveText() {
+      if (!canStoreText) return;
+      try {
+        localStorage.setItem(storageKey, textInput.value);
+      } catch (error) {
+        UsefulTool.status(status, "Browser storage is full. Current text is not saved for reload.", "warn");
+      }
+    }
+
+    function restoreText() {
+      if (!canStoreText) return false;
+      const saved = localStorage.getItem(storageKey);
+      if (saved == null) return false;
+      textInput.value = saved;
+      return true;
+    }
 
     function duration(words, rate) {
       const seconds = Math.ceil(words / rate * 60);
@@ -268,12 +299,13 @@ window.UsefulTool = {
       }
     }
 
-    textInput.addEventListener("input", render);
-    document.getElementById("clear").addEventListener("click", () => { textInput.value = ""; render(); textInput.focus(); UsefulTool.status(status, "Cleared."); });
+    textInput.addEventListener("input", () => { saveText(); render(); });
+    document.getElementById("clear").addEventListener("click", () => { textInput.value = ""; saveText(); render(); textInput.focus(); UsefulTool.status(status, "Cleared."); });
     document.getElementById("file").addEventListener("change", async (event) => {
       const file = event.target.files[0];
       if (!file) return;
       textInput.value = await file.text();
+      saveText();
       render();
       UsefulTool.status(status, "Loaded " + file.name + ".", "success");
     });
@@ -286,7 +318,8 @@ window.UsefulTool = {
       UsefulTool.status(status, "Report downloaded.", "success");
     });
 
-    window.UsefulToolWordCount = { analyze };
+    restoreText();
+    window.UsefulToolWordCount = { analyze, saveText, restoreText, storageKey };
     render();
   </script>
 </body>

@@ -24,6 +24,13 @@
       return new Promise((resolve) => frame.addEventListener("load", resolve, { once: true }));
     }
 
+    function reloaded(frame) {
+      return new Promise((resolve) => {
+        frame.addEventListener("load", resolve, { once: true });
+        frame.contentWindow.location.reload();
+      });
+    }
+
     function bytesFromBase64(value) {
       const raw = atob(value);
       return Uint8Array.from(raw, (character) => character.charCodeAt(0));
@@ -91,12 +98,26 @@
       check("Base64 UTF-8 round trip", new TextDecoder().decode(base64.base64ToBytes(encoded).bytes) === "Useful Tool");
       check("URL-safe Base64", base64.base64ToBytes("-_8").bytes.join(",") === "251,255");
 
-      const wordCount = document.getElementById("words").contentWindow.UsefulToolWordCount;
+      const wordFrame = document.getElementById("words");
+      let wordWindow = wordFrame.contentWindow;
+      const wordCount = wordWindow.UsefulToolWordCount;
       const wordStats = wordCount.analyze("One fish, two fish.\n\nRed fish blue fish!");
       check("word-count totals", wordStats.words === 8 && wordStats.sentences === 2 && wordStats.paragraphs === 2);
       check("word-count frequency", wordStats.frequencies[0][0] === "fish" && wordStats.frequencies[0][1] === 4);
+      const persistedWordText = "Reload keeps this word-count draft.";
+      wordWindow.document.getElementById("text").value = persistedWordText;
+      wordWindow.document.getElementById("text").dispatchEvent(new Event("input", { bubbles: true }));
+      await reloaded(wordFrame);
+      wordWindow = wordFrame.contentWindow;
+      check("word-count text survives reload", wordWindow.document.getElementById("text").value === persistedWordText);
+      wordWindow.localStorage.removeItem(wordWindow.UsefulToolWordCount.storageKey);
 
-      const diffWindow = document.getElementById("diff").contentWindow;
+      const diffFrame = document.getElementById("diff");
+      let diffWindow = diffFrame.contentWindow;
+      diffWindow.document.getElementById("leftText").value = "line one\nline two\nshared line\n";
+      diffWindow.document.getElementById("rightText").value = "line one\nline 2 edited\nshared line\nnew line\n";
+      diffWindow.UsefulToolDiff.saveDrafts();
+      diffWindow.UsefulToolDiff.compare();
       check("jsdiff loaded locally", typeof diffWindow.Diff.diffLines === "function");
       check("side-by-side diff rendered", diffWindow.document.querySelectorAll(".added,.removed").length >= 2);
       check("word diff highlighting defaults on", diffWindow.document.getElementById("inlineWordDiff").checked);
@@ -106,6 +127,18 @@
       check("word diff highlighting can be disabled", diffWindow.document.querySelectorAll(".inline-added,.inline-removed").length === 0);
       diffWindow.document.getElementById("inlineWordDiff").checked = true;
       diffWindow.UsefulToolDiff.compare();
+      const persistedLeft = "left draft\nkept after reload\n";
+      const persistedRight = "right draft\nkept after reload\n";
+      diffWindow.document.getElementById("leftText").value = persistedLeft;
+      diffWindow.document.getElementById("rightText").value = persistedRight;
+      diffWindow.document.getElementById("leftText").dispatchEvent(new Event("input", { bubbles: true }));
+      diffWindow.document.getElementById("rightText").dispatchEvent(new Event("input", { bubbles: true }));
+      await reloaded(diffFrame);
+      diffWindow = diffFrame.contentWindow;
+      check("file-diff left text survives reload", diffWindow.document.getElementById("leftText").value === persistedLeft);
+      check("file-diff right text survives reload", diffWindow.document.getElementById("rightText").value === persistedRight);
+      diffWindow.localStorage.removeItem(diffWindow.UsefulToolDiff.storageKeys.left);
+      diffWindow.localStorage.removeItem(diffWindow.UsefulToolDiff.storageKeys.right);
 
       const rot = document.getElementById("rot").contentWindow.UsefulToolRot;
       check("ROT13 reversible", rot.rotateAlpha(rot.rotateAlpha("Hello, Z!", 13), 13) === "Hello, Z!");

@@ -69,12 +69,50 @@
     const patchButton = document.getElementById("patchButton");
     const ignoreWhitespace = document.getElementById("ignoreWhitespace");
     const inlineWordDiff = document.getElementById("inlineWordDiff");
+    const storageKeys = {
+      left: "usefultool:file-diff:left-text",
+      right: "usefultool:file-diff:right-text"
+    };
     let patchText = "";
+
+    function storageAvailable() {
+      try {
+        const key = "usefultool:storage-test";
+        localStorage.setItem(key, "1");
+        localStorage.removeItem(key);
+        return true;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    const canStoreDrafts = storageAvailable();
+
+    function saveDrafts() {
+      if (!canStoreDrafts) return;
+      try {
+        localStorage.setItem(storageKeys.left, leftText.value);
+        localStorage.setItem(storageKeys.right, rightText.value);
+      } catch (error) {
+        UsefulTool.status(status, "Browser storage is full. Current text is not saved for reload.", "warn");
+      }
+    }
+
+    function restoreDrafts() {
+      if (!canStoreDrafts) return false;
+      const savedLeft = localStorage.getItem(storageKeys.left);
+      const savedRight = localStorage.getItem(storageKeys.right);
+      if (savedLeft == null && savedRight == null) return false;
+      leftText.value = savedLeft || "";
+      rightText.value = savedRight || "";
+      return true;
+    }
 
     async function loadText(file, target) {
       if (!file) return;
       if (file.size > 5 * 1024 * 1024) throw new Error("Text file exceeds 5 MiB");
       target.value = await file.text();
+      saveDrafts();
     }
 
     function lines(value) {
@@ -149,6 +187,7 @@
     }
 
     function compare() {
+      saveDrafts();
       const inlineEnabled = inlineWordDiff.checked;
       const changes = Diff.diffLines(leftText.value, rightText.value, { ignoreWhitespace: ignoreWhitespace.checked });
       grid.replaceChildren();
@@ -189,15 +228,19 @@
       UsefulTool.status(status, additions + " added line(s), " + removals + " removed line(s). Word highlighting " + (inlineEnabled ? "on." : "off."), additions || removals ? "warn" : "");
     }
 
-    document.getElementById("leftFile").addEventListener("change", async (event) => { try { await loadText(event.target.files[0], leftText); } catch (error) { UsefulTool.status(status, error.message, "error"); } });
-    document.getElementById("rightFile").addEventListener("change", async (event) => { try { await loadText(event.target.files[0], rightText); } catch (error) { UsefulTool.status(status, error.message, "error"); } });
+    leftText.addEventListener("input", saveDrafts);
+    rightText.addEventListener("input", saveDrafts);
+    document.getElementById("leftFile").addEventListener("change", async (event) => { try { await loadText(event.target.files[0], leftText); compare(); } catch (error) { UsefulTool.status(status, error.message, "error"); } });
+    document.getElementById("rightFile").addEventListener("change", async (event) => { try { await loadText(event.target.files[0], rightText); compare(); } catch (error) { UsefulTool.status(status, error.message, "error"); } });
     document.getElementById("compareButton").addEventListener("click", compare);
-    document.getElementById("swapButton").addEventListener("click", () => { const value = leftText.value; leftText.value = rightText.value; rightText.value = value; compare(); });
+    document.getElementById("swapButton").addEventListener("click", () => { const value = leftText.value; leftText.value = rightText.value; rightText.value = value; saveDrafts(); compare(); });
     patchButton.addEventListener("click", () => UsefulTool.download(new Blob([patchText], { type: "text/x-diff" }), "comparison.patch"));
-    leftText.value = "line one\nline two\nshared line\n";
-    rightText.value = "line one\nline 2 edited\nshared line\nnew line\n";
+    if (!restoreDrafts()) {
+      leftText.value = "line one\nline two\nshared line\n";
+      rightText.value = "line one\nline 2 edited\nshared line\nnew line\n";
+    }
     compare();
-    window.UsefulToolDiff = { compare, inlineChangeFor };
+    window.UsefulToolDiff = { compare, inlineChangeFor, saveDrafts, restoreDrafts, storageKeys };
   </script>
 </body>
 </html>
