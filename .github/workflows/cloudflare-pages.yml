@@ -20,6 +20,7 @@ jobs:
           test -f base64-converter.html
           test -f file-diff.html
           test -f word-count.html
+          test -f text-transfer.html
           test -f rot-cipher.html
           test -f lan-chat.html
           test -f image-editor.html
@@ -49,7 +50,7 @@ jobs:
         run: grep -R "connect-src 'none'" *.html _headers
       - name: Check inline JavaScript syntax
         run: |
-          for file in unit-converter.html metadata-lab.html base64-converter.html file-diff.html word-count.html rot-cipher.html lan-chat.html pdf-merge.html images-to-pdf.html; do
+          for file in unit-converter.html metadata-lab.html base64-converter.html file-diff.html word-count.html text-transfer.html rot-cipher.html lan-chat.html pdf-merge.html images-to-pdf.html; do
             perl -0777 -ne 'while (/<script>(.*?)<\/script>/sg) { print $1 }' "$file" | node --check
           done
       - name: Run browser smoke tests

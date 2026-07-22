@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
-  <title>Word Count - UsefulTool</title>
+  <title>Text Editor - UsefulTool</title>
   <style data-inlined-from="toolkit.css">
 :root {
   color-scheme: light;
@@ -20,6 +20,19 @@
   --red: #9b2f2f;
   --amber: #8a5a00;
   --code: #101614;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ink: #e7f0eb;
+  --muted: #a8b8b0;
+  --line: #34443b;
+  --paper: #101614;
+  --panel: #18211d;
+  --green: #43bd92;
+  --teal: #54bdd0;
+  --red: #f08b84;
+  --amber: #e7bd5d;
+  --code: #070b09;
 }
 * { box-sizing: border-box; }
 html { min-width: 300px; }
@@ -46,6 +59,7 @@ button:hover, .button:hover { border-color: var(--green); }
 button:disabled { opacity: .5; cursor: not-allowed; }
 .primary { color: #fff; background: var(--green); border-color: var(--green); }
 .danger { color: #fff; background: var(--red); border-color: var(--red); }
+.theme-toggle { min-height: 36px; padding: 7px 10px; font-size: 14px; }
 .topbar {
   min-height: 64px;
   display: flex;
@@ -53,18 +67,18 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   justify-content: space-between;
   gap: 16px;
   padding: 12px clamp(14px, 3vw, 36px);
-  background: #fff;
+  background: var(--panel);
   border-bottom: 1px solid var(--line);
 }
 .brand { display: flex; align-items: center; gap: 10px; color: inherit; text-decoration: none; font-weight: 800; }
 .mark { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 6px; color: #fff; background: var(--green); }
 .topbar nav { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
-.topbar nav a { min-height: 36px; display: inline-flex; align-items: center; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; color: inherit; text-decoration: none; font-size: 14px; font-weight: 700; }
-.page-head { padding: 26px clamp(16px, 4vw, 48px) 20px; border-bottom: 1px solid var(--line); background: #fff; }
+.topbar nav a { min-height: 36px; display: inline-flex; align-items: center; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; color: inherit; text-decoration: none; font-size: 14px; font-weight: 700; background: var(--panel); }
+.page-head { padding: 26px clamp(16px, 4vw, 48px) 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
 .page-head h1 { margin: 0; font-size: clamp(30px, 4vw, 48px); line-height: 1.05; letter-spacing: 0; }
 .page-head p { margin: 10px 0 0; max-width: 780px; color: var(--muted); font-size: 17px; }
 .tool-shell { display: grid; grid-template-columns: minmax(250px, 340px) minmax(0, 1fr); min-height: calc(100vh - 180px); }
-.controls { padding: 22px clamp(16px, 3vw, 30px); background: #fff; border-right: 1px solid var(--line); }
+.controls { padding: 22px clamp(16px, 3vw, 30px); background: var(--panel); border-right: 1px solid var(--line); }
 .workspace { min-width: 0; padding: 22px clamp(16px, 3vw, 34px); }
 .stack { display: grid; gap: 14px; }
 .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
@@ -74,7 +88,7 @@ label { display: grid; gap: 6px; color: var(--muted); font-size: 13px; font-weig
 input, select, textarea {
   width: 100%;
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--panel);
   color: var(--ink);
   padding: 10px 11px;
 }
@@ -82,21 +96,26 @@ textarea { resize: vertical; min-height: 160px; font-family: ui-monospace, SFMon
 input[type="range"], input[type="checkbox"] { width: auto; padding: 0; }
 .check { display: flex; align-items: center; gap: 8px; color: var(--ink); }
 .status { min-height: 42px; padding: 10px 12px; border-left: 4px solid var(--teal); background: #edf5f5; color: #29464a; }
+:root[data-theme="dark"] .status { background: #142a2d; color: #c3e5ea; }
 .status.error { border-color: var(--red); background: #faeeee; color: #6e2525; }
+:root[data-theme="dark"] .status.error { background: #311a1a; color: #ffd0ca; }
 .status.warn { border-color: var(--amber); background: #fbf4e5; color: #654817; }
-.output { border: 1px solid var(--line); background: #fff; min-height: 180px; padding: 14px; overflow: auto; }
+:root[data-theme="dark"] .status.warn { background: #2e2716; color: #f5dfad; }
+.output { border: 1px solid var(--line); background: var(--panel); min-height: 180px; padding: 14px; overflow: auto; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
 .list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .list > li { padding: 10px 0; border-bottom: 1px solid var(--line); }
 .badge { display: inline-flex; width: fit-content; padding: 2px 7px; border-radius: 999px; background: #e8f3ed; color: var(--green); font-size: 12px; font-weight: 800; }
+:root[data-theme="dark"] .badge { background: #19352b; }
 .muted { color: var(--muted); }
 .small { font-size: 13px; }
 .split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .canvas-wrap { overflow: auto; background-color: #e8ede9; background-image: linear-gradient(45deg, #d8dfda 25%, transparent 25%), linear-gradient(-45deg, #d8dfda 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #d8dfda 75%), linear-gradient(-45deg, transparent 75%, #d8dfda 75%); background-size: 24px 24px; background-position: 0 0, 0 12px, 12px -12px, -12px 0; border: 1px solid var(--line); min-height: 320px; }
+:root[data-theme="dark"] .canvas-wrap { background-color: #141c18; background-image: linear-gradient(45deg, #1f2a25 25%, transparent 25%), linear-gradient(-45deg, #1f2a25 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #1f2a25 75%), linear-gradient(-45deg, transparent 75%, #1f2a25 75%); }
 canvas { display: block; max-width: 100%; }
 .code { color: #e5f2ea; background: var(--code); border-color: #26332d; }
-footer { padding: 18px clamp(16px, 4vw, 48px); color: var(--muted); border-top: 1px solid var(--line); background: #fff; }
+footer { padding: 18px clamp(16px, 4vw, 48px); color: var(--muted); border-top: 1px solid var(--line); background: var(--panel); }
 @media (max-width: 800px) {
   .topbar { align-items: flex-start; flex-direction: column; }
   .topbar nav { justify-content: flex-start; }
@@ -107,45 +126,119 @@ footer { padding: 18px clamp(16px, 4vw, 48px); color: var(--muted); border-top: 
 
 </style>
   <style>
-    .counter-shell { display: grid; grid-template-columns: minmax(280px, 1.25fr) minmax(260px, .75fr); min-height: calc(100vh - 180px); }
-    .editor { padding: 22px clamp(16px, 3vw, 34px); background: #fff; border-right: 1px solid var(--line); }
-    textarea { width: 100%; min-height: 460px; resize: vertical; padding: 16px; border: 1px solid var(--line); background: #fff; color: var(--ink); font: 16px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    .results { padding: 22px clamp(16px, 3vw, 34px); }
+    .editor-shell { display: grid; grid-template-columns: minmax(230px, 300px) minmax(360px, 1fr) minmax(260px, 340px); min-height: calc(100vh - 180px); }
+    .side-panel { padding: 18px clamp(14px, 2.4vw, 24px); background: var(--panel); border-right: 1px solid var(--line); }
+    .stats-panel { padding: 18px clamp(14px, 2.4vw, 24px); border-left: 1px solid var(--line); }
+    .editor-panel { min-width: 0; padding: 18px clamp(14px, 2.4vw, 24px); }
+    .editor-top { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .editor-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .icon-button { width: 40px; min-width: 40px; padding: 0; display: inline-grid; place-items: center; }
+    .editor-frame { display: grid; grid-template-columns: 48px minmax(0, 1fr); min-height: 520px; border: 1px solid var(--line); background: var(--panel); }
+    .editor-frame.no-lines { grid-template-columns: minmax(0, 1fr); }
+    .line-gutter { overflow: hidden; padding: 12px 8px; border-right: 1px solid var(--line); background: color-mix(in srgb, var(--paper) 72%, var(--panel)); color: var(--muted); text-align: right; user-select: none; white-space: pre; font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .editor-frame.no-lines .line-gutter { display: none; }
+    #text { min-height: 520px; resize: vertical; border: 0; outline: 0; padding: 12px 14px; background: transparent; color: var(--ink); font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; tab-size: 2; }
+    .find-box { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+    .find-grid { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr); gap: 10px; }
     .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-    .stat { min-width: 0; padding: 14px; border: 1px solid var(--line); background: #fff; }
-    .stat strong { display: block; overflow-wrap: anywhere; font: 800 25px/1.1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    .stat span { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; }
-    table { width: 100%; border-collapse: collapse; background: #fff; }
-    th, td { padding: 9px 10px; border-bottom: 1px solid var(--line); text-align: left; }
+    .stat { min-width: 0; padding: 12px; border: 1px solid var(--line); background: var(--panel); }
+    .stat strong { display: block; overflow-wrap: anywhere; font: 800 22px/1.1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .stat span { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; }
+    table { width: 100%; border-collapse: collapse; background: var(--panel); }
+    th, td { padding: 8px 9px; border-bottom: 1px solid var(--line); text-align: left; }
     th:last-child, td:last-child { text-align: right; }
-    .section-title { margin: 24px 0 10px; font-size: 18px; }
-    @media (max-width: 820px) { .counter-shell { grid-template-columns: 1fr; } .editor { border-right: 0; border-bottom: 1px solid var(--line); } textarea { min-height: 340px; } }
+    .section-title { margin: 18px 0 10px; font-size: 17px; }
+    .status { margin-top: 12px; }
+    @media (max-width: 1120px) {
+      .editor-shell { grid-template-columns: minmax(230px, 290px) minmax(0, 1fr); }
+      .stats-panel { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); }
+    }
+    @media (max-width: 760px) {
+      .editor-shell { grid-template-columns: 1fr; }
+      .side-panel, .stats-panel { border: 0; border-bottom: 1px solid var(--line); }
+      .editor-frame, #text { min-height: 360px; }
+      .find-grid { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="index.html"><span class="mark">UT</span><span>Word Count</span></a>
-    <nav aria-label="Tool navigation"><a href="index.html">Home</a><a href="file-diff.html">Diff</a><a href="base64-converter.html">Base64</a><a href="word-count.html" download>Download HTML</a></nav>
+    <a class="brand" href="index.html"><span class="mark">UT</span><span>Text Editor</span></a>
+    <nav aria-label="Tool navigation"><a href="index.html">Home</a><a href="file-diff.html">Diff</a><a href="text-transfer.html">Upload</a><a href="base64-converter.html">Base64</a><a href="word-count.html" download>Download HTML</a></nav>
   </header>
-  <section class="page-head"><h1>Word Count</h1><p>Measure text locally and inspect its most frequent words.</p></section>
-  <main class="counter-shell">
-    <section class="editor">
+  <section class="page-head"><h1>Text Editor</h1><p>Lightweight local editor with autosaved drafts, word count, regex replace, Markdown preview, formatting, and one-click diff handoff.</p></section>
+  <main class="editor-shell">
+    <aside class="side-panel">
       <div class="stack">
-        <label>Text<textarea id="text" placeholder="Type or paste text here" autofocus></textarea></label>
+        <label>Saved text<select id="draftSelect"></select></label>
+        <label>Name<input id="draftName" type="text" autocomplete="off"></label>
+        <label>Format mode
+          <select id="mode">
+            <option value="auto">Auto detect</option>
+            <option value="text">Plain text</option>
+            <option value="markdown">Markdown</option>
+            <option value="json">JSON</option>
+            <option value="javascript">JavaScript or TypeScript</option>
+            <option value="java">Java</option>
+            <option value="kotlin">Kotlin</option>
+            <option value="html">HTML</option>
+            <option value="css">CSS</option>
+            <option value="xml">XML</option>
+          </select>
+        </label>
         <div class="row">
-          <label class="button">Open text file<input id="file" type="file" accept="text/*,.md,.csv,.json,.html,.xml" hidden></label>
-          <button id="copy" type="button">Copy summary</button>
-          <button id="download" type="button">Download report</button>
-          <button id="clear" type="button">Clear</button>
+          <button id="newDraft" type="button">New</button>
+          <button id="renameDraft" type="button">Rename</button>
+          <button id="deleteDraft" type="button" class="danger">Delete</button>
         </div>
-        <div class="status" id="status" aria-live="polite">Ready.</div>
+        <div class="row">
+          <label class="button">Open file<input id="file" type="file" accept="text/*,.txt,.md,.json,.java,.kt,.js,.ts,.css,.html,.xml,.csv" hidden></label>
+          <label class="button">Import key<input id="keyFile" type="file" accept="application/json,.json" hidden></label>
+        </div>
+        <button id="downloadText" type="button">Download text</button>
+        <button id="downloadReport" type="button">Download report</button>
+        <button id="downloadKey" type="button">Download key</button>
+        <button id="copySummary" type="button">Copy summary</button>
+        <button id="clear" type="button">Clear editor</button>
+        <div class="status" id="status" aria-live="polite">Ready. Drafts are saved in this browser.</div>
+      </div>
+    </aside>
+
+    <section class="editor-panel">
+      <div class="editor-top">
+        <div class="editor-tools">
+          <button id="toggleLines" class="icon-button" type="button" title="Toggle line numbers" aria-label="Toggle line numbers">#</button>
+          <button id="format" type="button">Format</button>
+          <button id="previewMarkdown" type="button">Preview MD</button>
+        </div>
+        <div class="editor-tools">
+          <button id="sendLeft" type="button">Send to diff left</button>
+          <button id="sendRight" type="button">Send to diff right</button>
+        </div>
+      </div>
+      <div id="editorFrame" class="editor-frame">
+        <div id="lineGutter" class="line-gutter" aria-hidden="true">1</div>
+        <textarea id="text" placeholder="Type or paste text here" spellcheck="false"></textarea>
+      </div>
+      <div class="find-box stack" aria-label="Regex find and replace">
+        <div class="find-grid">
+          <label>Regex find<input id="findPattern" type="text" autocomplete="off" placeholder="fish|cat"></label>
+          <label>Replace with<input id="replaceValue" type="text" autocomplete="off" placeholder="$1"></label>
+        </div>
+        <div class="row">
+          <label class="check"><input id="caseSensitive" type="checkbox"> Case sensitive</label>
+          <button id="findNext" type="button">Find next</button>
+          <button id="replaceOne" type="button">Replace</button>
+          <button id="replaceAll" type="button">Replace all</button>
+        </div>
       </div>
     </section>
-    <aside class="results" aria-label="Text statistics">
+
+    <aside class="stats-panel" aria-label="Text statistics">
       <div class="stats">
         <div class="stat"><strong id="words">0</strong><span>Words</span></div>
         <div class="stat"><strong id="characters">0</strong><span>Characters</span></div>
-        <div class="stat"><strong id="charactersNoSpaces">0</strong><span>Characters without spaces</span></div>
+        <div class="stat"><strong id="charactersNoSpaces">0</strong><span>No-space characters</span></div>
         <div class="stat"><strong id="sentences">0</strong><span>Sentences</span></div>
         <div class="stat"><strong id="paragraphs">0</strong><span>Paragraphs</span></div>
         <div class="stat"><strong id="lines">0</strong><span>Lines</span></div>
@@ -157,6 +250,67 @@ footer { padding: 18px clamp(16px, 4vw, 48px); color: var(--muted); border-top: 
     </aside>
   </main>
   <script data-inlined-from="toolkit.js">
+(function initializeTheme() {
+  const storageKey = "usefultool:theme";
+
+  function preferredTheme() {
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+
+  function storedTheme() {
+    try {
+      return localStorage.getItem(storageKey);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function applyTheme(theme) {
+    const selected = theme === "dark" ? "dark" : "light";
+    document.documentElement.dataset.theme = selected;
+    try {
+      localStorage.setItem(storageKey, selected);
+    } catch (error) {
+      // Theme still works for this page even when storage is blocked.
+    }
+    document.querySelectorAll("[data-theme-label]").forEach((label) => {
+      label.textContent = selected === "dark" ? "Light" : "Dark";
+    });
+    document.querySelectorAll("[data-theme-toggle]").forEach((button) => {
+      button.setAttribute("aria-label", "Switch to " + (selected === "dark" ? "light" : "dark") + " mode");
+    });
+  }
+
+  function installThemeToggle() {
+    const nav = document.querySelector(".topbar nav, header nav, nav");
+    if (!nav || nav.querySelector("[data-theme-toggle]")) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "theme-toggle";
+    button.dataset.themeToggle = "";
+    button.innerHTML = '<span data-theme-label></span>';
+    button.addEventListener("click", () => {
+      applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
+    });
+    nav.appendChild(button);
+    applyTheme(document.documentElement.dataset.theme || storedTheme() || preferredTheme());
+  }
+
+  applyTheme(storedTheme() || preferredTheme());
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", installThemeToggle, { once: true });
+  } else {
+    installThemeToggle();
+  }
+
+  window.UsefulToolTheme = {
+    apply: applyTheme,
+    current() {
+      return document.documentElement.dataset.theme || "light";
+    }
+  };
+})();
+
 (function lockOutboundRuntime() {
   const deny = function () { throw new Error("Outbound network calls are disabled in UsefulTool."); };
   window.fetch = deny;
@@ -185,15 +339,37 @@ window.UsefulTool = {
     if (bytes < 1024) return bytes + " B";
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + " KiB";
     return (bytes / (1024 * 1024)).toFixed(2) + " MiB";
-  }
+  },
+  setTheme: window.UsefulToolTheme.apply,
+  getTheme: window.UsefulToolTheme.current
 };
 
 </script>
   <script>
     const textInput = document.getElementById("text");
     const status = document.getElementById("status");
-    const storageKey = "usefultool:word-count:text";
+    const draftSelect = document.getElementById("draftSelect");
+    const draftName = document.getElementById("draftName");
+    const modeSelect = document.getElementById("mode");
+    const editorFrame = document.getElementById("editorFrame");
+    const lineGutter = document.getElementById("lineGutter");
+    const findPattern = document.getElementById("findPattern");
+    const replaceValue = document.getElementById("replaceValue");
+    const caseSensitive = document.getElementById("caseSensitive");
+    const legacyStorageKey = "usefultool:word-count:text";
+    const storageKeys = {
+      drafts: "usefultool:text-editor:drafts",
+      active: "usefultool:text-editor:active",
+      lines: "usefultool:text-editor:line-numbers",
+      diffLeft: "usefultool:file-diff:left-text",
+      diffRight: "usefultool:file-diff:right-text"
+    };
+    let drafts = [];
+    let activeId = "";
     let current;
+    let saveTimer = 0;
+    let lastFilename = "";
+    let showLineNumbers = true;
 
     function storageAvailable() {
       try {
@@ -208,20 +384,132 @@ window.UsefulTool = {
 
     const canStoreText = storageAvailable();
 
-    function saveText() {
-      if (!canStoreText) return;
+    function readStorage(key) {
+      if (!canStoreText) return null;
       try {
-        localStorage.setItem(storageKey, textInput.value);
+        return localStorage.getItem(key);
       } catch (error) {
-        UsefulTool.status(status, "Browser storage is full. Current text is not saved for reload.", "warn");
+        return null;
       }
     }
 
-    function restoreText() {
+    function writeStorage(key, value) {
       if (!canStoreText) return false;
-      const saved = localStorage.getItem(storageKey);
+      try {
+        localStorage.setItem(key, value);
+        return true;
+      } catch (error) {
+        UsefulTool.status(status, "Browser storage is full. Current text is not saved for reload.", "warn");
+        return false;
+      }
+    }
+
+    function removeStorage(key) {
+      if (!canStoreText) return;
+      try {
+        localStorage.removeItem(key);
+      } catch (error) {
+        // Nothing to do when storage cleanup is blocked.
+      }
+    }
+
+    function createId() {
+      return "draft-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+    }
+
+    function cleanDraft(input, fallbackName) {
+      return {
+        id: input && input.id ? String(input.id) : createId(),
+        name: input && input.name ? String(input.name).slice(0, 80) : fallbackName,
+        text: input && typeof input.text === "string" ? input.text : "",
+        mode: input && input.mode ? String(input.mode) : "auto",
+        updatedAt: input && Number.isFinite(input.updatedAt) ? input.updatedAt : Date.now()
+      };
+    }
+
+    function defaultDraft() {
+      return cleanDraft({ name: "Untitled text", text: "", mode: "auto" }, "Untitled text");
+    }
+
+    function activeDraft() {
+      return drafts.find((draft) => draft.id === activeId) || drafts[0];
+    }
+
+    function loadDrafts() {
+      const saved = readStorage(storageKeys.drafts);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length) drafts = parsed.map((draft, index) => cleanDraft(draft, "Text " + (index + 1)));
+        } catch (error) {
+          drafts = [];
+        }
+      }
+      const legacyText = readStorage(legacyStorageKey);
+      if (legacyText != null && !drafts.some((draft) => draft.text === legacyText)) {
+        drafts.unshift(cleanDraft({ name: "Migrated word count", text: legacyText, mode: "auto" }, "Migrated word count"));
+      }
+      if (!drafts.length) drafts = [defaultDraft()];
+      activeId = readStorage(storageKeys.active) || drafts[0].id;
+      if (!drafts.some((draft) => draft.id === activeId)) activeId = drafts[0].id;
+    }
+
+    function saveDrafts(immediate) {
+      const run = () => {
+        writeStorage(storageKeys.drafts, JSON.stringify(drafts));
+        writeStorage(storageKeys.active, activeId);
+        const draft = activeDraft();
+        if (draft) writeStorage(legacyStorageKey, draft.text);
+      };
+      if (immediate) {
+        clearTimeout(saveTimer);
+        run();
+      } else {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(run, 120);
+      }
+    }
+
+    function renderDraftSelect() {
+      draftSelect.replaceChildren();
+      drafts.forEach((draft) => {
+        const option = document.createElement("option");
+        option.value = draft.id;
+        option.textContent = draft.name + " - " + new Date(draft.updatedAt).toLocaleString();
+        draftSelect.append(option);
+      });
+      draftSelect.value = activeId;
+    }
+
+    function syncActiveToEditor() {
+      const draft = activeDraft();
+      if (!draft) return;
+      textInput.value = draft.text;
+      draftName.value = draft.name;
+      modeSelect.value = [...modeSelect.options].some((option) => option.value === draft.mode) ? draft.mode : "auto";
+      render();
+    }
+
+    function persistActive(immediate) {
+      const draft = activeDraft();
+      if (!draft) return;
+      draft.text = textInput.value;
+      draft.name = (draftName.value || "Untitled text").trim().slice(0, 80) || "Untitled text";
+      draft.mode = modeSelect.value;
+      draft.updatedAt = Date.now();
+      saveDrafts(immediate);
+    }
+
+    function saveText() {
+      persistActive(true);
+    }
+
+    function restoreText() {
+      const saved = readStorage(legacyStorageKey);
       if (saved == null) return false;
       textInput.value = saved;
+      persistActive(true);
+      render();
       return true;
     }
 
@@ -279,6 +567,17 @@ window.UsefulTool = {
       ].join("\n");
     }
 
+    function updateLineNumbers() {
+      editorFrame.classList.toggle("no-lines", !showLineNumbers);
+      document.getElementById("toggleLines").setAttribute("aria-pressed", String(showLineNumbers));
+      if (!showLineNumbers) return;
+      const count = Math.max(1, textInput.value.split(/\r\n?|\n/u).length);
+      let output = "";
+      for (let index = 1; index <= count; index += 1) output += index + "\n";
+      lineGutter.textContent = output;
+      lineGutter.scrollTop = textInput.scrollTop;
+    }
+
     function render() {
       current = analyze(textInput.value);
       ["words", "characters", "charactersNoSpaces", "sentences", "paragraphs", "lines", "readingTime", "speakingTime"]
@@ -297,30 +596,493 @@ window.UsefulTool = {
           row.insertCell().textContent = count;
         });
       }
+      updateLineNumbers();
     }
 
-    textInput.addEventListener("input", () => { saveText(); render(); });
-    document.getElementById("clear").addEventListener("click", () => { textInput.value = ""; saveText(); render(); textInput.focus(); UsefulTool.status(status, "Cleared."); });
+    function afterTextChanged(message, immediate) {
+      persistActive(Boolean(immediate));
+      render();
+      if (message) UsefulTool.status(status, message, "success");
+    }
+
+    function inferMode() {
+      if (modeSelect.value !== "auto") return modeSelect.value;
+      const name = (lastFilename || draftName.value).toLowerCase();
+      if (name.endsWith(".md") || name.endsWith(".markdown")) return "markdown";
+      if (name.endsWith(".json")) return "json";
+      if (name.endsWith(".java")) return "java";
+      if (name.endsWith(".kt") || name.endsWith(".kts")) return "kotlin";
+      if (name.endsWith(".js") || name.endsWith(".ts")) return "javascript";
+      if (name.endsWith(".html") || name.endsWith(".htm")) return "html";
+      if (name.endsWith(".css")) return "css";
+      if (name.endsWith(".xml")) return "xml";
+      const sample = textInput.value.trim();
+      if (/^[\[{]/.test(sample)) return "json";
+      if (/^</.test(sample)) return "html";
+      if (/\b(fun|val|var|package)\b/.test(sample)) return "kotlin";
+      if (/\b(class|public|private|import)\b/.test(sample)) return "java";
+      return "text";
+    }
+
+    function formatJsonLoose(input) {
+      let output = "";
+      let indent = 0;
+      let inString = false;
+      let quote = "";
+      let escaped = false;
+      const unit = "  ";
+      const newline = () => "\n" + unit.repeat(Math.max(0, indent));
+      for (const character of input.trim()) {
+        if (inString) {
+          output += character;
+          if (escaped) escaped = false;
+          else if (character === "\\") escaped = true;
+          else if (character === quote) inString = false;
+          continue;
+        }
+        if (character === '"' || character === "'") {
+          inString = true;
+          quote = character;
+          output += character;
+        } else if (character === "{" || character === "[") {
+          output = output.trimEnd() + character;
+          indent += 1;
+          output += newline();
+        } else if (character === "}" || character === "]") {
+          indent -= 1;
+          output = output.trimEnd() + newline() + character;
+        } else if (character === ",") {
+          output = output.trimEnd() + "," + newline();
+        } else if (character === ":") {
+          output = output.trimEnd() + ": ";
+        } else if (!/\s/.test(character)) {
+          output += character;
+        }
+      }
+      return output.trim() + (input.endsWith("\n") ? "\n" : "");
+    }
+
+    function formatJsonBestEffort(input) {
+      try {
+        return JSON.stringify(JSON.parse(input), null, 2);
+      } catch (error) {
+        return formatJsonLoose(input);
+      }
+    }
+
+    function formatBraceCode(input) {
+      const unit = "  ";
+      let indent = 0;
+      let line = "";
+      const lines = [];
+      let inString = false;
+      let quote = "";
+      let escaped = false;
+
+      function pushLine() {
+        const trimmed = line.trim();
+        if (trimmed) lines.push(unit.repeat(Math.max(0, indent)) + trimmed);
+        line = "";
+      }
+
+      const source = input.replace(/\r\n?/g, "\n");
+      for (let index = 0; index < source.length; index += 1) {
+        const character = source[index];
+        const next = source[index + 1];
+        if (inString) {
+          line += character;
+          if (escaped) escaped = false;
+          else if (character === "\\") escaped = true;
+          else if (character === quote) inString = false;
+          continue;
+        }
+        if (character === '"' || character === "'" || character === "`") {
+          inString = true;
+          quote = character;
+          line += character;
+        } else if (character === "/" && next === "/") {
+          const comment = source.slice(index).split("\n")[0];
+          line += comment;
+          index += comment.length - 1;
+          pushLine();
+        } else if (character === "{") {
+          line = line.trimEnd() + " {";
+          pushLine();
+          indent += 1;
+        } else if (character === "}") {
+          pushLine();
+          indent -= 1;
+          line = "}";
+        } else if (character === ";") {
+          line += ";";
+          pushLine();
+        } else if (character === "\n") {
+          pushLine();
+        } else {
+          line += character;
+        }
+      }
+      pushLine();
+      return lines.join("\n") + (input.endsWith("\n") ? "\n" : "");
+    }
+
+    function formatMarkup(input) {
+      const source = input.replace(/>\s*</g, ">\n<").replace(/\r\n?/g, "\n");
+      let indent = 0;
+      const unit = "  ";
+      return source.split("\n").map((line) => {
+        const trimmed = line.trim();
+        if (!trimmed) return "";
+        if (/^<\//.test(trimmed)) indent -= 1;
+        const rendered = unit.repeat(Math.max(0, indent)) + trimmed;
+        if (/^<[^!?/][^>]*[^/]>\s*$/.test(trimmed) && !/^<(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)\b/i.test(trimmed)) indent += 1;
+        return rendered;
+      }).filter(Boolean).join("\n") + (input.endsWith("\n") ? "\n" : "");
+    }
+
+    function formatCss(input) {
+      return formatBraceCode(input).replace(/;\s*/g, ";\n").replace(/\n{3,}/g, "\n\n");
+    }
+
+    function formatCurrent() {
+      const mode = inferMode();
+      const before = textInput.value;
+      let formatted = before;
+      if (mode === "json") formatted = formatJsonBestEffort(before);
+      else if (mode === "java" || mode === "kotlin" || mode === "javascript") formatted = formatBraceCode(before);
+      else if (mode === "html" || mode === "xml") formatted = formatMarkup(before);
+      else if (mode === "css") formatted = formatCss(before);
+      else {
+        UsefulTool.status(status, "Choose JSON, Java, Kotlin, JavaScript, HTML, CSS, or XML to format.", "warn");
+        return before;
+      }
+      textInput.value = formatted;
+      afterTextChanged("Formatted as " + mode + ".");
+      return formatted;
+    }
+
+    function buildFindRegex(global) {
+      if (!findPattern.value) throw new Error("Enter a regex pattern first.");
+      let flags = caseSensitive.checked ? "u" : "iu";
+      if (global) flags += "g";
+      return new RegExp(findPattern.value, flags);
+    }
+
+    function findNextMatch() {
+      let regex;
+      try {
+        regex = buildFindRegex(false);
+      } catch (error) {
+        UsefulTool.status(status, error.message, "error");
+        return false;
+      }
+      const text = textInput.value;
+      const start = textInput.selectionEnd;
+      let match = regex.exec(text.slice(start));
+      let offset = start;
+      if (!match) {
+        match = regex.exec(text);
+        offset = 0;
+      }
+      if (!match) {
+        UsefulTool.status(status, "No match found.", "warn");
+        return false;
+      }
+      const from = offset + match.index;
+      const to = from + match[0].length;
+      textInput.focus();
+      textInput.setSelectionRange(from, to);
+      UsefulTool.status(status, "Match selected.");
+      return true;
+    }
+
+    function replaceOneMatch() {
+      let regex;
+      try {
+        regex = buildFindRegex(false);
+      } catch (error) {
+        UsefulTool.status(status, error.message, "error");
+        return false;
+      }
+      if (textInput.selectionStart === textInput.selectionEnd && !findNextMatch()) return false;
+      const selected = textInput.value.slice(textInput.selectionStart, textInput.selectionEnd);
+      if (!regex.test(selected) && !findNextMatch()) return false;
+      const start = textInput.selectionStart;
+      const end = textInput.selectionEnd;
+      const next = textInput.value.slice(start, end).replace(regex, replaceValue.value);
+      textInput.setRangeText(next, start, end, "select");
+      afterTextChanged("Replaced one match.");
+      return true;
+    }
+
+    function replaceAllMatches() {
+      let regex;
+      try {
+        regex = buildFindRegex(true);
+      } catch (error) {
+        UsefulTool.status(status, error.message, "error");
+        return 0;
+      }
+      const matches = textInput.value.match(regex);
+      const count = matches ? matches.length : 0;
+      if (!count) {
+        UsefulTool.status(status, "No matches to replace.", "warn");
+        return 0;
+      }
+      textInput.value = textInput.value.replace(regex, replaceValue.value);
+      afterTextChanged("Replaced " + count + " match" + (count === 1 ? "." : "es."));
+      return count;
+    }
+
+    function escapeHtml(value) {
+      return value.replace(/[&<>"']/g, (character) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      })[character]);
+    }
+
+    function inlineMarkdown(value) {
+      return escapeHtml(value)
+        .replace(/`([^`]+)`/g, "<code>$1</code>")
+        .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+        .replace(/\*([^*]+)\*/g, "<em>$1</em>");
+    }
+
+    function markdownToHtml(markdown) {
+      const lines = markdown.replace(/\r\n?/g, "\n").split("\n");
+      const output = [];
+      let paragraph = [];
+      let inList = false;
+      let inCode = false;
+      let codeLines = [];
+
+      function closeParagraph() {
+        if (!paragraph.length) return;
+        output.push("<p>" + inlineMarkdown(paragraph.join(" ")) + "</p>");
+        paragraph = [];
+      }
+
+      function closeList() {
+        if (!inList) return;
+        output.push("</ul>");
+        inList = false;
+      }
+
+      lines.forEach((line) => {
+        if (/^\s*```/.test(line)) {
+          if (inCode) {
+            output.push("<pre><code>" + escapeHtml(codeLines.join("\n")) + "</code></pre>");
+            codeLines = [];
+            inCode = false;
+          } else {
+            closeParagraph();
+            closeList();
+            inCode = true;
+          }
+          return;
+        }
+        if (inCode) {
+          codeLines.push(line);
+          return;
+        }
+        const trimmed = line.trim();
+        if (!trimmed) {
+          closeParagraph();
+          closeList();
+          return;
+        }
+        const heading = /^(#{1,6})\s+(.+)$/.exec(trimmed);
+        if (heading) {
+          closeParagraph();
+          closeList();
+          output.push("<h" + heading[1].length + ">" + inlineMarkdown(heading[2]) + "</h" + heading[1].length + ">");
+          return;
+        }
+        const listItem = /^[-*]\s+(.+)$/.exec(trimmed);
+        if (listItem) {
+          closeParagraph();
+          if (!inList) {
+            output.push("<ul>");
+            inList = true;
+          }
+          output.push("<li>" + inlineMarkdown(listItem[1]) + "</li>");
+          return;
+        }
+        const quote = /^>\s?(.+)$/.exec(trimmed);
+        if (quote) {
+          closeParagraph();
+          closeList();
+          output.push("<blockquote>" + inlineMarkdown(quote[1]) + "</blockquote>");
+          return;
+        }
+        paragraph.push(trimmed);
+      });
+      if (inCode) output.push("<pre><code>" + escapeHtml(codeLines.join("\n")) + "</code></pre>");
+      closeParagraph();
+      closeList();
+      return output.join("\n");
+    }
+
+    function previewMarkdown() {
+      const html = [
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Markdown Preview</title>",
+        "<style>body{max-width:820px;margin:0 auto;padding:28px 18px;font:16px/1.6 ui-sans-serif,system-ui,sans-serif;color:#17201b;background:#f7faf7}pre{padding:12px;overflow:auto;background:#101614;color:#e7f0eb}code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}blockquote{margin-left:0;padding-left:14px;border-left:4px solid #0d6b4f;color:#5e6962}</style></head><body>",
+        markdownToHtml(textInput.value),
+        "</body></html>"
+      ].join("");
+      const url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      UsefulTool.status(status, "Markdown preview opened.", "success");
+    }
+
+    function sendToDiff(side) {
+      const key = side === "right" ? storageKeys.diffRight : storageKeys.diffLeft;
+      writeStorage(key, textInput.value);
+      window.open("file-diff.html", "_blank");
+      UsefulTool.status(status, "Sent current text to diff " + side + ".", "success");
+    }
+
+    function downloadText() {
+      const name = (draftName.value.trim() || "usefultool-text").replace(/[^\w.-]+/g, "-").replace(/^-|-$/g, "") || "usefultool-text";
+      UsefulTool.download(new Blob([textInput.value], { type: "text/plain;charset=utf-8" }), name + ".txt");
+      UsefulTool.status(status, "Text downloaded.", "success");
+    }
+
+    function downloadKey() {
+      const payload = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        activeId,
+        drafts
+      };
+      UsefulTool.download(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" }), "usefultool-text-editor-key.json");
+      UsefulTool.status(status, "Draft key downloaded.", "success");
+    }
+
+    function loadImportedDrafts(payload) {
+      const incoming = Array.isArray(payload) ? payload : payload && Array.isArray(payload.drafts) ? payload.drafts : [];
+      if (!incoming.length) throw new Error("No drafts found in this key.");
+      const imported = incoming.map((draft, index) => {
+        const cleaned = cleanDraft(draft, "Imported text " + (index + 1));
+        cleaned.id = createId();
+        cleaned.name = "Imported - " + cleaned.name;
+        cleaned.updatedAt = Date.now();
+        return cleaned;
+      });
+      drafts = imported.concat(drafts);
+      activeId = imported[0].id;
+      saveDrafts(true);
+      renderDraftSelect();
+      syncActiveToEditor();
+      UsefulTool.status(status, "Imported " + imported.length + " draft" + (imported.length === 1 ? "." : "s."), "success");
+    }
+
+    document.getElementById("toggleLines").addEventListener("click", () => {
+      showLineNumbers = !showLineNumbers;
+      writeStorage(storageKeys.lines, String(showLineNumbers));
+      updateLineNumbers();
+    });
+    textInput.addEventListener("input", () => { afterTextChanged(null, true); });
+    textInput.addEventListener("scroll", () => { lineGutter.scrollTop = textInput.scrollTop; });
+    draftName.addEventListener("input", () => { persistActive(false); renderDraftSelect(); });
+    modeSelect.addEventListener("change", () => { persistActive(true); });
+    draftSelect.addEventListener("change", () => {
+      persistActive(true);
+      activeId = draftSelect.value;
+      writeStorage(storageKeys.active, activeId);
+      syncActiveToEditor();
+      UsefulTool.status(status, "Loaded selected draft.");
+    });
+    document.getElementById("newDraft").addEventListener("click", () => {
+      persistActive(true);
+      const draft = defaultDraft();
+      draft.name = "Text " + (drafts.length + 1);
+      drafts.unshift(draft);
+      activeId = draft.id;
+      saveDrafts(true);
+      renderDraftSelect();
+      syncActiveToEditor();
+      textInput.focus();
+      UsefulTool.status(status, "New draft created.", "success");
+    });
+    document.getElementById("renameDraft").addEventListener("click", () => {
+      persistActive(true);
+      renderDraftSelect();
+      UsefulTool.status(status, "Draft renamed.", "success");
+    });
+    document.getElementById("deleteDraft").addEventListener("click", () => {
+      const draft = activeDraft();
+      if (!draft) return;
+      if (!confirm("Delete this saved text?\n\n" + draft.name)) return;
+      drafts = drafts.filter((item) => item.id !== draft.id);
+      if (!drafts.length) drafts = [defaultDraft()];
+      activeId = drafts[0].id;
+      saveDrafts(true);
+      renderDraftSelect();
+      syncActiveToEditor();
+      UsefulTool.status(status, "Draft deleted.", "success");
+    });
     document.getElementById("file").addEventListener("change", async (event) => {
       const file = event.target.files[0];
       if (!file) return;
-      textInput.value = await file.text();
-      saveText();
-      render();
+      lastFilename = file.name;
+      persistActive(true);
+      const draft = cleanDraft({ name: file.name.replace(/\.[^.]+$/, "") || file.name, text: await file.text(), mode: "auto" }, file.name);
+      drafts.unshift(draft);
+      activeId = draft.id;
+      saveDrafts(true);
+      renderDraftSelect();
+      syncActiveToEditor();
       UsefulTool.status(status, "Loaded " + file.name + ".", "success");
+      event.target.value = "";
     });
-    document.getElementById("copy").addEventListener("click", async () => {
-      try { await navigator.clipboard.writeText(summary(current)); UsefulTool.status(status, "Summary copied.", "success"); }
-      catch (error) { UsefulTool.status(status, "Clipboard access was denied.", "error"); }
+    document.getElementById("keyFile").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      try {
+        loadImportedDrafts(JSON.parse(await file.text()));
+      } catch (error) {
+        UsefulTool.status(status, error.message, "error");
+      }
+      event.target.value = "";
     });
-    document.getElementById("download").addEventListener("click", () => {
+    document.getElementById("clear").addEventListener("click", () => {
+      textInput.value = "";
+      afterTextChanged("Editor cleared.");
+      textInput.focus();
+    });
+    document.getElementById("downloadText").addEventListener("click", downloadText);
+    document.getElementById("downloadReport").addEventListener("click", () => {
       UsefulTool.download(new Blob([summary(current)], { type: "text/plain;charset=utf-8" }), "usefultool-word-count.txt");
       UsefulTool.status(status, "Report downloaded.", "success");
     });
+    document.getElementById("downloadKey").addEventListener("click", downloadKey);
+    document.getElementById("copySummary").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(summary(current));
+        UsefulTool.status(status, "Summary copied.", "success");
+      } catch (error) {
+        UsefulTool.status(status, "Clipboard access was denied.", "error");
+      }
+    });
+    document.getElementById("format").addEventListener("click", formatCurrent);
+    document.getElementById("previewMarkdown").addEventListener("click", previewMarkdown);
+    document.getElementById("sendLeft").addEventListener("click", () => sendToDiff("left"));
+    document.getElementById("sendRight").addEventListener("click", () => sendToDiff("right"));
+    document.getElementById("findNext").addEventListener("click", findNextMatch);
+    document.getElementById("replaceOne").addEventListener("click", replaceOneMatch);
+    document.getElementById("replaceAll").addEventListener("click", replaceAllMatches);
 
-    restoreText();
-    window.UsefulToolWordCount = { analyze, saveText, restoreText, storageKey };
-    render();
+    showLineNumbers = readStorage(storageKeys.lines) !== "false";
+    loadDrafts();
+    renderDraftSelect();
+    syncActiveToEditor();
+    window.UsefulToolWordCount = { analyze, saveText, restoreText, storageKey: legacyStorageKey, storageKeys };
+    window.UsefulToolTextEditor = { analyze, formatCurrent, formatJsonBestEffort, markdownToHtml, replaceAllMatches, saveDrafts, sendToDiff, storageKeys };
   </script>
 </body>
 </html>

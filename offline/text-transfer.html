@@ -4,9 +4,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
-  <title>ROT Cipher | UsefulTool</title>
+  <title>Text Upload and Download - UsefulTool</title>
   <style data-inlined-from="toolkit.css">
 :root {
   color-scheme: light;
@@ -125,29 +125,53 @@ footer { padding: 18px clamp(16px, 4vw, 48px); color: var(--muted); border-top: 
 }
 
 </style>
+  <style>
+    .transfer-shell { display: grid; grid-template-columns: minmax(240px, 320px) minmax(0, 1fr); min-height: calc(100vh - 180px); }
+    .transfer-panel { padding: 22px clamp(16px, 3vw, 30px); background: var(--panel); border-right: 1px solid var(--line); }
+    .transfer-workspace { min-width: 0; padding: 22px clamp(16px, 3vw, 34px); }
+    #transferText { min-height: 540px; font-size: 14px; line-height: 1.55; }
+    .meta-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .metric { padding: 12px; border: 1px solid var(--line); background: var(--panel); }
+    .metric strong { display: block; font: 800 20px/1.1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .metric span { color: var(--muted); font-size: 12px; }
+    @media (max-width: 800px) {
+      .transfer-shell { grid-template-columns: 1fr; }
+      .transfer-panel { border-right: 0; border-bottom: 1px solid var(--line); }
+      .meta-grid { grid-template-columns: 1fr; }
+      #transferText { min-height: 360px; }
+    }
+  </style>
 </head>
 <body>
-  <header class="topbar"><a class="brand" href="index.html"><span class="mark">UT</span><span>ROT Cipher</span></a><nav><a href="index.html">Home</a><a href="base64-converter.html">Base64</a><a href="file-diff.html">Diff</a><a href="rot-cipher.html" download>Download HTML</a></nav></header>
-  <section class="page-head"><h1>ROT Cipher and Password Transformer</h1><p>Apply Caesar rotations, ROT13, or ROT47 locally. ROT is reversible obfuscation, not secure encryption.</p></section>
-  <main class="tool-shell">
-    <section class="controls stack">
-      <label>Algorithm<select id="algorithm"><option value="alpha">Alphabetic ROT / Caesar</option><option value="rot47">ROT47 printable ASCII</option></select></label>
-      <label>Alphabet shift<input id="shift" type="number" min="0" max="25" value="13"></label>
-      <label>Direction<select id="direction"><option value="encode">Encode</option><option value="decode">Decode</option></select></label>
-      <label>Password length<input id="passwordLength" type="number" min="8" max="128" value="20"></label>
-      <button id="generateButton" type="button">Generate random password input</button>
-      <button class="primary" id="runButton" type="button">Transform</button>
-      <button id="bruteButton" type="button">Show all 26 alphabet shifts</button>
-      <div class="status warn" id="status">Do not use ROT to protect real credentials. Anyone can reverse it.</div>
-    </section>
-    <section class="workspace stack">
-      <label>Input<textarea id="input" spellcheck="false" placeholder="Text or password"></textarea></label>
-      <div class="toolbar"><button id="copyButton" type="button">Copy output</button><button id="swapButton" type="button">Use output as input</button><button id="clearButton" type="button">Clear</button></div>
-      <label>Output<textarea id="output" spellcheck="false" readonly></textarea></label>
-      <section class="output mono" id="allShifts">All-shift analysis appears here.</section>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="mark">UT</span><span>Text Upload</span></a>
+    <nav aria-label="Tool navigation"><a href="index.html">Home</a><a href="word-count.html">Editor</a><a href="file-diff.html">Diff</a><a href="text-transfer.html" download>Download HTML</a></nav>
+  </header>
+  <section class="page-head"><h1>Text Upload and Download</h1><p>Open a local text file, edit it lightly, download it again, or hand it to the editor and diff tools.</p></section>
+  <main class="transfer-shell">
+    <aside class="transfer-panel">
+      <div class="stack">
+        <label>Download filename<input id="filename" type="text" value="usefultool-text.txt" autocomplete="off"></label>
+        <label class="button">Upload text file<input id="file" type="file" accept="text/*,.txt,.md,.json,.java,.kt,.js,.ts,.css,.html,.xml,.csv" hidden></label>
+        <button id="download" type="button">Download text</button>
+        <button id="openEditor" type="button">Send to editor</button>
+        <div class="row">
+          <button id="sendLeft" type="button">Diff left</button>
+          <button id="sendRight" type="button">Diff right</button>
+        </div>
+        <button id="clear" type="button">Clear</button>
+        <div class="status" id="status" aria-live="polite">Ready.</div>
+      </div>
+    </aside>
+    <section class="transfer-workspace">
+      <label>Text<textarea id="transferText" placeholder="Upload or paste text here" spellcheck="false"></textarea></label>
+      <div class="meta-grid" aria-label="Text size">
+        <div class="metric"><strong id="bytes">0 B</strong><span>UTF-8 size</span></div>
+        <div class="metric"><strong id="characters">0</strong><span>Characters</span></div>
+        <div class="metric"><strong id="lines">0</strong><span>Lines</span></div>
+      </div>
     </section>
   </main>
-  <footer>No input is stored or transmitted.</footer>
   <script data-inlined-from="toolkit.js">
 (function initializeTheme() {
   const storageKey = "usefultool:theme";
@@ -245,61 +269,117 @@ window.UsefulTool = {
 
 </script>
   <script>
-    const input = document.getElementById("input");
-    const output = document.getElementById("output");
-    const algorithm = document.getElementById("algorithm");
-    const shift = document.getElementById("shift");
-    const direction = document.getElementById("direction");
-    const allShifts = document.getElementById("allShifts");
+    const textInput = document.getElementById("transferText");
+    const filenameInput = document.getElementById("filename");
     const status = document.getElementById("status");
+    const storageKeys = {
+      text: "usefultool:text-transfer:text",
+      filename: "usefultool:text-transfer:filename",
+      editorDrafts: "usefultool:text-editor:drafts",
+      editorActive: "usefultool:text-editor:active",
+      editorLegacy: "usefultool:word-count:text",
+      diffLeft: "usefultool:file-diff:left-text",
+      diffRight: "usefultool:file-diff:right-text"
+    };
 
-    function rotateAlpha(text, amount) {
-      const normalized = ((amount % 26) + 26) % 26;
-      return Array.from(text, (character) => {
-        const code = character.charCodeAt(0);
-        if (code >= 65 && code <= 90) return String.fromCharCode(65 + (code - 65 + normalized) % 26);
-        if (code >= 97 && code <= 122) return String.fromCharCode(97 + (code - 97 + normalized) % 26);
-        return character;
-      }).join("");
-    }
-
-    function rot47(text) {
-      return Array.from(text, (character) => {
-        const code = character.charCodeAt(0);
-        return code >= 33 && code <= 126 ? String.fromCharCode(33 + (code - 33 + 47) % 94) : character;
-      }).join("");
-    }
-
-    function transform() {
-      const amount = Number(shift.value);
-      if (!Number.isInteger(amount) || amount < 0 || amount > 25) {
-        UsefulTool.status(status, "Shift must be an integer from 0 through 25.", "error");
-        return;
+    function readStorage(key) {
+      try {
+        return localStorage.getItem(key);
+      } catch (error) {
+        return null;
       }
-      output.value = algorithm.value === "rot47" ? rot47(input.value) : rotateAlpha(input.value, direction.value === "decode" ? -amount : amount);
-      UsefulTool.status(status, "Transformed " + input.value.length + " characters. ROT remains reversible obfuscation.", "warn");
     }
 
-    function randomPassword(length) {
-      const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*()-_=+";
-      const values = new Uint32Array(length);
-      crypto.getRandomValues(values);
-      return Array.from(values, (value) => alphabet[value % alphabet.length]).join("");
+    function writeStorage(key, value) {
+      try {
+        localStorage.setItem(key, value);
+        return true;
+      } catch (error) {
+        UsefulTool.status(status, "Browser storage is full. Current text is not saved for reload.", "warn");
+        return false;
+      }
     }
 
-    document.getElementById("runButton").addEventListener("click", transform);
-    document.getElementById("generateButton").addEventListener("click", () => {
-      const length = Math.max(8, Math.min(128, Number(document.getElementById("passwordLength").value) || 20));
-      input.value = randomPassword(length); transform();
+    function safeName() {
+      return (filenameInput.value.trim() || "usefultool-text.txt").replace(/[\\/:*?"<>|]+/g, "-");
+    }
+
+    function renderStats() {
+      const text = textInput.value;
+      document.getElementById("bytes").textContent = UsefulTool.bytesLabel(new TextEncoder().encode(text).length);
+      document.getElementById("characters").textContent = [...text].length;
+      document.getElementById("lines").textContent = text ? text.split(/\r\n?|\n/u).length : 0;
+    }
+
+    function saveDraft() {
+      writeStorage(storageKeys.text, textInput.value);
+      writeStorage(storageKeys.filename, filenameInput.value);
+      renderStats();
+    }
+
+    function createId() {
+      return "draft-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+    }
+
+    function sendToEditor() {
+      let drafts = [];
+      try {
+        const saved = readStorage(storageKeys.editorDrafts);
+        drafts = saved ? JSON.parse(saved) : [];
+        if (!Array.isArray(drafts)) drafts = [];
+      } catch (error) {
+        drafts = [];
+      }
+      const draft = {
+        id: createId(),
+        name: safeName().replace(/\.[^.]+$/, "") || "Uploaded text",
+        text: textInput.value,
+        mode: "auto",
+        updatedAt: Date.now()
+      };
+      drafts.unshift(draft);
+      writeStorage(storageKeys.editorDrafts, JSON.stringify(drafts));
+      writeStorage(storageKeys.editorActive, draft.id);
+      writeStorage(storageKeys.editorLegacy, textInput.value);
+      window.open("word-count.html", "_blank");
+      UsefulTool.status(status, "Sent text to editor.", "success");
+    }
+
+    function sendToDiff(side) {
+      writeStorage(side === "right" ? storageKeys.diffRight : storageKeys.diffLeft, textInput.value);
+      window.open("file-diff.html", "_blank");
+      UsefulTool.status(status, "Sent text to diff " + side + ".", "success");
+    }
+
+    textInput.value = readStorage(storageKeys.text) || "";
+    filenameInput.value = readStorage(storageKeys.filename) || filenameInput.value;
+    renderStats();
+    textInput.addEventListener("input", saveDraft);
+    filenameInput.addEventListener("input", saveDraft);
+    document.getElementById("file").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      textInput.value = await file.text();
+      filenameInput.value = file.name || filenameInput.value;
+      saveDraft();
+      UsefulTool.status(status, "Loaded " + file.name + ".", "success");
+      event.target.value = "";
     });
-    document.getElementById("bruteButton").addEventListener("click", () => {
-      allShifts.textContent = Array.from({ length: 26 }, (_, amount) => "ROT" + amount.toString().padStart(2, "0") + "  " + rotateAlpha(input.value, -amount)).join("\n");
+    document.getElementById("download").addEventListener("click", () => {
+      UsefulTool.download(new Blob([textInput.value], { type: "text/plain;charset=utf-8" }), safeName());
+      UsefulTool.status(status, "Text downloaded.", "success");
     });
-    document.getElementById("copyButton").addEventListener("click", async () => { await navigator.clipboard.writeText(output.value); UsefulTool.status(status, "Output copied.", "warn"); });
-    document.getElementById("swapButton").addEventListener("click", () => { input.value = output.value; output.value = ""; });
-    document.getElementById("clearButton").addEventListener("click", () => { input.value = ""; output.value = ""; allShifts.textContent = "All-shift analysis appears here."; });
-    algorithm.addEventListener("change", () => { shift.disabled = algorithm.value === "rot47"; direction.disabled = algorithm.value === "rot47"; });
-    window.UsefulToolRot = { rotateAlpha, rot47, randomPassword };
+    document.getElementById("openEditor").addEventListener("click", sendToEditor);
+    document.getElementById("sendLeft").addEventListener("click", () => sendToDiff("left"));
+    document.getElementById("sendRight").addEventListener("click", () => sendToDiff("right"));
+    document.getElementById("clear").addEventListener("click", () => {
+      textInput.value = "";
+      saveDraft();
+      textInput.focus();
+      UsefulTool.status(status, "Cleared.", "success");
+    });
+
+    window.UsefulToolTextTransfer = { renderStats, saveDraft, sendToEditor, sendToDiff, storageKeys };
   </script>
 </body>
 </html>

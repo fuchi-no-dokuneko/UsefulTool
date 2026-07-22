@@ -20,6 +20,19 @@
       --red: #9b2f2f;
       --shadow: 0 14px 32px rgba(18, 31, 25, .10);
     }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --ink: #e7f0eb;
+      --muted: #a8b8b0;
+      --line: #34443b;
+      --paper: #101614;
+      --panel: #18211d;
+      --green: #43bd92;
+      --teal: #54bdd0;
+      --gold: #e7bd5d;
+      --red: #f08b84;
+      --shadow: none;
+    }
     * { box-sizing: border-box; }
     body {
       margin: 0;
@@ -74,9 +87,44 @@
       font-weight: 700;
       font-size: 14px;
     }
+    .theme-toggle {
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 8px 11px;
+      color: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
     .button:hover, nav a:hover { border-color: var(--green); }
     .primary { color: #fff; background: var(--green); border-color: var(--green); }
     .danger { color: #fff; background: var(--red); border-color: var(--red); }
+    :root[data-theme="dark"] .topbar,
+    :root[data-theme="dark"] nav a,
+    :root[data-theme="dark"] .button,
+    :root[data-theme="dark"] .theme-toggle,
+    :root[data-theme="dark"] .panel,
+    :root[data-theme="dark"] .intro,
+    :root[data-theme="dark"] .dropzone,
+    :root[data-theme="dark"] .metadata-card,
+    :root[data-theme="dark"] .privacy-card,
+    :root[data-theme="dark"] .status,
+    :root[data-theme="dark"] pre {
+      background: var(--panel);
+      border-color: var(--line);
+      color: var(--ink);
+      box-shadow: none;
+    }
+    :root[data-theme="dark"] input,
+    :root[data-theme="dark"] textarea,
+    :root[data-theme="dark"] select {
+      background: #101614;
+      border-color: var(--line);
+      color: var(--ink);
+    }
+    :root[data-theme="dark"] .primary { background: var(--green); border-color: var(--green); color: #06110d; }
+    :root[data-theme="dark"] .danger { background: var(--red); border-color: var(--red); color: #190b0a; }
     main {
       max-width: 1220px;
       margin: 0 auto;
@@ -259,6 +307,7 @@
     </section>
   </main>
 
+  <script src="toolkit.js"></script>
   <script>
     (function blockOutbound() {
       const deny = function () { throw new Error("Outbound network calls are disabled in UsefulTool."); };

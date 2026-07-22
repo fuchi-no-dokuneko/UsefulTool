@@ -21,6 +21,19 @@
       --red: #9b2f2f;
       --shadow: 0 16px 36px rgba(18, 31, 25, .10);
     }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --ink: #e7f0eb;
+      --muted: #a8b8b0;
+      --line: #34443b;
+      --paper: #101614;
+      --panel: #18211d;
+      --green: #43bd92;
+      --teal: #54bdd0;
+      --gold: #e7bd5d;
+      --red: #f08b84;
+      --shadow: none;
+    }
     * { box-sizing: border-box; }
     body {
       margin: 0;
@@ -80,6 +93,16 @@
       font-size: 14px;
       font-weight: 650;
     }
+    .theme-toggle {
+      min-height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 8px 12px;
+      color: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
     nav a:hover, .button:hover { border-color: var(--green); }
     .hero {
       min-height: calc(100svh - 70px);
@@ -91,6 +114,21 @@
         radial-gradient(circle at 82% 14%, rgba(163, 106, 0, .16), transparent 28%),
         var(--paper);
     }
+    :root[data-theme="dark"] .topbar,
+    :root[data-theme="dark"] nav a,
+    :root[data-theme="dark"] .button,
+    :root[data-theme="dark"] .theme-toggle,
+    :root[data-theme="dark"] .console,
+    :root[data-theme="dark"] .tool,
+    :root[data-theme="dark"] footer {
+      background: var(--panel);
+      border-color: var(--line);
+      color: var(--ink);
+    }
+    :root[data-theme="dark"] .hero { background: var(--paper); }
+    :root[data-theme="dark"] .band { background: #0d1311; }
+    :root[data-theme="dark"] .console-head { background: #0a0f0d; }
+    :root[data-theme="dark"] .primary { background: var(--green); border-color: var(--green); color: #06110d; }
     .hero-inner {
       max-width: 1120px;
       margin: 0 auto;
@@ -215,7 +253,8 @@
       <a href="metadata-lab.html">Metadata</a>
       <a href="base64-converter.html">Base64</a>
       <a href="file-diff.html">Diff</a>
-      <a href="word-count.html">Word Count</a>
+      <a href="word-count.html">Editor</a>
+      <a href="text-transfer.html">Upload</a>
       <a href="image-editor.html">Image Editor</a>
       <a href="#downloads">Downloads</a>
       <a href="index.html" download>Download Home</a>
@@ -235,7 +274,8 @@
             <a class="button" href="metadata-lab.html">Open Metadata</a>
             <a class="button" href="base64-converter.html">Open Base64</a>
             <a class="button" href="file-diff.html">Open Diff</a>
-            <a class="button" href="word-count.html">Open Word Count</a>
+            <a class="button" href="word-count.html">Open Text Editor</a>
+            <a class="button" href="text-transfer.html">Open Text Upload</a>
             <a class="button" href="rot-cipher.html">Open ROT</a>
             <a class="button" href="lan-chat.html">Open LAN Chat</a>
             <a class="button" href="image-editor.html">Open Image Editor</a>
@@ -248,7 +288,7 @@
           <div class="console-body">
             <ul class="status">
               <li><span>external API calls</span><span class="ok">blocked</span></li>
-              <li><span>page storage</span><span class="ok">none</span></li>
+              <li><span>page storage</span><span class="ok">local only</span></li>
               <li><span>tool execution</span><span class="ok">local canvas/js</span></li>
               <li><span>delivery</span><span class="ok">static local files</span></li>
             </ul>
@@ -309,9 +349,14 @@
             <div class="tool-actions"><a class="button primary" href="file-diff.html">Open</a><a class="button" href="file-diff.html" download>Download HTML</a></div>
           </article>
           <article class="tool">
-            <h3>Word Count</h3>
-            <p>Count words, characters, sentences, paragraphs, and lines, estimate reading time, and inspect frequent words.</p>
+            <h3>Text Editor</h3>
+            <p>Edit autosaved local drafts with line numbers, regex find and replace, Markdown preview, formatting, and word-count analysis.</p>
             <div class="tool-actions"><a class="button primary" href="word-count.html">Open</a><a class="button" href="word-count.html" download>Download HTML</a></div>
+          </article>
+          <article class="tool">
+            <h3>Text Upload and Download</h3>
+            <p>Upload a text file, edit lightly, download it again, or hand the content to the editor and side-by-side diff pages.</p>
+            <div class="tool-actions"><a class="button primary" href="text-transfer.html">Open</a><a class="button" href="text-transfer.html" download>Download HTML</a></div>
           </article>
           <article class="tool">
             <h3>ROT Cipher</h3>
@@ -348,6 +393,102 @@
     <div class="wrap">Cloudflare Pages static app. No build step required.</div>
   </footer>
 
+  <script data-inlined-from="toolkit.js">
+(function initializeTheme() {
+  const storageKey = "usefultool:theme";
+
+  function preferredTheme() {
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+
+  function storedTheme() {
+    try {
+      return localStorage.getItem(storageKey);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function applyTheme(theme) {
+    const selected = theme === "dark" ? "dark" : "light";
+    document.documentElement.dataset.theme = selected;
+    try {
+      localStorage.setItem(storageKey, selected);
+    } catch (error) {
+      // Theme still works for this page even when storage is blocked.
+    }
+    document.querySelectorAll("[data-theme-label]").forEach((label) => {
+      label.textContent = selected === "dark" ? "Light" : "Dark";
+    });
+    document.querySelectorAll("[data-theme-toggle]").forEach((button) => {
+      button.setAttribute("aria-label", "Switch to " + (selected === "dark" ? "light" : "dark") + " mode");
+    });
+  }
+
+  function installThemeToggle() {
+    const nav = document.querySelector(".topbar nav, header nav, nav");
+    if (!nav || nav.querySelector("[data-theme-toggle]")) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "theme-toggle";
+    button.dataset.themeToggle = "";
+    button.innerHTML = '<span data-theme-label></span>';
+    button.addEventListener("click", () => {
+      applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
+    });
+    nav.appendChild(button);
+    applyTheme(document.documentElement.dataset.theme || storedTheme() || preferredTheme());
+  }
+
+  applyTheme(storedTheme() || preferredTheme());
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", installThemeToggle, { once: true });
+  } else {
+    installThemeToggle();
+  }
+
+  window.UsefulToolTheme = {
+    apply: applyTheme,
+    current() {
+      return document.documentElement.dataset.theme || "light";
+    }
+  };
+})();
+
+(function lockOutboundRuntime() {
+  const deny = function () { throw new Error("Outbound network calls are disabled in UsefulTool."); };
+  window.fetch = deny;
+  window.XMLHttpRequest = deny;
+  window.WebSocket = deny;
+  window.EventSource = deny;
+  if (navigator.sendBeacon) navigator.sendBeacon = function () { return false; };
+})();
+
+window.UsefulTool = {
+  download(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
+  status(element, message, mode) {
+    element.textContent = message;
+    element.className = "status" + (mode ? " " + mode : "");
+  },
+  bytesLabel(bytes) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + " KiB";
+    return (bytes / (1024 * 1024)).toFixed(2) + " MiB";
+  },
+  setTheme: window.UsefulToolTheme.apply,
+  getTheme: window.UsefulToolTheme.current
+};
+
+</script>
   <script>
     (function blockOutbound() {
       const deny = function () { throw new Error("Outbound network calls are disabled in UsefulTool."); };

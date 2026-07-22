@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>Text Upload and Download - UsefulTool</title>
+  <link rel="stylesheet" href="toolkit.css">
+  <style>
+    .transfer-shell { display: grid; grid-template-columns: minmax(240px, 320px) minmax(0, 1fr); min-height: calc(100vh - 180px); }
+    .transfer-panel { padding: 22px clamp(16px, 3vw, 30px); background: var(--panel); border-right: 1px solid var(--line); }
+    .transfer-workspace { min-width: 0; padding: 22px clamp(16px, 3vw, 34px); }
+    #transferText { min-height: 540px; font-size: 14px; line-height: 1.55; }
+    .meta-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .metric { padding: 12px; border: 1px solid var(--line); background: var(--panel); }
+    .metric strong { display: block; font: 800 20px/1.1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .metric span { color: var(--muted); font-size: 12px; }
+    @media (max-width: 800px) {
+      .transfer-shell { grid-template-columns: 1fr; }
+      .transfer-panel { border-right: 0; border-bottom: 1px solid var(--line); }
+      .meta-grid { grid-template-columns: 1fr; }
+      #transferText { min-height: 360px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="mark">UT</span><span>Text Upload</span></a>
+    <nav aria-label="Tool navigation"><a href="index.html">Home</a><a href="word-count.html">Editor</a><a href="file-diff.html">Diff</a><a href="offline/text-transfer.html" download>Download HTML</a></nav>
+  </header>
+  <section class="page-head"><h1>Text Upload and Download</h1><p>Open a local text file, edit it lightly, download it again, or hand it to the editor and diff tools.</p></section>
+  <main class="transfer-shell">
+    <aside class="transfer-panel">
+      <div class="stack">
+        <label>Download filename<input id="filename" type="text" value="usefultool-text.txt" autocomplete="off"></label>
+        <label class="button">Upload text file<input id="file" type="file" accept="text/*,.txt,.md,.json,.java,.kt,.js,.ts,.css,.html,.xml,.csv" hidden></label>
+        <button id="download" type="button">Download text</button>
+        <button id="openEditor" type="button">Send to editor</button>
+        <div class="row">
+          <button id="sendLeft" type="button">Diff left</button>
+          <button id="sendRight" type="button">Diff right</button>
+        </div>
+        <button id="clear" type="button">Clear</button>
+        <div class="status" id="status" aria-live="polite">Ready.</div>
+      </div>
+    </aside>
+    <section class="transfer-workspace">
+      <label>Text<textarea id="transferText" placeholder="Upload or paste text here" spellcheck="false"></textarea></label>
+      <div class="meta-grid" aria-label="Text size">
+        <div class="metric"><strong id="bytes">0 B</strong><span>UTF-8 size</span></div>
+        <div class="metric"><strong id="characters">0</strong><span>Characters</span></div>
+        <div class="metric"><strong id="lines">0</strong><span>Lines</span></div>
+      </div>
+    </section>
+  </main>
+  <script src="toolkit.js"></script>
+  <script>
+    const textInput = document.getElementById("transferText");
+    const filenameInput = document.getElementById("filename");
+    const status = document.getElementById("status");
+    const storageKeys = {
+      text: "usefultool:text-transfer:text",
+      filename: "usefultool:text-transfer:filename",
+      editorDrafts: "usefultool:text-editor:drafts",
+      editorActive: "usefultool:text-editor:active",
+      editorLegacy: "usefultool:word-count:text",
+      diffLeft: "usefultool:file-diff:left-text",
+      diffRight: "usefultool:file-diff:right-text"
+    };
+
+    function readStorage(key) {
+      try {
+        return localStorage.getItem(key);
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function writeStorage(key, value) {
+      try {
+        localStorage.setItem(key, value);
+        return true;
+      } catch (error) {
+        UsefulTool.status(status, "Browser storage is full. Current text is not saved for reload.", "warn");
+        return false;
+      }
+    }
+
+    function safeName() {
+      return (filenameInput.value.trim() || "usefultool-text.txt").replace(/[\\/:*?"<>|]+/g, "-");
+    }
+
+    function renderStats() {
+      const text = textInput.value;
+      document.getElementById("bytes").textContent = UsefulTool.bytesLabel(new TextEncoder().encode(text).length);
+      document.getElementById("characters").textContent = [...text].length;
+      document.getElementById("lines").textContent = text ? text.split(/\r\n?|\n/u).length : 0;
+    }
+
+    function saveDraft() {
+      writeStorage(storageKeys.text, textInput.value);
+      writeStorage(storageKeys.filename, filenameInput.value);
+      renderStats();
+    }
+
+    function createId() {
+      return "draft-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+    }
+
+    function sendToEditor() {
+      let drafts = [];
+      try {
+        const saved = readStorage(storageKeys.editorDrafts);
+        drafts = saved ? JSON.parse(saved) : [];
+        if (!Array.isArray(drafts)) drafts = [];
+      } catch (error) {
+        drafts = [];
+      }
+      const draft = {
+        id: createId(),
+        name: safeName().replace(/\.[^.]+$/, "") || "Uploaded text",
+        text: textInput.value,
+        mode: "auto",
+        updatedAt: Date.now()
+      };
+      drafts.unshift(draft);
+      writeStorage(storageKeys.editorDrafts, JSON.stringify(drafts));
+      writeStorage(storageKeys.editorActive, draft.id);
+      writeStorage(storageKeys.editorLegacy, textInput.value);
+      window.open("word-count.html", "_blank");
+      UsefulTool.status(status, "Sent text to editor.", "success");
+    }
+
+    function sendToDiff(side) {
+      writeStorage(side === "right" ? storageKeys.diffRight : storageKeys.diffLeft, textInput.value);
+      window.open("file-diff.html", "_blank");
+      UsefulTool.status(status, "Sent text to diff " + side + ".", "success");
+    }
+
+    textInput.value = readStorage(storageKeys.text) || "";
+    filenameInput.value = readStorage(storageKeys.filename) || filenameInput.value;
+    renderStats();
+    textInput.addEventListener("input", saveDraft);
+    filenameInput.addEventListener("input", saveDraft);
+    document.getElementById("file").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      textInput.value = await file.text();
+      filenameInput.value = file.name || filenameInput.value;
+      saveDraft();
+      UsefulTool.status(status, "Loaded " + file.name + ".", "success");
+      event.target.value = "";
+    });
+    document.getElementById("download").addEventListener("click", () => {
+      UsefulTool.download(new Blob([textInput.value], { type: "text/plain;charset=utf-8" }), safeName());
+      UsefulTool.status(status, "Text downloaded.", "success");
+    });
+    document.getElementById("openEditor").addEventListener("click", sendToEditor);
+    document.getElementById("sendLeft").addEventListener("click", () => sendToDiff("left"));
+    document.getElementById("sendRight").addEventListener("click", () => sendToDiff("right"));
+    document.getElementById("clear").addEventListener("click", () => {
+      textInput.value = "";
+      saveDraft();
+      textInput.focus();
+      UsefulTool.status(status, "Cleared.", "success");
+    });
+
+    window.UsefulToolTextTransfer = { renderStats, saveDraft, sendToEditor, sendToDiff, storageKeys };
+  </script>
+</body>
+</html>

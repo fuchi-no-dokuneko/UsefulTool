@@ -10,6 +10,7 @@
   <iframe id="base64" src="../base64-converter.html" hidden></iframe>
   <iframe id="diff" src="../file-diff.html" hidden></iframe>
   <iframe id="words" src="../word-count.html" hidden></iframe>
+  <iframe id="transfer" src="../text-transfer.html" hidden></iframe>
   <iframe id="rot" src="../rot-cipher.html" hidden></iframe>
   <iframe id="pdf" src="../pdf-merge.html" hidden></iframe>
   <iframe id="imagesPdf" src="../images-to-pdf.html" hidden></iframe>
@@ -82,9 +83,10 @@
       const checks = [];
       const check = (name, pass, detail) => checks.push({ name, pass: Boolean(pass), detail });
 
-      const expectedHomeLinks = ["image-converter.html", "calculator.html", "unit-converter.html", "metadata-lab.html", "base64-converter.html", "file-diff.html", "word-count.html", "rot-cipher.html", "lan-chat.html", "image-editor.html", "pdf-merge.html", "images-to-pdf.html"];
+      const expectedHomeLinks = ["image-converter.html", "calculator.html", "unit-converter.html", "metadata-lab.html", "base64-converter.html", "file-diff.html", "word-count.html", "text-transfer.html", "rot-cipher.html", "lan-chat.html", "image-editor.html", "pdf-merge.html", "images-to-pdf.html"];
       const homeLinks = [...document.getElementById("home").contentDocument.querySelectorAll(".hero .actions a")].map((link) => link.getAttribute("href"));
       check("home shortcuts cover every tool", expectedHomeLinks.every((page) => homeLinks.includes(page)), homeLinks.join(", "));
+      check("home has theme toggle", Boolean(document.getElementById("home").contentDocument.querySelector("[data-theme-toggle]")));
 
       const units = unitFrame.contentWindow.UsefulToolUnits;
       check("18 conversion categories", Object.keys(units.categories).length === 18, Object.keys(units.categories).join(", "));
@@ -110,7 +112,29 @@
       await reloaded(wordFrame);
       wordWindow = wordFrame.contentWindow;
       check("word-count text survives reload", wordWindow.document.getElementById("text").value === persistedWordText);
+      check("text editor has theme toggle", Boolean(wordWindow.document.querySelector("[data-theme-toggle]")));
+      const textEditor = wordWindow.UsefulToolTextEditor;
+      wordWindow.document.getElementById("text").value = "fish fish cow";
+      wordWindow.document.getElementById("findPattern").value = "fish";
+      wordWindow.document.getElementById("replaceValue").value = "cat";
+      check("regex replace all", textEditor.replaceAllMatches() === 2 && wordWindow.document.getElementById("text").value === "cat cat cow");
+      wordWindow.document.getElementById("mode").value = "json";
+      wordWindow.document.getElementById("text").value = "{\"b\":1,\"a\":[2,3]";
+      check("best-effort JSON formatting", textEditor.formatCurrent().includes("\n  \"b\": 1,\n"));
+      const lineFrame = wordWindow.document.getElementById("editorFrame");
+      const hadLines = !lineFrame.classList.contains("no-lines");
+      wordWindow.document.getElementById("toggleLines").click();
+      check("line numbers can be disabled", lineFrame.classList.contains("no-lines") === hadLines);
+      Object.values(wordWindow.UsefulToolTextEditor.storageKeys).forEach((key) => wordWindow.localStorage.removeItem(key));
       wordWindow.localStorage.removeItem(wordWindow.UsefulToolWordCount.storageKey);
+
+      const transferWindow = document.getElementById("transfer").contentWindow;
+      transferWindow.document.getElementById("transferText").value = "Transfer text\nline two";
+      transferWindow.document.getElementById("transferText").dispatchEvent(new Event("input", { bubbles: true }));
+      check("text transfer stats", transferWindow.document.getElementById("lines").textContent === "2" && transferWindow.document.getElementById("characters").textContent === "22");
+      check("text transfer API", typeof transferWindow.UsefulToolTextTransfer.sendToEditor === "function");
+      transferWindow.localStorage.removeItem(transferWindow.UsefulToolTextTransfer.storageKeys.text);
+      transferWindow.localStorage.removeItem(transferWindow.UsefulToolTextTransfer.storageKeys.filename);
 
       const diffFrame = document.getElementById("diff");
       let diffWindow = diffFrame.contentWindow;
