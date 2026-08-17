@@ -1,0 +1,6 @@
+{
+  "repository": "UsefulTool",
+  "platform": "web",
+  "baseUrl": "https://usefultool-e6j.pages.dev/",
+  "timeoutSeconds": 60
+}

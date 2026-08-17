@@ -52,6 +52,14 @@
     const propertyIds = ["left", "top", "width", "height", "angle", "opacity"];
 
     function active() { return canvas.getActiveObject(); }
+    function readImage(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.addEventListener("load", () => resolve(reader.result), { once: true });
+        reader.addEventListener("error", () => reject(reader.error || new Error("Could not read image.")), { once: true });
+        reader.readAsDataURL(file);
+      });
+    }
     function renderLayers() {
       const container = document.getElementById("layers");
       container.replaceChildren();
@@ -99,14 +107,11 @@
     document.getElementById("imageInput").addEventListener("change", async (event) => {
       for (const file of event.target.files) {
         if (!file.type.startsWith("image/") || file.size > 30 * 1024 * 1024) continue;
-        const url = URL.createObjectURL(file);
-        try {
-          const image = await FabricImage.fromURL(url);
-          image._fileName = file.name;
-          const scale = Math.min(1, (canvas.width * 0.8) / image.width, (canvas.height * 0.8) / image.height);
-          image.set({ left: 40 + canvas.getObjects().length * 18, top: 40 + canvas.getObjects().length * 18, scaleX: scale, scaleY: scale });
-          canvas.add(image); canvas.setActiveObject(image);
-        } finally { URL.revokeObjectURL(url); }
+        const image = await FabricImage.fromURL(await readImage(file));
+        image._fileName = file.name;
+        const scale = Math.min(1, (canvas.width * 0.8) / image.width, (canvas.height * 0.8) / image.height);
+        image.set({ left: 40 + canvas.getObjects().length * 18, top: 40 + canvas.getObjects().length * 18, scaleX: scale, scaleY: scale });
+        canvas.add(image); canvas.setActiveObject(image);
       }
       canvas.requestRenderAll(); syncProperties(); UsefulTool.status(status, canvas.getObjects().length + " layer(s) loaded."); event.target.value = "";
     });

@@ -987,6 +987,7 @@ window.UsefulTool = {
       updateLineNumbers();
     });
     textInput.addEventListener("input", () => { afterTextChanged(null, true); });
+    window.addEventListener("pagehide", () => { persistActive(true); });
     textInput.addEventListener("scroll", () => { lineGutter.scrollTop = textInput.scrollTop; });
     draftName.addEventListener("input", () => { persistActive(false); renderDraftSelect(); });
     modeSelect.addEventListener("change", () => { persistActive(true); });

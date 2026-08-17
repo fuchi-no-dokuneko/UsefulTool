@@ -1,4 +1,5 @@
 .wrangler/
 build/
 node_modules/
+acceptance/node_modules/
 .DS_Store
