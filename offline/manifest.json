@@ -1,0 +1,75 @@
+{
+  "schema": "usefultool-offline.v1",
+  "pages": [
+    {
+      "file": "base64-converter.html",
+      "bytes": 17210,
+      "sha256": "59e055a2b5e6e6eaa53b33303f12d7a3c5f75fda549724b224c0e87ab4a7c342"
+    },
+    {
+      "file": "calculator.html",
+      "bytes": 25803,
+      "sha256": "33decad3e81f9d9dae12425f8d40385b9effa869966637ed80ec3572ef90d927"
+    },
+    {
+      "file": "file-diff.html",
+      "bytes": 58686,
+      "sha256": "b721d02e24efab3a8dc995eb72c58bf5f44b49c7e721cb098eaeb9f12066cdff"
+    },
+    {
+      "file": "image-converter.html",
+      "bytes": 24977,
+      "sha256": "1133eb6c129080370f572e5f9e5f5f27ec11ed83f69e9dd49ddc1201b061fc30"
+    },
+    {
+      "file": "image-editor.html",
+      "bytes": 418881,
+      "sha256": "20c04ff92f0dffc07933e0c743dbcadbbffd8ddbd1a8cfd410c6990f16a92c11"
+    },
+    {
+      "file": "images-to-pdf.html",
+      "bytes": 543629,
+      "sha256": "86149d608b9abcb44d4fac2799c68d83e92e88ddda87f8b6de05964f249d55ba"
+    },
+    {
+      "file": "index.html",
+      "bytes": 20221,
+      "sha256": "cf2414bfc1544ad68f1a3e2c214f86af35e5a322eca895273f3f1c4945b10362"
+    },
+    {
+      "file": "lan-chat.html",
+      "bytes": 24433,
+      "sha256": "0a6433c2a8a6e5c00d63754e9cb2761a9972d2f4d7a2b621add851d943f09055"
+    },
+    {
+      "file": "metadata-lab.html",
+      "bytes": 60095,
+      "sha256": "f2faea6e16cac9c8de219ff7778f7168939d33ece2170cdbb34b5ef6a86f02d4"
+    },
+    {
+      "file": "pdf-merge.html",
+      "bytes": 541204,
+      "sha256": "6a663f64bbd18af987efe2293b499ca59f9564a4fd74c1b34e30b62123f041b5"
+    },
+    {
+      "file": "rot-cipher.html",
+      "bytes": 15175,
+      "sha256": "5b0ffdbef833d2752b3896e965e64363ca2a8867123a84e5305e42796a0b2eee"
+    },
+    {
+      "file": "text-transfer.html",
+      "bytes": 17034,
+      "sha256": "d769f031594b7ff8ea512a51f2f105183cbcc4826c400097bc8bc058867e4943"
+    },
+    {
+      "file": "unit-converter.html",
+      "bytes": 24360,
+      "sha256": "db3dc0483b6a85e79292574fd2253a1f6e14b8a290b54cf5b004e1ac72dd2e53"
+    },
+    {
+      "file": "word-count.html",
+      "bytes": 43395,
+      "sha256": "90d3d54be7a606ea25df593a7b1d24411eb8657f7fe0abae6cfda2efd79fe4cd"
+    }
+  ]
+}

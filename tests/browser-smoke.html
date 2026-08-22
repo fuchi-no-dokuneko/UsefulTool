@@ -94,6 +94,9 @@
       check("Rankine affine conversion", Math.abs(units.convert(491.67, "rankine", "celsius", units.categories.Temperature)) < 1e-9);
       check("data-rate conversion", Math.abs(units.convert(100, "megabit per second", "megabyte per second", units.categories["Data rate"]) - 12.5) < 1e-12);
       check("mechanical power conversion", Math.abs(units.convert(1, "horsepower mechanical", "watt", units.categories.Power) - 745.6998715822702) < 1e-9);
+      const parsecMeters = units.convert(1, "parsec", "meter", units.categories.Length);
+      check("parsec uses authoritative precision", Math.abs(parsecMeters - 3.085677581491367e16) <= 4);
+      check("parsec round trip", Math.abs(units.convert(parsecMeters, "meter", "parsec", units.categories.Length) - 1) < 1e-15);
 
       const base64 = document.getElementById("base64").contentWindow.UsefulToolBase64;
       const encoded = base64.bytesToBase64(new TextEncoder().encode("Useful Tool"));
@@ -106,6 +109,9 @@
       const wordStats = wordCount.analyze("One fish, two fish.\n\nRed fish blue fish!");
       check("word-count totals", wordStats.words === 8 && wordStats.sentences === 2 && wordStats.paragraphs === 2);
       check("word-count frequency", wordStats.frequencies[0][0] === "fish" && wordStats.frequencies[0][1] === 4);
+      const fallbackWords = wordCount.analyze("A, B.C don't 1.25 -- end");
+      check("word matching keeps grouped token boundaries", fallbackWords.words === 5 && fallbackWords.frequencies.some(([word]) => word === "b.c") && fallbackWords.frequencies.some(([word]) => word === "1.25"));
+      check("editor has an accessible name", wordWindow.document.getElementById("text").getAttribute("aria-label") === "Editor text");
       const persistedWordText = "Reload keeps this word-count draft.";
       wordWindow.document.getElementById("text").value = persistedWordText;
       wordWindow.document.getElementById("text").dispatchEvent(new Event("input", { bubbles: true }));
@@ -177,7 +183,29 @@
       const editorWindow = document.getElementById("editor").contentWindow;
       for (let attempt = 0; attempt < 40 && !editorWindow.UsefulToolImageEditor; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 50));
       check("Fabric image editor initialized", editorWindow.document.documentElement.dataset.editorReady === "true" && editorWindow.UsefulToolImageEditor.canvas.width === 1200);
-      check("LAN chat WebRTC available", typeof document.getElementById("chat").contentWindow.RTCPeerConnection === "function");
+      const chatWindow = document.getElementById("chat").contentWindow;
+      check("LAN chat WebRTC available", typeof chatWindow.RTCPeerConnection === "function");
+      check("LAN inputs have accessible names", chatWindow.document.getElementById("messageInput").getAttribute("aria-label") === "Message" && chatWindow.document.getElementById("imageInput").getAttribute("aria-label") === "Image to send");
+      const lan = chatWindow.UsefulToolLan;
+      const sourceChannel = { readyState: "open", sent: [], send(value) { this.sent.push(value); } };
+      const secondChannel = { readyState: "open", sent: [], send(value) { this.sent.push(value); } };
+      const thirdChannel = { readyState: "open", sent: [], send(value) { this.sent.push(value); } };
+      lan.channels.add(sourceChannel); lan.channels.add(secondChannel); lan.channels.add(thirdChannel);
+      const chatPacket = JSON.stringify({ type: "chat", messageId: "message-0001", origin: "peer-a", name: "Peer A", text: "one logical message" });
+      const messageCount = chatWindow.document.querySelectorAll("#chatLog article").length;
+      check("three-peer relay accepts one logical message", lan.receivePacket(chatPacket, sourceChannel) && secondChannel.sent.length === 1 && thirdChannel.sent.length === 1);
+      check("three-peer relay cycle is deduplicated", !lan.receivePacket(chatPacket, secondChannel) && chatWindow.document.querySelectorAll("#chatLog article").length === messageCount + 1 && sourceChannel.sent.length === 0);
+      check("invalid and oversized packets are rejected", !lan.receivePacket("not-json", sourceChannel) && !lan.receivePacket("x".repeat(lan.limits.packetCharacters + 1), sourceChannel));
+      check("negative and sparse chunks are rejected",
+        !lan.receivePacket(JSON.stringify({ type: "image", messageId: "chunk-neg-01", id: "image-0001", index: -1, total: 2, data: "x", name: "x.png", mime: "image/png", sender: "A" }), sourceChannel) &&
+        !lan.receivePacket(JSON.stringify({ type: "image", messageId: "chunk-gap-01", id: "image-0002", index: 1, total: 2, data: "x", name: "x.png", mime: "image/png", sender: "A" }), sourceChannel));
+      const imageStart = JSON.stringify({ type: "image", messageId: "chunk-ok-0001", id: "image-0003", index: 0, total: 2, data: "data:image/png;base64,", name: "x.png", mime: "image/png", sender: "A" });
+      check("valid image start is bounded", lan.receivePacket(imageStart, sourceChannel) && lan.incomingImages.get("image-0003").chunks.size === 1);
+      check("duplicate and inconsistent image chunks are rejected",
+        !lan.receivePacket(JSON.stringify({ type: "image", messageId: "chunk-dup-01", id: "image-0003", index: 0, total: 2, data: "again", name: "x.png", mime: "image/png", sender: "A" }), sourceChannel) &&
+        !lan.receivePacket(JSON.stringify({ type: "image", messageId: "chunk-meta-01", id: "image-0003", index: 1, total: 3, data: "AA==", name: "x.png", mime: "image/png", sender: "A" }), sourceChannel));
+      check("complete image is delivered once", lan.receivePacket(JSON.stringify({ type: "image", messageId: "chunk-ok-0002", id: "image-0003", index: 1, total: 2, data: "AA==", name: "x.png", mime: "image/png", sender: "A" }), sourceChannel) && !lan.incomingImages.has("image-0003"));
+      lan.channels.delete(sourceChannel); lan.channels.delete(secondChannel); lan.channels.delete(thirdChannel);
 
       const metadataWindow = metadataFrame.contentWindow;
       const metadata = metadataWindow.UsefulToolMetadata;

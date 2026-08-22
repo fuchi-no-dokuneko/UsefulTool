@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -14,6 +15,18 @@ function safeScript(source) {
   return source.replace(/<\/script/gi, "<\\/script");
 }
 
+async function inlineModuleImports(source, scriptPath) {
+  let output = source;
+  const imports = [...source.matchAll(/from\s+(["'])(\.\.?\/[^"']+\.m?js)\1/g)];
+  for (const match of imports) {
+    const modulePath = path.resolve(path.dirname(scriptPath), match[2]);
+    const moduleSource = await fs.readFile(modulePath, "utf8");
+    const dataUrl = "data:text/javascript;base64," + Buffer.from(moduleSource).toString("base64");
+    output = output.replace(match[0], `from ${match[1]}${dataUrl}${match[1]}`);
+  }
+  return output;
+}
+
 async function inlinePage(name) {
   const sourcePath = path.join(root, name);
   let html = await fs.readFile(sourcePath, "utf8");
@@ -24,22 +37,20 @@ async function inlinePage(name) {
     const css = (await fs.readFile(path.resolve(root, path.dirname(name), match[1]), "utf8"))
       .replace(/<\/style/gi, "<\\/style");
     html = html.replace(match[0], () => `<style data-inlined-from="${match[1]}">\n${css}\n</style>`);
+    html = html.replace("style-src 'self'", "style-src 'self' 'unsafe-inline'");
   }
 
   const scripts = [...html.matchAll(/<script([^>]*)\s+src="([^"]+)"([^>]*)><\/script>/g)];
   for (const match of scripts) {
     if (!isLocal(match[2])) continue;
-    const javascript = safeScript(await fs.readFile(path.resolve(root, path.dirname(name), match[2]), "utf8"));
+    const scriptPath = path.resolve(root, path.dirname(name), match[2]);
+    const javascript = safeScript(await inlineModuleImports(await fs.readFile(scriptPath, "utf8"), scriptPath));
     const attributes = (match[1] + match[3]).trim();
     html = html.replace(match[0], () => `<script${attributes ? " " + attributes : ""} data-inlined-from="${match[2]}">\n${javascript}\n</script>`);
-  }
-
-  const imports = [...html.matchAll(/from\s+(["'])(\.\.?\/[^"']+\.m?js)\1/g)];
-  for (const match of imports) {
-    const moduleSource = await fs.readFile(path.resolve(root, path.dirname(name), match[2]), "utf8");
-    const dataUrl = "data:text/javascript;base64," + Buffer.from(moduleSource).toString("base64");
-    html = html.replace(match[0], `from ${match[1]}${dataUrl}${match[1]}`);
-    html = html.replace("script-src 'self' 'unsafe-inline'", "script-src 'self' 'unsafe-inline' data:");
+    html = html.replace("script-src 'self'", "script-src 'self' 'unsafe-inline'");
+    if (javascript.includes("data:text/javascript;base64,")) {
+      html = html.replace("script-src 'self' 'unsafe-inline'", "script-src 'self' 'unsafe-inline' data:");
+    }
   }
 
   html = html.replace(/href="offline\/([^"]+\.html)"/g, 'href="$1"');
@@ -48,5 +59,15 @@ async function inlinePage(name) {
 }
 
 await fs.mkdir(outputDirectory, { recursive: true });
-for (const name of pages) await fs.writeFile(path.join(outputDirectory, name), await inlinePage(name));
+const manifest = { schema: "usefultool-offline.v1", pages: [] };
+for (const name of pages) {
+  const artifact = await inlinePage(name);
+  await fs.writeFile(path.join(outputDirectory, name), artifact);
+  manifest.pages.push({
+    file: name,
+    bytes: Buffer.byteLength(artifact),
+    sha256: crypto.createHash("sha256").update(artifact).digest("hex"),
+  });
+}
+await fs.writeFile(path.join(outputDirectory, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 console.log(`Generated ${pages.length} self-contained pages in offline/.`);

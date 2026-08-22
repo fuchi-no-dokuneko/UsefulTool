@@ -21,6 +21,7 @@ UsefulTool is a Cloudflare Pages-ready static tool collection. It is designed as
 
 Advanced tools load browser builds from `vendor/`; they never use runtime CDNs. Licenses and pinned versions are documented in `vendor/README.md`.
 Every page links to a generated self-contained copy in `offline/`, so one downloaded HTML file includes the local styles and JavaScript it needs.
+Hosted page logic lives in `assets/pages/` and runs under a CSP that disallows inline scripts. `scripts/build-offline.mjs` deterministically inlines those sources and local dependencies, then records each artifact's byte count and SHA-256 in `offline/manifest.json`.
 
 ## Local Run
 
@@ -42,7 +43,16 @@ The app is static-only. Runtime security headers are in `_headers`, and the page
 
 ## CI/CD
 
-`.github/workflows/cloudflare-pages.yml` validates that the app has no obvious external runtime endpoints. It can deploy to Cloudflare Pages when these GitHub secrets and variables are set:
+`.github/workflows/cloudflare-pages.yml` verifies strict hosted sources, performs two equivalent offline builds, checks the checksum manifest and size budget, runs real browser tests, and deploys the exact tested artifact. Run the source checks locally with:
+
+```bash
+node scripts/verify-hosted.mjs
+node scripts/build-offline.mjs
+node scripts/verify-offline.mjs
+node scripts/run-browser-uat.mjs
+```
+
+It can deploy to Cloudflare Pages when these GitHub secrets and variables are set:
 
 - Secret: `CLOUDFLARE_API_TOKEN`
 - Secret: `CLOUDFLARE_ACCOUNT_ID`

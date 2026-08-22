@@ -5,15 +5,19 @@ on:
     branches: [main]
   pull_request:
 
+permissions: {}
+
 jobs:
   validate:
     name: Unit, UAT, and coverage
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "24"
       - name: Check required files
@@ -44,20 +48,17 @@ jobs:
       - name: Build and verify offline downloads
         run: |
           node scripts/build-offline.mjs
+          cp offline/manifest.json /tmp/offline-manifest.json
+          node scripts/build-offline.mjs
+          cmp /tmp/offline-manifest.json offline/manifest.json
           node scripts/verify-offline.mjs
           git diff --exit-code -- offline
-      - name: Check for external runtime URLs
+      - name: Verify strict hosted sources
+        run: node scripts/verify-hosted.mjs
+      - name: Check hosted JavaScript syntax
         run: |
-          if grep -RInE 'https?://|//[^ ]+\.[a-zA-Z]{2,}' -- *.html _headers wrangler.toml; then
-            echo "External runtime URL found. Keep pages local-only."
-            exit 1
-          fi
-      - name: Check connect-src lock
-        run: grep -R "connect-src 'none'" *.html _headers
-      - name: Check inline JavaScript syntax
-        run: |
-          for file in unit-converter.html metadata-lab.html base64-converter.html file-diff.html word-count.html text-transfer.html rot-cipher.html lan-chat.html pdf-merge.html images-to-pdf.html; do
-            perl -0777 -ne 'while (/<script>(.*?)<\/script>/sg) { print $1 }' "$file" | node --check
+          for file in toolkit.js assets/pages/*.js; do
+            node --check "$file"
           done
       - name: Run browser unit and UAT coverage
         env:
@@ -83,20 +84,36 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       - name: Upload test and coverage reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: browser-test-reports
           path: build/reports/browser-uat/
+          if-no-files-found: error
+      - name: Prepare tested deployment artifact
+        run: |
+          mkdir dist
+          cp ./*.html toolkit.css toolkit.js _headers dist/
+          cp -R assets vendor offline dist/
+      - name: Upload tested deployment artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cloudflare-site
+          path: dist/
           if-no-files-found: error
 
   deploy:
     needs: validate
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     steps:
-      - uses: actions/checkout@v6
-      - name: Build offline downloads
-        run: node scripts/build-offline.mjs
+      - name: Download tested deployment artifact
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: cloudflare-site
+          path: dist
       - name: Check Cloudflare deployment config
         id: config
         env:
@@ -114,8 +131,8 @@ jobs:
           fi
       - name: Deploy to Cloudflare Pages
         if: steps.config.outputs.configured == 'true'
-        uses: cloudflare/wrangler-action@v4
+        uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy . --project-name=${{ steps.config.outputs.project_name }}
+          command: pages deploy dist --project-name=${{ steps.config.outputs.project_name }}

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <title>UsefulTool</title>
   <style>
@@ -393,20 +393,6 @@
   </footer>
 
   <script src="toolkit.js"></script>
-  <script>
-    (function blockOutbound() {
-      const deny = function () { throw new Error("Outbound network calls are disabled in UsefulTool."); };
-      window.fetch = deny;
-      window.XMLHttpRequest = deny;
-      window.WebSocket = deny;
-      window.EventSource = deny;
-      if (navigator.sendBeacon) navigator.sendBeacon = function () { return false; };
-    })();
-    document.querySelectorAll("[data-source]").forEach((button) => {
-      button.addEventListener("click", () => {
-        window.open("view-source:" + new URL(button.dataset.source, location.href).href, "_blank", "noopener,noreferrer");
-      });
-    });
-  </script>
+  <script src="assets/pages/index.js"></script>
 </body>
 </html>
