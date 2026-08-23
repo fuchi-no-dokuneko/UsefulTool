@@ -355,7 +355,7 @@ document.getElementById("exportButton").addEventListener("click", () => {
 });
 document.getElementById("clearButton").addEventListener("click", () => { canvas.clear(); canvas.backgroundColor = document.getElementById("background").value; canvas.requestRenderAll(); syncProperties(); });
 syncProperties();
-window.UsefulToolImageEditor = { canvas };
+window.UsefulToolImageEditor = { active, applyProperties, canvas, readImage, renderLayers, syncProperties };
 document.documentElement.dataset.editorReady = "true";
 
 </script>

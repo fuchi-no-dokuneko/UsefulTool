@@ -299,7 +299,7 @@ document.getElementById("copyButton").addEventListener("click", async () => { aw
 document.getElementById("swapButton").addEventListener("click", () => { input.value = output.value; output.value = ""; });
 document.getElementById("clearButton").addEventListener("click", () => { input.value = ""; output.value = ""; allShifts.textContent = "All-shift analysis appears here."; });
 algorithm.addEventListener("change", () => { shift.disabled = algorithm.value === "rot47"; direction.disabled = algorithm.value === "rot47"; });
-window.UsefulToolRot = { rotateAlpha, rot47, randomPassword };
+window.UsefulToolRot = { rotateAlpha, rot47, randomPassword, transform };
 
 </script>
 </body>
