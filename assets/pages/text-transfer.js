@@ -108,4 +108,4 @@ document.getElementById("clear").addEventListener("click", () => {
   UsefulTool.status(status, "Cleared.", "success");
 });
 
-window.UsefulToolTextTransfer = { renderStats, saveDraft, sendToEditor, sendToDiff, storageKeys };
+window.UsefulToolTextTransfer = { renderStats, safeName, saveDraft, sendToEditor, sendToDiff, storageKeys };

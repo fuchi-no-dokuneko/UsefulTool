@@ -735,4 +735,20 @@ loadDrafts();
 renderDraftSelect();
 syncActiveToEditor();
 window.UsefulToolWordCount = { analyze, saveText, restoreText, storageKey: legacyStorageKey, storageKeys };
-window.UsefulToolTextEditor = { analyze, formatCurrent, formatJsonBestEffort, markdownToHtml, replaceAllMatches, saveDrafts, sendToDiff, storageKeys };
+window.UsefulToolTextEditor = {
+  analyze,
+  duration,
+  findNextMatch,
+  formatBraceCode,
+  formatCurrent,
+  formatJsonBestEffort,
+  formatMarkup,
+  loadImportedDrafts,
+  markdownToHtml,
+  replaceAllMatches,
+  replaceOneMatch,
+  saveDrafts,
+  sendToDiff,
+  summary,
+  storageKeys
+};

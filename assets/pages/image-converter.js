@@ -286,3 +286,4 @@ canvas.addEventListener("pointercancel", () => {
 });
 
 updateReadouts();
+window.UsefulToolImageConverter = { applyBrush, brushLine, chooseCornerSample, drawCurrent, exportImage, imagePoint, loadImage, removeBackground, resetMask, setMode, updateSample };

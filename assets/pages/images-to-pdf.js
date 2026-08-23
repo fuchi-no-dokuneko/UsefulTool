@@ -88,3 +88,4 @@ document.getElementById("buildButton").addEventListener("click", async () => {
   } catch (error) { UsefulTool.status(status, error.message, "error"); }
 });
 document.getElementById("clearButton").addEventListener("click", () => { records.forEach((record) => URL.revokeObjectURL(record.preview)); records.length = 0; render(); UsefulTool.status(status, "Cleared."); });
+window.UsefulToolImagesToPdf = { fixedPage, jpegBytes, loadBitmap, records, render };

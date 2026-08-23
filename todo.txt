@@ -1,3 +1,3 @@
-繁中：95% 行與分支閘門已建立；媒體及編輯器瀏覽器情境待補足。
+繁中：本批功能與測試已完成，沒有已知未完成項目。
 
-English: The 95% line and branch gate exists; media and editor browser scenarios remain.
+English: This batch's features and tests are complete; no known items remain.
