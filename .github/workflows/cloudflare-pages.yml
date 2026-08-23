@@ -2,7 +2,7 @@ name: Cloudflare Pages
 
 on:
   push:
-    branches: [main]
+    branches: [main, "tickets/**"]
   pull_request:
 
 permissions: {}
@@ -97,6 +97,7 @@ jobs:
           mkdir dist
           cp ./*.html toolkit.css toolkit.js _headers dist/
           cp -R assets vendor offline dist/
+          printf '{"commit":"%s","branch":"%s"}\n' "$GITHUB_SHA" "$GITHUB_REF_NAME" > dist/deployment.json
       - name: Upload tested deployment artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -110,7 +111,7 @@ jobs:
     permissions:
       actions: read
       contents: read
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/tickets/usefultool-coverage-260823') }}
     steps:
       - name: Download tested deployment artifact
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
@@ -138,4 +139,4 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=${{ steps.config.outputs.project_name }}
+          command: pages deploy dist --project-name=${{ steps.config.outputs.project_name }} --branch=main
