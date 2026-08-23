@@ -1,0 +1,3 @@
+browser-tools: Real Chromium pages, DOM, localStorage, Blob downloads, canvas, PDF, and files; no browser implementation mocks.
+coverage-runner: Real V8 precise line and block ranges mapped to LCOV; no synthetic hit counts.
+offline-build: Real generated HTML and vendored assets; Cloudflare deployment is not mocked during browser tests.

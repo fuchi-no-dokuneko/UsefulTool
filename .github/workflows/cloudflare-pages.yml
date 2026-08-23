@@ -64,10 +64,13 @@ jobs:
         env:
           UAT_TIMEOUT_MS: "90000"
         run: node scripts/run-browser-uat.mjs
+      - name: Enforce complete maintained-source coverage
+        run: node scripts/verify-coverage.mjs
       - name: Verify SonarQube input reports
         run: |
           test -s build/reports/browser-uat/lcov.info
           test -s build/reports/browser-uat/sonar-test-execution.xml
+          test -s build/reports/browser-uat/coverage-gate.json
       - name: Require SonarQube Cloud token
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
         env:
