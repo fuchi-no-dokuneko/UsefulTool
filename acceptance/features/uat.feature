@@ -136,6 +136,8 @@ Feature: Daily acceptance of UsefulTool
     Then a downloaded file matching "Acceptance*.txt" appears
     When I click CSS "#downloadReport"
     Then a downloaded file matching "usefultool-word-count*.txt" appears
+    When I click CSS "#copySummary"
+    Then CSS "#status" contains text "Summary copied."
     When I click CSS "#downloadKey"
     Then a downloaded file matching "usefultool-text-editor-key*.json" appears
     When I click CSS "#sendLeft"
@@ -273,3 +275,281 @@ Feature: Daily acceptance of UsefulTool
     And at least 1 elements match CSS "#chatLog img"
     When I click CSS "#disconnectButton"
     Then CSS "#connectionStatus" eventually contains text "0 connected peer(s)."
+
+  Scenario: Use calculator keypad history errors and converter shortcuts
+    Given I open the web application at path "/calculator.html"
+    When I replace CSS "#expression" with "sqrt(9)+max(4,7)"
+    Then CSS "#result" has text "10"
+    And at least 2 elements match CSS "#history li"
+    When I click CSS "#history button"
+    Then CSS "#expression" has value "sqrt(9)+max(4,7)"
+    When I click CSS "[data-action='clear']"
+    And I click CSS "[data-insert='2']"
+    And I click CSS "[data-insert='+']"
+    And I click CSS "[data-insert='3']"
+    And I click CSS "[data-action='calculate']"
+    Then CSS "#result" has text "5"
+    When I click CSS "[data-action='backspace']"
+    Then CSS "#expression" has value "2+"
+    When I replace CSS "#expression" with "1/0"
+    Then CSS "#result" contains text "finite"
+    When I replace CSS "#integrand" with "unknown(x)"
+    And I click CSS "#integrateButton"
+    Then CSS "#integralResult" contains text "Unknown"
+    When I open the web application at path "/unit-converter.html"
+    And I choose value "Length" in CSS "#category"
+    Then at least 2 elements match CSS "#quickButtons button"
+    And at least 2 elements match CSS "#cards .card"
+    When I click CSS "#quickButtons button:first-child"
+    And I remember the value of CSS "#fromUnit" as "unit from"
+    And I remember the value of CSS "#toUnit" as "unit to"
+    And I click CSS "#swapButton"
+    Then JavaScript expression "document.getElementById('fromUnit').value === arguments[0]" with remembered value "unit to" returns true
+    And JavaScript expression "document.getElementById('toUnit').value === arguments[0]" with remembered value "unit from" returns true
+
+  Scenario: Encode files and exercise Base64 output options and reset
+    Given I open the web application at path "/base64-converter.html"
+    When I upload acceptance fixture "sample.txt" to CSS "#fileInput"
+    Then CSS "#status" eventually contains text "Loaded sample.txt"
+    When I set CSS checkbox "#dataUri" to checked
+    And I set CSS checkbox "#urlSafe" to checked
+    And I click CSS "#encodeButton"
+    Then JavaScript expression "document.getElementById('output').value.startsWith('data:text/plain;base64,')" returns true
+    And JavaScript expression "!/[+/=]$/.test(document.getElementById('output').value.split(',')[1])" returns true
+    When I click CSS "#useOutputButton"
+    And I click CSS "#decodeButton"
+    Then CSS "#byteView" contains text "UsefulTool acceptance text"
+    And CSS "#downloadButton" is enabled
+    When I click CSS "#copyButton"
+    Then CSS "#status" contains text "Output copied."
+    When I click CSS "#clearButton"
+    Then CSS "#status" contains text "Cleared."
+    And CSS "#input" has value ""
+    And CSS "#output" has value ""
+    And CSS "#downloadButton" is disabled
+
+  Scenario: Exercise ROT47 invalid shifts generated passwords and clear state
+    Given I open the web application at path "/rot-cipher.html"
+    When I choose value "rot47" in CSS "#algorithm"
+    Then CSS "#shift" is disabled
+    And CSS "#direction" is disabled
+    When I replace CSS "#input" with "Secret! 123"
+    And I click CSS "#runButton"
+    And I remember the value of CSS "#output" as "rot47 output"
+    And I click CSS "#copyButton"
+    Then CSS "#status" contains text "Output copied."
+    When I click CSS "#swapButton"
+    And I click CSS "#runButton"
+    Then CSS "#output" has value "Secret! 123"
+    When I choose value "alpha" in CSS "#algorithm"
+    And I replace CSS "#shift" with "26"
+    And I click CSS "#runButton"
+    Then CSS "#status" contains text "integer from 0 through 25"
+    When I replace CSS "#passwordLength" with "7"
+    And I click CSS "#generateButton"
+    Then JavaScript expression "document.getElementById('input').value.length === 8" returns true
+    When I click CSS "#clearButton"
+    Then CSS "#input" has value ""
+    And CSS "#output" has value ""
+    And CSS "#allShifts" contains text "All-shift analysis appears here."
+
+  Scenario: Find one match reject invalid regex and delete only the selected draft
+    Given I open the web application at path "/word-count.html"
+    When I replace CSS "#text" with "Cat cat dog"
+    And I replace CSS "#findPattern" with "cat"
+    And I replace CSS "#replaceValue" with "fox"
+    And I set CSS checkbox "#caseSensitive" to checked
+    And I click CSS "#findNext"
+    Then CSS "#status" contains text "Match selected."
+    When I click CSS "#replaceOne"
+    Then CSS "#status" contains text "Replaced one match."
+    And CSS "#text" has value "Cat fox dog"
+    When I replace CSS "#findPattern" with "["
+    And I click CSS "#findNext"
+    Then CSS "#status" contains text "Invalid regular expression"
+    When I upload acceptance fixture "sample.md" to CSS "#file"
+    Then CSS "#status" eventually contains text "Loaded sample.md."
+    And exactly 2 elements match CSS "#draftSelect option"
+    When I click CSS "#deleteDraft"
+    And I dismiss the browser confirmation
+    Then exactly 2 elements match CSS "#draftSelect option"
+    When I click CSS "#deleteDraft"
+    And I accept the browser confirmation
+    Then CSS "#status" contains text "Draft deleted."
+    And exactly 1 elements match CSS "#draftSelect option"
+    When I click CSS "#clear"
+    Then CSS "#status" contains text "Editor cleared."
+    And CSS "#text" has value ""
+
+  Scenario: Transfer text to both diff sides upload files swap and ignore whitespace
+    Given I open the web application at path "/text-transfer.html"
+    When I replace CSS "#transferText" with "left transfer"
+    And I name the current browser window "transfer source"
+    And I click CSS "#sendLeft"
+    And I switch to the newest browser window
+    Then the web path ends with "file-diff.html"
+    And CSS "#leftText" has value "left transfer"
+    When I switch to browser window "transfer source"
+    And I replace CSS "#transferText" with "right transfer"
+    And I click CSS "#sendRight"
+    And I switch to the newest browser window
+    Then CSS "#rightText" has value "right transfer"
+    When I upload acceptance fixture "sample.txt" to CSS "#leftFile"
+    Then JavaScript expression "document.getElementById('leftText').value.includes('UsefulTool acceptance text')" eventually returns true
+    When I replace CSS "#rightText" with:
+      """
+        UsefulTool acceptance text
+      second line
+      """
+    And I set CSS checkbox "#ignoreWhitespace" to checked
+    And I click CSS "#compareButton"
+    Then CSS "#status" contains text "0 added line(s), 0 removed line(s)"
+    When I remember the value of CSS "#rightText" as "diff right before swap"
+    And I remember the value of CSS "#leftText" as "diff left before swap"
+    And I click CSS "#swapButton"
+    Then JavaScript expression "document.getElementById('leftText').value === arguments[0]" with remembered value "diff right before swap" returns true
+    And JavaScript expression "document.getElementById('rightText').value === arguments[0]" with remembered value "diff left before swap" returns true
+    When I switch to browser window "transfer source"
+    And I click CSS "#clear"
+    Then CSS "#status" contains text "Cleared."
+    And CSS "#transferText" has value ""
+
+  Scenario: Refine background settings sample reset and reject a non-image
+    Given I open the web application at path "/image-converter.html"
+    When I click CSS "#downloadButton"
+    Then CSS "#statusText" contains text "Load an image before exporting."
+    When I upload acceptance fixture "invalid.txt" to CSS "#fileInput"
+    Then CSS "#statusText" eventually contains text "Only JPG and PNG"
+    When I upload acceptance fixture "sample.png" to CSS "#fileInput"
+    Then CSS "#statusText" eventually contains text "Image loaded."
+    When I replace CSS "#threshold" with "80"
+    And I replace CSS "#softness" with "20"
+    And I replace CSS "#brushSize" with "48"
+    And I replace CSS "#brushStrength" with "90"
+    Then CSS "#thresholdValue" has text "80"
+    And CSS "#softnessValue" has text "20"
+    And CSS "#brushValue" has text "48"
+    And CSS "#strengthValue" has text "90"
+    When I click CSS "#sampleMode"
+    Then CSS "#sampleMode" has attribute "aria-pressed" equal to "true"
+    And CSS "#statusText" contains text "Click the canvas"
+    When I execute JavaScript:
+      """
+      const canvas = document.getElementById('canvas');
+      const box = canvas.getBoundingClientRect();
+      canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 }));
+      """
+    Then CSS "#statusText" contains text "Background sample updated."
+    When I click CSS "#resetButton"
+    Then CSS "#statusText" contains text "Mask reset."
+    When I choose value "image/jpeg" in CSS "#format"
+    And I click CSS "#downloadButton"
+    Then a downloaded file matching "usefultool-image*.jpg" appears
+
+  Scenario: Transform clear and export image layers in every supported format
+    Given I open the web application at path "/image-editor.html"
+    Then JavaScript expression "document.documentElement.dataset.editorReady === 'true'" eventually returns true
+    When I upload acceptance fixture "sample.png,sample-alt.png" to CSS "#imageInput"
+    Then exactly 2 elements match CSS "#layers .layer-button"
+    When I replace CSS "#left" with "40"
+    And I replace CSS "#top" with "30"
+    And I replace CSS "#width" with "120"
+    And I replace CSS "#height" with "90"
+    And I replace CSS "#opacity" with "0.5"
+    And I click CSS "#flipX"
+    And I click CSS "#flipY"
+    And I click CSS "#layerDown"
+    And I click CSS "#layerUp"
+    Then JavaScript expression "(() => { const item = UsefulToolImageEditor.canvas.getActiveObject(); return Math.round(item.left) === 40 && Math.round(item.top) === 30 && Math.round(item.getScaledWidth()) === 120 && Math.round(item.getScaledHeight()) === 90 && item.opacity === 0.5 && item.flipX && item.flipY; })()" returns true
+    When I choose value "jpeg" in CSS "#format"
+    And I replace CSS "#quality" with "0.7"
+    And I click CSS "#exportButton"
+    Then CSS "#status" contains text "Exported JPEG at quality 0.70."
+    And a downloaded file matching "usefultool-canvas*.jpg" appears
+    When I choose value "webp" in CSS "#format"
+    And I click CSS "#exportButton"
+    Then CSS "#status" contains text "Exported WEBP"
+    And a downloaded file matching "usefultool-canvas*.webp" appears
+    When I click CSS "#deleteLayer"
+    Then exactly 1 elements match CSS "#layers .layer-button"
+    When I click CSS "#clearButton"
+    Then exactly 0 elements match CSS "#layers .layer-button"
+
+  Scenario: Reorder remove clear and validate image-to-PDF and PDF merge inputs
+    Given I open the web application at path "/images-to-pdf.html"
+    When I click CSS "#buildButton"
+    Then CSS "#status" contains text "Add at least one image"
+    When I upload acceptance fixture "sample.png,sample-alt.png" to CSS "#imageInput"
+    Then exactly 2 elements match CSS "#imageList .image-row"
+    When I click CSS "#imageList .image-row:last-child button:first-of-type"
+    And I click CSS "#imageList .image-row:last-child button:last-child"
+    Then exactly 1 elements match CSS "#imageList .image-row"
+    When I choose value "image" in CSS "#pageSize"
+    And I choose value "landscape" in CSS "#orientation"
+    And I replace CSS "#margin" with "40"
+    And I replace CSS "#dpi" with "200"
+    And I replace CSS "#quality" with "0.75"
+    And I set CSS checkbox "#caption" to checked
+    And I click CSS "#buildButton"
+    Then CSS "#status" eventually contains text "Created 1 page(s)"
+    And a downloaded file matching "usefultool-images*.pdf" appears
+    When I click CSS "#clearButton"
+    Then exactly 0 elements match CSS "#imageList .image-row"
+    And CSS "#status" contains text "Cleared."
+    When I open the web application at path "/pdf-merge.html"
+    And I click CSS "#mergeButton"
+    Then CSS "#status" contains text "Add at least one PDF"
+    When I upload acceptance fixture "invalid.txt" to CSS "#pdfInput"
+    Then CSS "#status" eventually contains text "Cannot load invalid.txt"
+    When I upload acceptance fixture "one-page.pdf,two-page.pdf" to CSS "#pdfInput"
+    Then exactly 2 elements match CSS "#pdfList .pdf-row"
+    When I replace CSS "#pdfList .pdf-row:last-child input" with "3"
+    And I click CSS "#mergeButton"
+    Then CSS "#status" contains text "outside 1-2"
+    When I replace CSS "#pdfList .pdf-row:last-child input" with "2-1"
+    And I click CSS "#pdfList .pdf-row:last-child button:first-of-type"
+    Then CSS "#summary" contains text "1. two-page.pdf"
+    When I click CSS "#pdfList .pdf-row:last-child button:last-child"
+    Then exactly 1 elements match CSS "#pdfList .pdf-row"
+    When I click CSS "#clearButton"
+    Then CSS "#summary" contains text "No PDF files loaded."
+    And CSS "#status" contains text "Cleared."
+
+  Scenario: Decode metadata from Base64 and expose unsupported and invalid actions
+    Given I open the web application at path "/metadata-lab.html"
+    When I replace CSS "#base64Input" with "not base64!"
+    And I click CSS "#decodeBase64Button"
+    Then CSS "#metadataList" contains text "Base64 decode failed"
+    When I execute JavaScript:
+      """
+      const bytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAGUlEQVR4nGP4TwAwEK1AcmIUCh4IBWT7AgAprd9xaFfxkgAAAABJRU5ErkJggg=='), c => c.charCodeAt(0));
+      document.getElementById('base64Input').value = 'data:image/png;base64,' + btoa(String.fromCharCode(...bytes));
+      """
+    And I click CSS "#decodeBase64Button"
+    Then CSS "#facts" eventually contains text "PNG"
+    When I click CSS "#injectMode"
+    And I replace CSS "#note" with "Acceptance metadata note"
+    And I click CSS "#runButton"
+    Then CSS "#metadataList" eventually contains text "PNG tEXt chunk injected"
+    And CSS "#downloadButton" is enabled
+    When I upload acceptance fixture "invalid.txt" to CSS "#fileInput"
+    Then CSS "#facts" eventually contains text "Unknown"
+    When I click CSS "#eraseMode"
+    And I click CSS "#runButton"
+    Then CSS "#metadataList" contains text "Erase not available"
+
+  Scenario: Reject malformed LAN signaling and reset pending peer state
+    Given I open the web application at path "/lan-chat.html"
+    When I replace CSS "#signalInput" with "not-json"
+    And I click CSS "#joinButton"
+    Then CSS "#connectionStatus" eventually contains text "Invite error"
+    When I click CSS "#applyAnswerButton"
+    Then CSS "#connectionStatus" contains text "Create a host invite first"
+    When I click CSS "#hostButton"
+    Then CSS "#signalOutput" eventually has a non-empty value
+    When I click CSS "#copySignalButton"
+    Then CSS "#signalOutput" eventually has a non-empty value
+    When I click CSS "#disconnectButton"
+    Then CSS "#connectionStatus" eventually contains text "0 connected peer(s)."
+    And CSS "#signalInput" has value ""
+    And CSS "#signalOutput" has value ""

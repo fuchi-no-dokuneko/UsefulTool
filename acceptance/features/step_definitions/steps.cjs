@@ -186,6 +186,12 @@ Then("JavaScript expression {string} equals remembered value {string}", async fu
   assert.deepEqual(await driver.executeScript(`return (${expression});`), this.browserMemory.get(name));
 });
 
+Then("JavaScript expression {string} with remembered value {string} returns true", async function (expression, name) {
+  assert.ok(this.browserMemory.has(name), `No remembered browser value named ${name}`);
+  const driver = await runtime.ensureBrowser(this);
+  assert.equal(await driver.executeScript(`return Boolean(${expression});`, this.browserMemory.get(name)), true);
+});
+
 Then("JavaScript expression {string} does not equal remembered value {string}", async function (expression, name) {
   assert.ok(this.browserMemory.has(name), `No remembered browser value named ${name}`);
   const driver = await runtime.ensureBrowser(this);
@@ -200,6 +206,16 @@ When("I click CSS canvas {string} at column {int} row {int} of a {int} by {int} 
 When("I reload the web page", async function () {
   const driver = await runtime.ensureBrowser(this);
   await driver.navigate().refresh();
+});
+
+When("I accept the browser confirmation", async function () {
+  const driver = await runtime.ensureBrowser(this);
+  await driver.switchTo().alert().accept();
+});
+
+When("I dismiss the browser confirmation", async function () {
+  const driver = await runtime.ensureBrowser(this);
+  await driver.switchTo().alert().dismiss();
 });
 
 When("I switch to the newest browser window", async function () {
