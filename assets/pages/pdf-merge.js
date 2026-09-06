@@ -74,3 +74,4 @@ document.getElementById("mergeButton").addEventListener("click", async () => {
 });
 document.getElementById("clearButton").addEventListener("click", () => { records.length = 0; render(); UsefulTool.status(status, "Cleared."); });
 render();
+window.UsefulToolPdfMerge = { parseRange, records, render };

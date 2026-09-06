@@ -233,4 +233,4 @@ document.getElementById("disconnectButton").addEventListener("click", () => {
   UsefulTool.status(status, "Disconnected all peers.", "warn");
 });
 document.getElementById("messageInput").addEventListener("keydown", (event) => { if (event.key === "Enter") document.getElementById("sendButton").click(); });
-window.UsefulToolLan = { channels, incomingImages, limits, receivePacket, sendPacket, cleanupState };
+window.UsefulToolLan = { channels, cleanupState, createPeer, incomingImages, limits, openChannel, peers, receivePacket, sendPacket, waitForIce };

@@ -267,7 +267,7 @@ async function createCoverageReports(client, coverageEntries, scripts, origin) {
     const metadata = scripts.get(entry.scriptId) || {};
     const ranges = entry.functions.flatMap((item) => item.ranges);
     const lines = lineCoverage(source, ranges, Number(metadata.startLine || 0));
-    const current = files.get(relativePath) || { lines: new Map(), functions: 0, coveredFunctions: 0 };
+    const current = files.get(relativePath) || { lines: new Map(), branches: new Map(), functions: 0, coveredFunctions: 0 };
 
     for (const item of lines) {
       current.lines.set(item.line, Math.max(current.lines.get(item.line) || 0, item.count));
@@ -276,6 +276,12 @@ async function createCoverageReports(client, coverageEntries, scripts, origin) {
       if (!item.ranges.length) continue;
       current.functions += 1;
       if (item.ranges[0].count > 0) current.coveredFunctions += 1;
+      for (const range of item.ranges.slice(1)) {
+        const prefix = source.slice(0, range.startOffset);
+        const line = Number(metadata.startLine || 0) + prefix.split("\n").length;
+        const branchKey = `${line}:${range.startOffset}:${range.endOffset}`;
+        current.branches.set(branchKey, Math.max(current.branches.get(branchKey) || 0, range.count));
+      }
     }
     files.set(relativePath, current);
   }
@@ -285,6 +291,8 @@ async function createCoverageReports(client, coverageEntries, scripts, origin) {
   let coveredLines = 0;
   let totalFunctions = 0;
   let coveredFunctions = 0;
+  let totalBranches = 0;
+  let coveredBranches = 0;
   const lcov = [];
   const reportFiles = [];
 
@@ -295,8 +303,14 @@ async function createCoverageReports(client, coverageEntries, scripts, origin) {
     coveredLines += hitLines;
     totalFunctions += data.functions;
     coveredFunctions += data.coveredFunctions;
+    const branches = [...data.branches.entries()].sort(([left], [right]) => left.localeCompare(right));
+    const hitBranches = branches.filter(([, count]) => count > 0).length;
+    totalBranches += branches.length;
+    coveredBranches += hitBranches;
     reportFiles.push({
       file,
+      branches: branches.length,
+      coveredBranches: hitBranches,
       lines: lines.length,
       coveredLines: hitLines,
       functions: data.functions,
@@ -305,17 +319,30 @@ async function createCoverageReports(client, coverageEntries, scripts, origin) {
 
     lcov.push("TN:browser-uat", `SF:${file}`);
     for (const [line, count] of lines) lcov.push(`DA:${line},${count}`);
-    lcov.push(`LF:${lines.length}`, `LH:${hitLines}`, "end_of_record");
+    branches.forEach(([branch, count], index) => {
+      const line = branch.split(":", 1)[0];
+      lcov.push(`BRDA:${line},0,${index},${count}`);
+    });
+    lcov.push(
+      `LF:${lines.length}`,
+      `LH:${hitLines}`,
+      `BRF:${branches.length}`,
+      `BRH:${hitBranches}`,
+      "end_of_record"
+    );
   }
 
   await writeFile(path.join(reportDirectory, "lcov.info"), `${lcov.join("\n")}\n`);
   const report = {
+    branchPercent: totalBranches ? (coveredBranches / totalBranches) * 100 : 100,
+    coveredBranches,
     coveredFunctions,
     coveredLines,
     files: reportFiles,
     functionPercent: totalFunctions ? (coveredFunctions / totalFunctions) * 100 : 0,
     linePercent: totalLines ? (coveredLines / totalLines) * 100 : 0,
     totalFunctions,
+    totalBranches,
     totalLines,
   };
   await writeFile(path.join(reportDirectory, "coverage.json"), `${JSON.stringify(report, null, 2)}\n`);
@@ -369,15 +396,16 @@ async function writeTestReports(checks, durationMs, resultText, coverage) {
     `- Status: **${status}**`,
     `- Assertions: **${checks.length - failures}/${checks.length} passed**`,
     `- Application line coverage: **${coverage.linePercent.toFixed(1)}%** (${coverage.coveredLines}/${coverage.totalLines})`,
+    `- Application branch coverage: **${coverage.branchPercent.toFixed(1)}%** (${coverage.coveredBranches}/${coverage.totalBranches})`,
     `- Application function coverage: **${coverage.functionPercent.toFixed(1)}%** (${coverage.coveredFunctions}/${coverage.totalFunctions})`,
     "",
     "| Assertion | Result |",
     "| --- | --- |",
     ...checks.map((check) => `| ${check.name.replaceAll("|", "\\|")} | ${check.passed ? "PASS" : "FAIL"} |`),
     "",
-    "| Covered file | Lines | Functions |",
-    "| --- | ---: | ---: |",
-    ...coverage.files.map((file) => `| ${file.file} | ${file.coveredLines}/${file.lines} | ${file.coveredFunctions}/${file.functions} |`),
+    "| Covered file | Lines | Branches | Functions |",
+    "| --- | ---: | ---: | ---: |",
+    ...coverage.files.map((file) => `| ${file.file} | ${file.coveredLines}/${file.lines} | ${file.coveredBranches}/${file.branches} | ${file.coveredFunctions}/${file.functions} |`),
     "",
   ].join("\n");
   await writeFile(path.join(reportDirectory, "summary.md"), summary);

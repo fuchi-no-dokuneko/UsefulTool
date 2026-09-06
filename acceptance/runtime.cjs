@@ -47,6 +47,7 @@ async function ensureBrowser(world) {
     "download.default_directory": downloadDirectory,
     "download.prompt_for_download": false,
     "download.directory_upgrade": true,
+    "profile.default_content_setting_values.automatic_downloads": 1,
     "safebrowsing.enabled": true,
   });
   const driverBinary = process.env.CHROMEDRIVER_PATH || (existsSync("/usr/bin/chromedriver") ? "/usr/bin/chromedriver" : "");
