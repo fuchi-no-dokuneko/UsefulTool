@@ -1,0 +1,14 @@
+{
+  "name": "usefultool-video-studio-checks",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node --test model.test.cjs",
+    "test:browser": "node run-browser.cjs core.html && node run-browser.cjs render.html && node run-browser.cjs ui.html",
+    "check:help": "tsc --noEmit --allowJs --checkJs --target ES2022 --lib ES2022,DOM ../../assets/pages/video-studio/help.js"
+  },
+  "devDependencies": {
+    "prettier": "3.6.2",
+    "typescript": "7.0.2"
+  }
+}

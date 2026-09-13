@@ -21,4 +21,13 @@ The supplied September 13, 2026 specification and the user's appended answers go
 3. Shared frame/audio engines, effects, transitions, credits, AutoMovie and export.
 4. Browser acceptance, offline packaging, compatibility checks and requirement audit.
 
-Each substantial validated batch is committed using explicitly scoped paths. This document records the contract, not a claim that any batch is already complete.
+Each substantial validated batch is committed using explicitly scoped paths.
+
+## Implemented and checked
+
+- Batch 1: unified project model, source identity, editing operations, 80-step history, session IndexedDB media cache, save/open and relinking. Commit `a78350b`.
+- Batches 2–3: four-step interface, contextual controls, shared help registry, layered timeline and preview manipulation, frame compositor, stereo bus and limiter, titles, credits, music, images, transitions, effects, AutoMovie, interpolation curves, playback speed and real-time full/segmented export.
+- The video-only browser suite currently covers 11 media/recovery checks, 28 pixel/audio checks and 25 complete interface checks. Sixteen pure model tests and the help-component type check pass. The 1363 × 936 region dimensions are measured in the browser. A real 1080p export is decoded and its stereo PCM checked, then a real page reload restores media and exact project objects before a second UI-driven export.
+- Fixed concurrent media-seek waits: a decoder temporarily returning to metadata-only readiness after a seek must also wake on `canplay`/`seeked`, rather than wait for a second `loadeddata` event. This addresses a recovery/export race exposed by the browser suite.
+- Video-only offline builder and standalone Cloudflare Workers asset configuration are prepared. Hosted and offline static verifiers pass. No deployment has been performed.
+- Batch 4 continues with malformed-project, pointer/touch, responsive, AutoMovie, cancellation and offline-browser checks. The human usability protocol remains a separate unexecuted release gate.

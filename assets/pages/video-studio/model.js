@@ -105,17 +105,17 @@
     const entry = { ...copy(descriptor), id: descriptor.id || id("asset") };
     delete entry.objectUrl;
     project.assets.push(entry);
-    if (entry.kind === "video" && !project.items.some((i) => i.kind === "video")) {
-      const scale = Math.min(1, Math.sqrt(MAX_PIXELS / (entry.width * entry.height)));
-      project.canvas.width = Math.max(2, Math.round(entry.width * scale));
-      project.canvas.height = Math.max(2, Math.round(entry.height * scale));
-    }
     normalize(project); return entry;
   }
   function addMedia(project, assetId, options = {}) {
     const source = asset(project, assetId);
     if (!source) throw new Error("Choose a media file first.");
     const kind = source.kind, target = options.layerId || (kind === "audio" ? "music" : "main");
+    if (target === "main" && !project.items.some((i) => i.kind !== "audio" && i.kind !== "filter")) {
+      const scale = Math.min(1, Math.sqrt(MAX_PIXELS / (source.width * source.height)));
+      project.canvas.width = Math.max(2, Math.round(source.width * scale));
+      project.canvas.height = Math.max(2, Math.round(source.height * scale));
+    }
     const start = options.start ?? (target === "main" ? mainItems(project).at(-1)?.end || 0 : project.playhead);
     if (kind === "video" && !VIDEO_LAYERS.includes(target)) throw new Error("Videos belong on Main video, Overlay 1 or Overlay 2.");
     if (kind === "video" && target !== "main" && project.items.some((i) => i.kind === "video" && i.layerId === target && i.start < start + (options.duration || source.duration) && i.end > start)) {
@@ -163,7 +163,9 @@
     if (kind === "credits") value.credits = { template: options.template || "rolling", direction: "up", mode: "fit", speed: 80,
       marginTop: 50, marginBottom: 50, lineHeight: 1.5, fontSize: 36, color: "#ffffff", background: "#17201b",
       groups: ["Title", "Cast", "Production", "Music", "Thanks"].map((title) => ({ id: id("group"), title, content: title === "Title" ? "Our movie" : "Add names here" })) };
-    project.items.push(value); normalize(project); return value;
+    project.items.push(value);
+    if (value.credits) updateCreditsDuration(project, value);
+    normalize(project); return value;
   }
   function setLink(project, itemId, enabled) {
     const value = item(project, itemId);
@@ -388,10 +390,12 @@
       value.opacity = preset === "equal" ? 1 / values.length : alpha[index];
       value.opacityKeys = [];
       if (preset === "groovy") {
-        value.transform.x += [-14, 0, 14][index];
-        value.effects.push({ id: id("effect"), type: "hue", amount: [-20, 0, 20][index], start: 0, end: span(value), enabled: true });
+        value.presetBaseX ??= value.transform.x;
+        value.transform.x = value.presetBaseX + [-14, 0, 14][index];
+        value.effects = value.effects.filter((fx) => !fx.presetEffect);
+        value.effects.push({ id: id("effect"), type: "hue", amount: [-20, 0, 20][index], start: 0, end: span(value), enabled: true, presetEffect: true });
       }
-      if (preset === "ghost") value.transform.x += index * 18;
+      if (preset === "ghost") { value.presetBaseX ??= value.transform.x; value.transform.x = value.presetBaseX + index * 18; }
     });
     normalize(project);
   }

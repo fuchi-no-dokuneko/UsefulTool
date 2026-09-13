@@ -67,6 +67,11 @@
       "sha256": "db3dc0483b6a85e79292574fd2253a1f6e14b8a290b54cf5b004e1ac72dd2e53"
     },
     {
+      "file": "video-editor.html",
+      "bytes": 294724,
+      "sha256": "7fd616fe677fd36aba36017034540ef12a5c04c1332538814ef49fa1dee8fa46"
+    },
+    {
       "file": "word-count.html",
       "bytes": 43527,
       "sha256": "f7c518cf6707cc7cf275cfa9d76398dbce4452464232a32b1ee00e40052559e2"

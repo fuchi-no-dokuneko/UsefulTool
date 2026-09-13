@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'none'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'"
+    />
+    <meta name="referrer" content="no-referrer" />
+    <title>Timeline Video Studio | UsefulTool</title>
+    <link rel="stylesheet" href="assets/pages/video-studio/studio.css" />
+  </head>
+  <body>
+    <header class="topbar" id="topbar">
+      <a
+        id="offlineStudioLink"
+        class="offline-link"
+        href="offline/video-editor.html"
+        download="video-editor.html"
+        >Offline studio</a
+      >
+    </header>
+    <nav
+      class="workflow-stepper"
+      id="workflowStepper"
+      aria-label="Movie workflow"
+    ></nav>
+    <main class="studio-shell" id="editorRoot">
+      <aside
+        class="media-panel"
+        id="mediaPanel"
+        aria-label="Media library"
+      ></aside>
+      <section class="editor-workspace" aria-label="Video editing workspace">
+        <section class="preview-card" aria-label="Movie preview">
+          <header class="stage-head" id="stageHead"></header>
+          <div class="stage-viewport" id="stageViewport">
+            <div class="stage-media" id="stageMedia">
+              <canvas
+                id="previewCanvas"
+                width="1280"
+                height="720"
+                aria-label="Movie preview"
+              ></canvas>
+              <video
+                id="outputVideo"
+                controls
+                playsinline
+                hidden
+                aria-label="Exported movie preview"
+              ></video>
+              <div class="stage-empty" id="stageEmpty">
+                <span class="empty-film" aria-hidden="true">▷</span
+                ><strong>Start by adding the videos for your movie</strong
+                ><span
+                  >Make something worth keeping. Everything stays on this
+                  device.</span
+                >
+              </div>
+              <div class="safe-area" id="safeArea" hidden></div>
+              <div class="interaction-box" id="interactionBox" hidden></div>
+            </div>
+          </div>
+          <div class="transport" id="transport"></div>
+        </section>
+        <section class="timeline-card" aria-label="Multi-layer timeline">
+          <header class="timeline-head" id="timelineHead"></header>
+          <div class="timeline-viewport" id="timelineViewport">
+            <div class="timeline-content" id="timelineContent"></div>
+          </div>
+        </section>
+      </section>
+      <aside
+        class="context-panel"
+        id="contextPanel"
+        aria-label="Editing controls"
+      ></aside>
+    </main>
+    <div class="undo-toast" id="undoToast" role="status" hidden></div>
+    <div
+      class="announcer"
+      id="announcer"
+      role="status"
+      aria-live="polite"
+    ></div>
+    <dialog id="studioDialog" aria-labelledby="dialogTitle"></dialog>
+    <div id="fileInputs" hidden></div>
+    <noscript
+      >This local video editor needs JavaScript enabled in your
+      browser.</noscript
+    >
+    <script src="assets/pages/video-studio/model.js?v=studio-1"></script>
+    <script src="assets/pages/video-studio/media.js?v=studio-1"></script>
+    <script src="assets/pages/video-studio/storage.js?v=studio-1"></script>
+    <script src="assets/pages/video-studio/renderer.js?v=studio-1"></script>
+    <script src="assets/pages/video-studio/audio.js?v=studio-1"></script>
+    <script src="assets/pages/video-studio/webm.js?v=studio-1"></script>
+    <script src="assets/pages/video-studio/engine.js?v=studio-1"></script>
+    <script src="assets/pages/video-studio/help.js?v=studio-1"></script>
+    <script src="assets/pages/video-studio/automovie.js?v=studio-1"></script>
+    <script src="assets/pages/video-editor.js?v=studio-1"></script>
+  </body>
+</html>

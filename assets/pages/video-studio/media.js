@@ -51,14 +51,26 @@
   function waitMedia(element, event = "loadeddata", timeout = 20000) {
     if (event === "loadeddata" && element.readyState >= 2) return Promise.resolve();
     return new Promise((resolve, reject) => {
-      const clean = () => { clearTimeout(timer); element.removeEventListener(event, ok); element.removeEventListener("error", bad); };
-      const ok = () => { clean(); resolve(); };
+      // Seeking can temporarily lower readyState after loadeddata has already
+      // fired. canplay/seeked must also release a waiter for decoded pixels.
+      const events = event === "loadeddata" ? ["loadeddata", "canplay", "seeked"] : [event];
+      const clean = () => { clearTimeout(timer); events.forEach(name => element.removeEventListener(name, ok)); element.removeEventListener("error", bad); };
+      const ok = () => { if (event === "loadeddata" && element.readyState < 2) return; clean(); resolve(); };
       const bad = () => { clean(); reject(new Error("This browser could not decode the file. Try a different video codec or MP3.")); };
       const timer = setTimeout(() => { clean(); reject(new Error("Reading the media timed out. Try a smaller file.")); }, timeout);
-      element.addEventListener(event, ok, { once: true }); element.addEventListener("error", bad, { once: true });
+      events.forEach(name => element.addEventListener(name, ok)); element.addEventListener("error", bad, { once: true });
     });
   }
-  async function seek(element, time) {
+  const pendingSeeks = new WeakMap();
+  function seek(element, time) {
+    // A restored preview and a new playback request can seek the same decoder.
+    // Serialize those requests so neither consumes the other's seeked event.
+    const result = (pendingSeeks.get(element) || Promise.resolve()).catch(() => {}).then(() => seekNow(element, time));
+    pendingSeeks.set(element, result);
+    result.finally(() => { if (pendingSeeks.get(element) === result) pendingSeeks.delete(element); }).catch(() => {});
+    return result;
+  }
+  async function seekNow(element, time) {
     await waitMedia(element);
     const target = M.clamp(time, 0, Math.max(0, element.duration - .00001));
     if (Math.abs(element.currentTime - target) < .0001 && !element.seeking) return;

@@ -30,6 +30,9 @@ const server = http.createServer((req,res) => {
     const options = new chrome.Options().setChromeBinaryPath(binary).addArguments('--headless=new','--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--autoplay-policy=no-user-gesture-required','--window-size=1363,1079','--user-data-dir=' + profile);
     const service = new chrome.ServiceBuilder(process.env.CHROMEDRIVER_PATH || '/usr/bin/chromedriver').loggingTo(path.join(reports, 'driver.log'));
     driver = await new Builder().forBrowser('chrome').setChromeOptions(options).setChromeService(service).build();
+    // Headless Chrome otherwise keeps iframe documents unfocused: focus() changes
+    // activeElement but never dispatches focus events. Emulate an active window.
+    await driver.sendDevToolsCommand('Emulation.setFocusEmulationEnabled', {enabled:true});
     await driver.manage().setTimeouts({pageLoad:30000,script:90000,implicit:0});
     const page = process.argv[2] || 'core.html';
     const url = 'http://127.0.0.1:' + server.address().port;
@@ -41,6 +44,14 @@ const server = http.createServer((req,res) => {
     for (const c of result.checks || []) console.log((c.passed ? 'PASS ' : 'FAIL ') + c.name);
     if (!result.passed) throw new Error(result.error || 'Video Studio browser acceptance failed.');
     console.log('Video Studio browser acceptance passed: ' + (result.checks || []).length + ' checks.');
-  } catch(error) { console.error(error.stack); process.exitCode = 1; }
+  } catch(error) {
+    console.error(error.stack); process.exitCode = 1;
+    if(driver) {
+      const state = await driver.executeScript('return {result:window.TEST_RESULT,progress:window.TEST_PROGRESS,frames:[...document.querySelectorAll("iframe")].map(f=>({title:f.contentDocument.title,ready:f.contentWindow.UsefulToolVideoEditor?.ready,playing:f.contentWindow.UsefulToolVideoEditor?.engine?.playing,exporting:f.contentWindow.UsefulToolVideoEditor?.exporting,dialog:f.contentDocument.querySelector("dialog")?.open,error:f.contentDocument.querySelector("#contextError")?.textContent,status:f.contentDocument.querySelector("#saveStatus")?.textContent,exportStatus:f.contentDocument.querySelector("#exportPercent")?.textContent}))}').catch(e=>({error:e.message}));
+      fs.writeFileSync(path.join(reports, 'failure-state.json'),JSON.stringify(state,null,2));
+      fs.writeFileSync(path.join(reports, 'failure.png'),Buffer.from(await driver.takeScreenshot(),'base64'));
+      console.error(JSON.stringify(state));
+    }
+  }
   finally { if(driver) await driver.quit(); server.close(); if(profile) fs.rmSync(profile,{recursive:true,force:true}); }
 })();
