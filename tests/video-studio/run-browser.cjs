@@ -137,6 +137,7 @@ const server = http.createServer((req, res) => {
       .manage()
       .setTimeouts({ pageLoad: 30000, script: 90000, implicit: 0 });
     const page = process.argv[2] || "core.html";
+    if (page === "long-playback.html") require("./create-long-fixtures.cjs");
     if (page === "touch.html") {
       await driver.sendDevToolsCommand("Emulation.setDeviceMetricsOverride", {
         width: 390,
@@ -153,7 +154,7 @@ const server = http.createServer((req, res) => {
     await driver.get(url + "/tests/video-studio/" + page);
     await driver.wait(
       () => driver.executeScript("return !!window.TEST_RESULT"),
-      90000,
+      page === "long-playback.html" ? 300000 : 90000,
     );
     const result = await driver.executeScript("return window.TEST_RESULT");
     if (page === "offline.html" && result.passed) {
@@ -242,7 +243,17 @@ const server = http.createServer((req, res) => {
         path.join(reports, "failure.png"),
         Buffer.from(await driver.takeScreenshot(), "base64"),
       );
-      console.error(JSON.stringify(state));
+      console.error(
+        JSON.stringify({
+          ...state,
+          result: state.result && {
+            passed: state.result.passed,
+            checks: state.result.checks,
+            error: state.result.error,
+          },
+          progress: state.progress?.current || state.progress,
+        }),
+      );
     }
   } finally {
     if (driver) await driver.quit();

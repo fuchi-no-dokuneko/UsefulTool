@@ -48,6 +48,8 @@ jobs:
           npm run --prefix tests/video-studio check:help
       - name: Run actual browser media, editing, pixel, audio and offline checks
         run: npm run --prefix tests/video-studio test:browser
+      - name: Check long-video preview timing, frames and repeating sound
+        run: npm run --prefix tests/video-studio test:long-playback
       - name: Keep video acceptance evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

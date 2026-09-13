@@ -83,8 +83,6 @@
         if (!chain) continue;
         chain.left.gain.setValueAtTime(entry.left, now);
         chain.right.gain.setValueAtTime(entry.right, now);
-        chain.element.preservesPitch = entry.preservePitch;
-        chain.element.playbackRate = entry.playbackRate;
       }
       for (const [key, chain] of this.chains)
         if (!live.has(key)) {

@@ -3,8 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "test": "node --test model.test.cjs static.test.cjs",
+    "test": "node --test model.test.cjs playback.test.cjs static.test.cjs",
     "test:browser": "node run-browser.cjs core.html && node run-browser.cjs render.html && node run-browser.cjs ui.html && node run-browser.cjs advanced.html && node run-browser.cjs controls.html && node run-browser.cjs gestures.html && node run-browser.cjs touch.html && node run-browser.cjs offline.html",
+    "test:long-playback": "node run-browser.cjs long-playback.html",
     "check:help": "tsc --noEmit --allowJs --checkJs --target ES2022 --lib ES2022,DOM ../../assets/pages/video-studio/help.js"
   },
   "devDependencies": {

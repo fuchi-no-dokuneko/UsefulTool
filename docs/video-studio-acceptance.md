@@ -62,6 +62,10 @@ Recruit five people who have never used video-editing software when a human rele
 
 Human release thresholds remain: at least 4/5 complete every task; median time at most eight minutes; no blocking errors; at most one unrecovered mistake per person. The study is pending, with no participants recruited or contacted.
 
+## Long-video playback regression
+
+The follow-up playback fix adds a separate 90-second fixture and complete 60-second timing checks. See [the playback fix record](video-studio-playback-fix.md) for the reproduction, per-criterion evidence and command. Short-video success alone does not establish long-preview stability.
+
 ## Practical browser limits
 
 Exports are real-time browser recordings. Available video containers/codecs depend on `MediaRecorder.isTypeSupported`; playback and pitch preservation depend on the browser's media decoder. Automated execution currently uses desktop Chromium, including responsive layouts and the `file:` origin. Other browser engines and physical phones are not represented as tested devices. Full PCM waveform decoding is omitted for files over 128 MiB; those sources retain playback/editing and show the waveform status. GIF/WebP imports use a stable still frame. The app retains 1 GiB media, 25 MiB image, 33,177,600-pixel output, 80-edit history and 60-segment limits. Missing/evicted cache files require relinking; browser restart recovery is not guaranteed.

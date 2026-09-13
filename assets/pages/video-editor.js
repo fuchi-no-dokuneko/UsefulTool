@@ -329,7 +329,13 @@
     stage.style.width = Math.max(1, size.width * scale) + "px";
     stage.style.height = Math.max(1, size.height * scale) + "px";
     stage.style.aspectRatio = size.width + "/" + size.height;
-    const resolution = Math.min(1, 960 / Math.max(size.width, size.height));
+    // Match the displayed preview instead of compositing a 960px bitmap into
+    // a ~608px viewport. Export resolution is selected independently.
+    const resolution = Math.min(
+      1,
+      960 / Math.max(size.width, size.height),
+      scale * Math.min(root.devicePixelRatio || 1, 1.5),
+    );
     const preview = $("previewCanvas");
     const w = Math.max(2, Math.round(size.width * resolution)),
       h = Math.max(2, Math.round(size.height * resolution));

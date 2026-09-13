@@ -48,36 +48,45 @@
     if (/\.(png|jpe?g|bmp|gif|webp)$/i.test(file.name) || /^image\/(png|jpeg|bmp|gif|webp)$/.test(file.type)) return "image";
     throw new Error("Choose a video, MP3, PNG, JPG, BMP, GIF or WebP file.");
   }
-  function waitMedia(element, event = "loadeddata", timeout = 20000) {
+  function waitMedia(element, event = "loadeddata", timeout = 20000, signal) {
+    if (signal?.aborted) return Promise.reject(new DOMException("Media preparation was cancelled.", "AbortError"));
     if (element.utvDisposed) return Promise.reject(new DOMException("The previous media decoder has been closed.", "AbortError"));
+    if (event === "loadedmetadata" && element.readyState >= 1) return Promise.resolve();
     if (event === "loadeddata" && element.readyState >= 2) return Promise.resolve();
     return new Promise((resolve, reject) => {
       // Seeking can temporarily lower readyState after loadeddata has already
       // fired. canplay/seeked must also release a waiter for decoded pixels.
       const events = event === "loadeddata" ? ["loadeddata", "canplay", "seeked"] : [event];
-      const clean = () => { clearTimeout(timer); events.forEach(name => element.removeEventListener(name, ok)); element.removeEventListener("error", bad); element.removeEventListener("utv-disposed", disposed); };
+      const clean = () => { clearTimeout(timer); events.forEach(name => element.removeEventListener(name, ok)); element.removeEventListener("error", bad); element.removeEventListener("utv-disposed", disposed); signal?.removeEventListener("abort", cancelled); };
       const ok = () => { if (event === "loadeddata" && element.readyState < 2) return; clean(); resolve(); };
       const bad = () => { clean(); reject(new Error("This browser could not decode the file. Try a different video codec or MP3.")); };
       const disposed = () => { clean(); reject(new DOMException("The previous media decoder has been closed.", "AbortError")); };
+      const cancelled = () => { clean(); reject(new DOMException("Media preparation was cancelled.", "AbortError")); };
       const timer = setTimeout(() => { clean(); reject(new Error("Reading the media timed out. Try a smaller file.")); }, timeout);
       events.forEach(name => element.addEventListener(name, ok)); element.addEventListener("error", bad, { once: true });
       element.addEventListener("utv-disposed", disposed, {once:true});
+      signal?.addEventListener("abort", cancelled, {once:true});
     });
   }
   const pendingSeeks = new WeakMap();
-  function seek(element, time) {
+  function seek(element, time, signal) {
     // A restored preview and a new playback request can seek the same decoder.
     // Serialize those requests so neither consumes the other's seeked event.
-    const result = (pendingSeeks.get(element) || Promise.resolve()).catch(() => {}).then(() => seekNow(element, time));
+    const result = (pendingSeeks.get(element) || Promise.resolve()).catch(() => {}).then(() => seekNow(element, time, signal));
     pendingSeeks.set(element, result);
     result.finally(() => { if (pendingSeeks.get(element) === result) pendingSeeks.delete(element); }).catch(() => {});
     return result;
   }
-  async function seekNow(element, time) {
-    await waitMedia(element);
+  async function seekNow(element, time, signal) {
+    // A new target can supersede an abandoned seek as soon as metadata exists.
+    // Waiting for old decoded pixels first would retain the cancelled stall.
+    await waitMedia(element, "loadedmetadata", 20000, signal);
+    if (signal?.aborted) throw new DOMException("Media preparation was cancelled.", "AbortError");
     const target = M.clamp(time, 0, Math.max(0, element.duration - .00001));
-    if (Math.abs(element.currentTime - target) < .0001 && !element.seeking) return;
-    const ready = waitMedia(element, "seeked"); element.currentTime = target; await ready;
+    if (Math.abs(element.currentTime - target) >= .0001) {
+      const ready = waitMedia(element, "seeked", 20000, signal); element.currentTime = target; await ready;
+    } else if (element.seeking) await waitMedia(element, "seeked", 20000, signal);
+    await waitMedia(element, "loadeddata", 20000, signal);
   }
   function makeCanvas(width, height) { const c = document.createElement("canvas"); c.width = width; c.height = height; return c; }
   function poster(source, width, height) {

@@ -376,8 +376,8 @@
       const plan = M.evaluateFrame(project, time),
         width = output.width,
         height = output.height;
-      const composite = this.buffer("composite", width, height),
-        ctx = composite.getContext("2d");
+      const composite = output,
+        ctx = clear(output);
       ctx.fillStyle = project.canvas.background;
       ctx.fillRect(0, 0, width, height);
       const filters = plan.items.filter((e) => e.item.kind === "filter");
@@ -507,8 +507,6 @@
         ctx.drawImage(layerCanvas, 0, 0);
         ctx.globalAlpha = 1;
       }
-      const destination = clear(output);
-      destination.drawImage(composite, 0, 0);
       for (const key of this.buffers.keys())
         if (!this.used.has(key)) this.buffers.delete(key);
       return { ...plan, visibleVideoLayers: videoGroups.length };
