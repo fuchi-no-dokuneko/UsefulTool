@@ -1,0 +1,46 @@
+// Run only video-studio acceptance. No unrelated pages or test files are changed.
+const { Builder } = require('../../acceptance/node_modules/selenium-webdriver');
+const chrome = require('../../acceptance/node_modules/selenium-webdriver/chrome');
+const fs = require('node:fs');
+const path = require('node:path');
+const http = require('node:http');
+const os = require('node:os');
+const { execFileSync } = require('node:child_process');
+const root = path.resolve(__dirname, '../..');
+const reports = path.join(root, 'build/reports/video-studio');
+const fixtures = path.join(reports, 'fixtures');
+fs.mkdirSync(fixtures, {recursive:true});
+if (!fs.existsSync(path.join(fixtures, 'source.mp4'))) execFileSync('ffmpeg', ['-hide_banner','-loglevel','error','-y','-f','lavfi','-i','testsrc2=size=160x90:rate=30:duration=1.2','-f','lavfi','-i','sine=frequency=440:sample_rate=48000:duration=1.2','-c:v','libx264','-pix_fmt','yuv420p','-c:a','aac','-shortest',path.join(fixtures,'source.mp4')]);
+if (!fs.existsSync(path.join(fixtures, 'music.mp3'))) execFileSync('ffmpeg', ['-hide_banner','-loglevel','error','-y','-f','lavfi','-i','sine=frequency=660:sample_rate=48000:duration=1.2','-c:a','libmp3lame',path.join(fixtures,'music.mp3')]);
+const mime = {'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json','.mp4':'video/mp4','.mp3':'audio/mpeg','.png':'image/png'};
+const server = http.createServer((req,res) => {
+  let file;
+  try { file = path.resolve(root, '.' + decodeURIComponent(new URL(req.url, 'http://localhost').pathname)); } catch { res.writeHead(400).end(); return; }
+  if (!file.startsWith(root + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) { res.writeHead(404).end(); return; }
+  res.writeHead(200, {'Content-Type':mime[path.extname(file)] || 'application/octet-stream', 'Cache-Control':'no-store'});
+  fs.createReadStream(file).pipe(res);
+});
+(async () => {
+  let driver, profile;
+  try {
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const snap = path.join(os.homedir(), 'snap/chromium/common');
+    profile = fs.mkdtempSync(path.join(fs.existsSync(snap) ? snap : os.tmpdir(), 'video-studio-tests-'));
+    const binary = process.env.CHROME_BINARY || ['/usr/bin/google-chrome','/usr/bin/chromium-browser','/usr/bin/chromium'].find(fs.existsSync);
+    const options = new chrome.Options().setChromeBinaryPath(binary).addArguments('--headless=new','--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--autoplay-policy=no-user-gesture-required','--window-size=1363,1079','--user-data-dir=' + profile);
+    const service = new chrome.ServiceBuilder(process.env.CHROMEDRIVER_PATH || '/usr/bin/chromedriver').loggingTo(path.join(reports, 'driver.log'));
+    driver = await new Builder().forBrowser('chrome').setChromeOptions(options).setChromeService(service).build();
+    await driver.manage().setTimeouts({pageLoad:30000,script:90000,implicit:0});
+    const page = process.argv[2] || 'core.html';
+    const url = 'http://127.0.0.1:' + server.address().port;
+    await driver.get(url + '/tests/video-studio/' + page);
+    await driver.wait(() => driver.executeScript('return !!window.TEST_RESULT'),90000);
+    const result = await driver.executeScript('return window.TEST_RESULT');
+    fs.writeFileSync(path.join(reports, page.replace('.html','.json')), JSON.stringify(result,null,2));
+    fs.writeFileSync(path.join(reports, page.replace('.html','.png')), Buffer.from(await driver.takeScreenshot(),'base64'));
+    for (const c of result.checks || []) console.log((c.passed ? 'PASS ' : 'FAIL ') + c.name);
+    if (!result.passed) throw new Error(result.error || 'Video Studio browser acceptance failed.');
+    console.log('Video Studio browser acceptance passed: ' + (result.checks || []).length + ' checks.');
+  } catch(error) { console.error(error.stack); process.exitCode = 1; }
+  finally { if(driver) await driver.quit(); server.close(); if(profile) fs.rmSync(profile,{recursive:true,force:true}); }
+})();
