@@ -301,13 +301,13 @@
         }
       ctx.putImageData(image, 0, 0);
     }
-    blur(source, value, project) {
+    blur(source, value, project, opacity = 1) {
       const f = value.filter,
         width = source.width,
         height = source.height,
         sx = width / project.canvas.width,
         sy = height / project.canvas.height;
-      if (f.amount <= 0) return;
+      if (f.amount <= 0 || opacity <= 0) return;
       const processed = this.buffer("blur:" + value.id, width, height),
         ctx = processed.getContext("2d");
       if (f.type === "gaussian") {
@@ -343,6 +343,16 @@
           }
         }
       }
+      let filtered = processed;
+      if (opacity < 1) {
+        filtered = this.buffer("blur-mix:" + value.id, width, height);
+        const blend = filtered.getContext("2d");
+        blend.globalCompositeOperation = "lighter";
+        blend.globalAlpha = 1 - opacity;
+        blend.drawImage(source, 0, 0);
+        blend.globalAlpha = opacity;
+        blend.drawImage(processed, 0, 0);
+      }
       const target = source.getContext("2d"),
         tr = value.transform;
       target.save();
@@ -358,7 +368,7 @@
       target.clip();
       target.setTransform(1, 0, 0, 1, 0, 0);
       target.globalCompositeOperation = "copy";
-      target.drawImage(processed, 0, 0);
+      target.drawImage(filtered, 0, 0);
       target.restore();
     }
     render(project, time, output) {
@@ -392,7 +402,7 @@
         if (group.track.kind === "filter") {
           for (const e of group.entries)
             if (e.item.filter.targetMode === "everything-below")
-              this.blur(composite, e.item, project);
+              this.blur(composite, e.item, project, e.opacity);
           continue;
         }
         const layerCanvas = this.buffer(
@@ -401,13 +411,22 @@
             height,
           ),
           layerCtx = layerCanvas.getContext("2d");
-        const transition = plan.transitions.find((tr) =>
-          group.entries.some((e) => e.item.id === tr.toId),
+        const weightAt = (e) =>
+          e.item.opacity *
+          M.curveAt(e.item.opacityKeys, plan.time - e.item.start);
+        const transition = plan.transitions.find(
+          (tr) =>
+            group.entries.some((e) => e.item.id === tr.toId) &&
+            group.entries.some((e) => e.item.id === tr.fromId),
         );
+        let transitionWeight = null;
         if (transition) {
           const a = group.entries.find((e) => e.item.id === transition.fromId),
             b = group.entries.find((e) => e.item.id === transition.toId);
           if (a && b) {
+            transitionWeight = equalMix
+              ? Math.max(weightAt(a), weightAt(b))
+              : 1;
             const from = this.drawItem(
                 project,
                 { ...a, time: plan.time },
@@ -420,8 +439,26 @@
                 width,
                 height,
               );
+            const attenuate = (source, e) => {
+              const buffer = this.buffer(
+                "transition-opacity:" + e.item.id,
+                width,
+                height,
+              );
+              buffer.getContext("2d").globalAlpha = transitionWeight
+                ? e.opacity / transitionWeight
+                : 0;
+              buffer.getContext("2d").drawImage(source, 0, 0);
+              return buffer;
+            };
             layerCtx.drawImage(
-              this.transition(from, to, transition, width, height),
+              this.transition(
+                attenuate(from, a),
+                attenuate(to, b),
+                transition,
+                width,
+                height,
+              ),
               0,
               0,
             );
@@ -451,7 +488,7 @@
             f.item.filter.targetMode === "selected-layer" &&
             f.item.filter.targetLayerId === group.track.id
           )
-            this.blur(layerCanvas, f.item, project);
+            this.blur(layerCanvas, f.item, project, f.opacity);
         const visual = group.entries.find(
           (e) => e.item.kind === "video" || e.item.kind === "image",
         );
@@ -460,9 +497,7 @@
           visual &&
           (group.track.kind === "main-video" || group.track.kind === "overlay")
         ) {
-          const weight =
-            visual.item.opacity *
-            M.curveAt(visual.item.opacityKeys, plan.time - visual.item.start);
+          const weight = transitionWeight ?? weightAt(visual);
           if (equalMix && visual.item.kind === "video") {
             accumulatedWeight += weight;
             opacity = accumulatedWeight > 0 ? weight / accumulatedWeight : 0;

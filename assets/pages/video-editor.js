@@ -43,6 +43,7 @@
     soundExpanded = false,
     exporting = false,
     importing = false,
+    projectLoading = false,
     showCuts = false;
   let results = [],
     importErrors = [],
@@ -76,8 +77,11 @@
           report(error);
         }
       },
-      disabled: options.disabled || false,
+      disabled: options.disabled || projectLoading,
       disabledReason:
+        (projectLoading
+          ? "Wait for the project and its media to finish opening."
+          : "") ||
         options.reason ||
         (options.disabled
           ? exporting
@@ -160,7 +164,7 @@
     input.setAttribute("aria-label", label);
     if (options.id) input.id = options.id;
     H.attach(input, helpId, reason);
-    input.disabled = Boolean(options.disabled || exporting);
+    input.disabled = Boolean(options.disabled || exporting || projectLoading);
     const update = (commit) => {
       if (
         input.type === "number" &&
@@ -204,7 +208,7 @@
       input.value = value;
       input.setAttribute("aria-label", label);
       input.dataset.control = helpId;
-      input.disabled = Boolean(options.disabled || exporting);
+      input.disabled = Boolean(options.disabled || exporting || projectLoading);
       H.attach(input, helpId, reason);
     }
     const update = (source, commit) => {
@@ -227,7 +231,7 @@
       input = el("input");
     input.type = "checkbox";
     input.checked = value;
-    input.disabled = disabled || exporting;
+    input.disabled = disabled || exporting || projectLoading;
     input.dataset.control = helpId;
     input.setAttribute("aria-label", label);
     const reason = () =>
@@ -242,11 +246,12 @@
     return node;
   }
   function edit(fn, message = "Change saved", options = {}) {
-    if (exporting) return;
+    if (exporting || projectLoading) return;
     const before = M.copy(project);
     try {
       fn(project);
       M.normalize(project);
+      project.selectedItemId = M.item(project, selectedId) ? selectedId : null;
       if (options.commit !== false) history.push(project);
       errorMessage = "";
       store.schedule(project);
@@ -298,7 +303,8 @@
       (state, error) => {
         renderTransport();
         if (state === "error") report(error);
-        if (state === "paused" && !exporting) store.schedule(project);
+        if (state === "paused" && !exporting && !projectLoading)
+          store.schedule(project);
       },
     );
   }
@@ -351,9 +357,25 @@
     if (transportTime) transportTime.textContent = time(t);
     const meter = $("audioMeter");
     if (meter) meter.style.width = Math.min(100, peak * 100) + "%";
+    const cut = $("splitButton"),
+      value = selected();
+    if (cut)
+      H.setDisabled(
+        cut,
+        exporting ||
+          projectLoading ||
+          !value ||
+          M.isLocked(project, value) ||
+          t <= value.start + M.MIN ||
+          t >= value.end - M.MIN,
+        exporting
+          ? "Finish or cancel the export first."
+          : "Select an unlocked item and move the playhead inside it.",
+      );
     updateSelectionBox();
   }
-  async function seekTo(value) {
+  async function seekTo(value, duringLoad = false) {
+    if (projectLoading && !duringLoad) return;
     $("outputVideo").pause();
     $("outputVideo").hidden = true;
     $("previewCanvas").hidden = false;
@@ -381,9 +403,11 @@
     const previous = history.undo();
     if (previous) {
       project = previous;
-      selectedId = M.item(project, selectedId)
-        ? selectedId
-        : project.selectedItemId || project.items[0]?.id;
+      selectedId = M.item(project, project.selectedItemId)
+        ? project.selectedItemId
+        : M.item(project, selectedId)
+          ? selectedId
+          : project.items[0]?.id;
       store.schedule(project);
       clearResults();
       renderAll();
@@ -397,9 +421,11 @@
     const next = history.redo();
     if (next) {
       project = next;
-      selectedId = M.item(project, selectedId)
-        ? selectedId
-        : project.selectedItemId || project.items[0]?.id;
+      selectedId = M.item(project, project.selectedItemId)
+        ? project.selectedItemId
+        : M.item(project, selectedId)
+          ? selectedId
+          : project.items[0]?.id;
       store.schedule(project);
       clearResults();
       renderAll();
@@ -483,35 +509,50 @@
     return node;
   }
   async function replaceProject(next) {
-    engine.stop();
-    const files = new Map();
-    for (const a of next.assets) {
-      const existing = project.assets.find(
-        (old) =>
-          old.name === a.name &&
-          old.size === a.size &&
-          old.contentHash === a.contentHash,
-      );
-      if (existing && library.has(existing.id))
-        files.set(a.id, library.assets.get(existing.id).file);
-    }
-    await engine.dispose();
-    library.dispose();
-    library = new Media.MediaLibrary();
-    project = next;
-    selectedId = next.selectedItemId || M.mainItems(next)[0]?.id || null;
-    setupEngine();
-    for (const a of next.assets)
-      if (files.has(a.id)) {
-        await library.attach(a, files.get(a.id));
-        await store.putFile(a, files.get(a.id));
-      }
-    await store.restore(project, library);
-    history = new M.History(project);
-    clearResults();
-    store.schedule(project);
+    if (projectLoading)
+      throw new Error("Wait for the current project to finish opening.");
+    projectLoading = true;
     renderAll();
-    await seekTo(project.playhead);
+    try {
+      engine.stop();
+      const files = new Map();
+      for (const a of next.assets) {
+        const existing = project.assets.find(
+          (old) =>
+            old.name === a.name &&
+            old.size === a.size &&
+            old.contentHash === a.contentHash,
+        );
+        if (existing && library.has(existing.id))
+          files.set(a.id, library.assets.get(existing.id).file);
+      }
+      await engine.dispose();
+      library.dispose();
+      library = new Media.MediaLibrary();
+      project = next;
+      selectedId = next.selectedItemId || M.mainItems(next)[0]?.id || null;
+      assetSelected = M.item(next, selectedId)?.assetId || null;
+      const selectedAsset = next.assets.find((a) => a.id === assetSelected);
+      mediaTab =
+        selectedAsset?.kind ||
+        (next.assets.some((a) => a.kind === mediaTab)
+          ? mediaTab
+          : next.assets[0]?.kind || "video");
+      setupEngine();
+      for (const a of next.assets)
+        if (files.has(a.id)) {
+          await library.attach(a, files.get(a.id));
+          await store.putFile(a, files.get(a.id));
+        }
+      await store.restore(project, library);
+      history = new M.History(project);
+      clearResults();
+      store.schedule(project);
+      await seekTo(project.playhead, true);
+    } finally {
+      projectLoading = false;
+      renderAll();
+    }
   }
   async function startNew() {
     closeDialog();
@@ -522,6 +563,8 @@
     history = new M.History(project);
     library = new Media.MediaLibrary();
     selectedId = null;
+    assetSelected = null;
+    mediaTab = "video";
     importErrors = [];
     importStatus = "";
     setupEngine();
@@ -589,6 +632,33 @@
           },
           { wrapperClass: "full-width" },
         ),
+      );
+      foot.append(
+        B(
+          "undo",
+          "Undo",
+          () => {
+            closeDialog();
+            undo();
+          },
+          {
+            disabled: !history.canUndo || exporting,
+            reason: "Make an edit before using Undo.",
+          },
+        ),
+        B(
+          "redo",
+          "Redo",
+          () => {
+            closeDialog();
+            redo();
+          },
+          {
+            disabled: !history.canRedo || exporting,
+            reason: "Undo an edit before using Redo.",
+          },
+        ),
+        el("small", "", saveStatus),
       );
     });
   }
@@ -1065,6 +1135,7 @@
           importErrors.push({ name: file.name, reason: error.message, kind });
         }
       }
+      project.selectedItemId = selectedId;
       history.push(project);
       importStatus =
         added.length +
@@ -1942,7 +2013,7 @@
             track.name = v;
             renderTimeline();
           }, "Layer renamed"),
-          { type: "text" },
+          { type: "text", maxLength: 180 },
         ),
         check("Show layer", "showLayer", track.visible, (v) =>
           edit(() => {
@@ -2014,15 +2085,7 @@
     );
   }
   function conflicts() {
-    return ["overlay-1", "overlay-2"].flatMap((key) => {
-      const values = project.items
-        .filter((i) => i.layerId === key && i.kind === "video")
-        .sort((a, b) => a.start - b.start);
-      return values.filter(
-        (value, index) =>
-          index && value.start < values[index - 1].end - 0.00001,
-      );
-    });
+    return M.videoConflicts(project);
   }
   function fixConflicts() {
     edit(
@@ -2033,9 +2096,20 @@
             .filter((i) => i.layerId === key && i.kind === "video")
             .sort((a, b) => a.start - b.start)) {
             if (value.start < end) {
-              const duration = M.span(value);
-              value.start = end;
-              value.end = end + duration;
+              if (M.isLocked(project, value))
+                throw new Error(
+                  "Unlock the overlapping item before fixing its time.",
+                );
+              const siblings = M.related(project, value),
+                delta = end - value.start;
+              if (siblings.some((i) => M.isLocked(project, i)))
+                throw new Error(
+                  "Unlock the linked item before fixing its time.",
+                );
+              for (const sibling of siblings) {
+                sibling.start += delta;
+                sibling.end += delta;
+              }
             }
             end = value.end;
           }
@@ -4238,10 +4312,15 @@
           "generateMovie",
           "Make the draft",
           async (event) => {
+            const generateButton = event.currentTarget;
             const ids = [
               ...body.querySelectorAll(".media-choice input:checked"),
             ].map((i) => i.value);
-            event.currentTarget.disabled = true;
+            H.setDisabled(
+              generateButton,
+              true,
+              "Wait for the draft to finish, or choose Cancel.",
+            );
             progress.hidden = false;
             engine.stop();
             try {
@@ -4263,12 +4342,15 @@
               await engine.dispose();
               library.pause();
               for (const element of library.elements.values()) {
+                element.utvDisposed = true;
+                element.dispatchEvent(new Event("utv-disposed"));
                 element.removeAttribute("src");
                 element.load();
               }
               library.elements.clear();
               project = next;
               selectedId = M.mainItems(project)[0]?.id;
+              project.selectedItemId = selectedId;
               history.push(project);
               setupEngine();
               closeDialog();
@@ -4279,7 +4361,7 @@
             } catch (error) {
               if (!cancelled) {
                 progress.textContent = error.message;
-                event.currentTarget.disabled = false;
+                H.setDisabled(generateButton, false, "");
               }
             }
           },
@@ -4288,7 +4370,8 @@
       );
     });
   }
-  let exportMessage = "";
+  let exportMessage = "",
+    exportAbort = null;
   function renderExportControls(node) {
     const settings = project.exportSettings,
       formats = root.UTStudio.supportedFormats();
@@ -4408,6 +4491,7 @@
           "Cancel export",
           () => {
             exportMessage = "Export cancelled. Your project is ready to edit.";
+            exportAbort?.abort();
             engine.stop();
           },
           { id: "cancelButton", primary: true, wrapperClass: "full-width" },
@@ -4521,7 +4605,6 @@
   async function exportMovie(segmented) {
     if (exporting) return;
     engine.stop();
-    await store.flush();
     const ranges = segmented
       ? M.segmentRanges(
           project.duration,
@@ -4532,11 +4615,14 @@
     clearResults();
     exportMessage = "";
     exporting = true;
+    exportAbort = new AbortController();
     document.body.classList.add("is-exporting");
     renderAll();
     const before = project.playhead;
     try {
+      await store.flush();
       for (let index = 0; index < ranges.length; index++) {
+        if (exportAbort.signal.aborted) break;
         const range = ranges[index],
           result = await engine.recordRange(
             range.start,
@@ -4566,6 +4652,7 @@
                       Math.ceil(progress.remaining) +
                       " sec remaining";
             },
+            exportAbort.signal,
           );
         if (!result) break;
         result.name =
@@ -4583,6 +4670,8 @@
       exportMessage = error.message;
       report(error);
     } finally {
+      if (exportAbort.signal.aborted) clearResults();
+      exportAbort = null;
       exporting = false;
       document.body.classList.remove("is-exporting");
       project.playhead = before;
@@ -4603,6 +4692,7 @@
       H.close();
     });
     document.addEventListener("keydown", (event) => {
+      if (projectLoading) return;
       if (dialogNode.open) return;
       if (event.target.closest("input,textarea,select,[contenteditable=true]"))
         return;
@@ -4684,7 +4774,12 @@
     renderAll();
     try {
       const saved = await store.load();
-      if (saved?.items.length) {
+      if (
+        saved &&
+        (saved.items.length ||
+          saved.assets.length ||
+          saved.name !== "Untitled movie")
+      ) {
         dialog("Continue your movie", (body, foot) => {
           body.append(
             el("p", "", saved.name),
@@ -4748,6 +4843,9 @@
     },
     get exporting() {
       return exporting;
+    },
+    get loading() {
+      return projectLoading;
     },
     importFiles,
     selectItem,

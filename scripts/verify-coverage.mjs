@@ -7,7 +7,7 @@ const root = process.cwd();
 const threshold = Number(process.env.COVERAGE_THRESHOLD || "95");
 const reportPath = path.join(root, "build", "reports", "browser-uat", "coverage.json");
 const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
-const maintained = ["toolkit.js", ...fs.readdirSync(path.join(root, "assets", "pages"))
+const maintained = ["toolkit.js", ...fs.readdirSync(path.join(root, "assets", "pages"), { recursive: true })
   .filter((name) => name.endsWith(".js"))
   .sort()
   .map((name) => `assets/pages/${name}`)];

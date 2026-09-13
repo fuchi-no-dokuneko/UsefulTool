@@ -28,6 +28,11 @@ async function inlineModuleImports(source, scriptPath) {
 }
 
 async function inlinePage(name) {
+  if (name === "video-editor.html") {
+    const { execFileSync } = await import("node:child_process");
+    execFileSync(process.execPath, [path.join(root, "scripts/build-video-studio.mjs")]);
+    return fs.readFile(path.join(outputDirectory, name), "utf8");
+  }
   const sourcePath = path.join(root, name);
   let html = await fs.readFile(sourcePath, "utf8");
 

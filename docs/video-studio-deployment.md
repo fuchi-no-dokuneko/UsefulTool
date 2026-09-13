@@ -26,7 +26,7 @@ To publish when ready:
 wrangler deploy --config wrangler.video-studio.jsonc
 ```
 
-No deployment is performed by the build or test commands. The standalone entry point is `/`, with the same editor at `/video-editor`.
+The configuration passed `wrangler deploy --dry-run --config wrangler.video-studio.jsonc` using Wrangler 4.131.1 on September 13, 2026. No deployment is performed by the build or test commands. The standalone entry point is `/`, with the same editor at `/video-editor`.
 
 ## Offline and project recovery
 
@@ -37,6 +37,7 @@ Exports use the browser's supported MediaRecorder formats, in real time. WebM du
 ## Video-only checks
 
 ```sh
+npm ci --prefix acceptance
 npm ci --prefix tests/video-studio
 npm test --prefix tests/video-studio
 npm run --prefix tests/video-studio check:help

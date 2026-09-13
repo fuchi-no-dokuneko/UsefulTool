@@ -1,0 +1,57 @@
+name: Video Studio acceptance
+
+on:
+  push:
+    paths:
+      - "video-editor.html"
+      - "assets/pages/video-editor.js"
+      - "assets/pages/video-studio/**"
+      - "offline/video-editor.html"
+      - "scripts/build-video-studio.mjs"
+      - "tests/video-studio/**"
+      - ".github/workflows/video-studio.yml"
+  pull_request:
+    paths:
+      - "video-editor.html"
+      - "assets/pages/video-editor.js"
+      - "assets/pages/video-studio/**"
+      - "offline/video-editor.html"
+      - "scripts/build-video-studio.mjs"
+      - "tests/video-studio/**"
+      - ".github/workflows/video-studio.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "24"
+      - name: Install video acceptance dependencies
+        run: |
+          npm ci --prefix acceptance
+          npm ci --prefix tests/video-studio
+          if ! command -v ffmpeg >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+      - name: Build and check the video artifact
+        run: |
+          node scripts/build-video-studio.mjs
+          git diff --exit-code -- offline/video-editor.html
+          npm test --prefix tests/video-studio
+          npm run --prefix tests/video-studio check:help
+      - name: Run actual browser media, editing, pixel, audio and offline checks
+        run: npm run --prefix tests/video-studio test:browser
+      - name: Keep video acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: video-studio-acceptance
+          path: build/reports/video-studio/
+          if-no-files-found: error

@@ -729,12 +729,15 @@
     control.disabled = disabled;
     if (id) control.id = id;
     control.setAttribute("aria-label", label);
-    attach(control, helpId, () => disabledReason);
+    control.dataset.disabledReason = disabledReason;
+    const reason = () =>
+      control.disabled ? control.dataset.disabledReason || "" : "";
+    attach(control, helpId, reason);
+    attach(wrapper, helpId, reason);
     if (disabled) {
       wrapper.tabIndex = 0;
       wrapper.setAttribute("aria-disabled", "true");
       wrapper.setAttribute("aria-label", label);
-      attach(wrapper, helpId, () => disabledReason);
     }
     if (onClick) control.addEventListener("click", onClick);
     wrapper.appendChild(control);
@@ -746,7 +749,7 @@
     info.dataset.helpId = "touchHelp";
     info.addEventListener("click", (event) => {
       event.stopPropagation();
-      show(info, helpId, disabledReason);
+      show(info, helpId, reason());
     });
     wrapper.appendChild(info);
     return wrapper;
@@ -758,6 +761,24 @@
     span.tabIndex = 0;
     return attach(span, helpId, reason);
   }
+  /** @param {HTMLButtonElement} control @param {boolean} disabled @param {string} reason */
+  function setDisabled(control, disabled, reason) {
+    control.disabled = disabled;
+    control.dataset.disabledReason = reason;
+    const wrapper = control.parentElement;
+    if (!wrapper?.classList.contains("help-wrap")) return;
+    if (disabled) {
+      wrapper.tabIndex = 0;
+      wrapper.setAttribute("aria-disabled", "true");
+      wrapper.setAttribute(
+        "aria-label",
+        control.getAttribute("aria-label") || "Unavailable action",
+      );
+    } else {
+      wrapper.removeAttribute("tabindex");
+      wrapper.removeAttribute("aria-disabled");
+    }
+  }
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") close();
   });
@@ -766,5 +787,12 @@
       close();
   });
   // @ts-expect-error The application namespace is initialized by model.js.
-  globalThis.UTStudio.Help = { HELP_CONTENT, button, attach, label, close };
+  globalThis.UTStudio.Help = {
+    HELP_CONTENT,
+    button,
+    attach,
+    label,
+    setDisabled,
+    close,
+  };
 })();

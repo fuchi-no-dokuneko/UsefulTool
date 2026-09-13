@@ -91,6 +91,8 @@
         if (tr.duration < .1) project.transitions.splice(project.transitions.indexOf(tr), 1);
         else time -= tr.duration;
       }
+      const moving = Math.abs(time - previousStart) > 1e-6;
+      if (moving && related(project, value).some(i => isLocked(project, i))) throw new Error("Unlock the later clip or its linked sound before changing earlier clips.");
       value.start = rounded(time); value.end = rounded(time + duration);
       for (const sibling of related(project, value)) if (sibling.id !== value.id) {
         const delta = value.start - previousStart; sibling.start = rounded(sibling.start + delta); sibling.end = rounded(sibling.end + delta);
@@ -111,6 +113,7 @@
     const source = asset(project, assetId);
     if (!source) throw new Error("Choose a media file first.");
     const kind = source.kind, target = options.layerId || (kind === "audio" ? "music" : "main");
+    if (layer(project, target)?.locked) throw new Error("Unlock the destination layer before adding media.");
     if (target === "main" && !project.items.some((i) => i.kind !== "audio" && i.kind !== "filter")) {
       const scale = Math.min(1, Math.sqrt(MAX_PIXELS / (source.width * source.height)));
       project.canvas.width = Math.max(2, Math.round(source.width * scale));
@@ -227,7 +230,7 @@
       if (isLocked(project, sibling)) { Object.assign(value, original); throw new Error("Unlock the linked sound first."); }
       sibling.start = value.start; sibling.end = value.end; sibling.sourceIn = value.sourceIn; sibling.sourceOut = value.sourceOut;
     }
-    if (value.credits?.mode === "speed") updateCreditsDuration(project, value);
+    if (value.credits) updateCreditsDuration(project, value);
     value.layerId === "main" ? reflow(project) : normalize(project); return true;
   }
   function setSpeed(project, itemId, speed) {
@@ -278,6 +281,10 @@
     const group = id("link"); let result;
     for (const sibling of related(project, value)) {
       const dupe = copy(sibling); dupe.id = id(sibling.kind); dupe.start = sibling.end; dupe.end = dupe.start + span(sibling);
+      if (!["video", "audio"].includes(dupe.kind) && dupe.layerId !== "main") {
+        const track = copy(layer(project, dupe.layerId));
+        track.id = id("layer"); track.order += .1; project.layers.push(track); dupe.layerId = track.id;
+      }
       if (dupe.linkedGroupId) dupe.linkedGroupId = group;
       if (dupe.audio) dupe.audio.wholeMovie = false;
       project.items.push(dupe);
@@ -361,6 +368,14 @@
       return active(value, time) && (value.kind === "audio") === audio && track?.visible && (!solo || track.solo) && (!audio || !track.muted && !value.audio.muted);
     }).sort((a, b) => layer(project, a.layerId).order - layer(project, b.layerId).order || a.zIndex - b.zIndex || a.id.localeCompare(b.id));
   }
+  function videoConflicts(project) {
+    return ["overlay-1", "overlay-2"].flatMap(key => {
+      if (!layer(project,key)?.visible) return [];
+      const entries = project.items.filter(i => i.kind === "video" && i.enabled && i.layerId === key).sort((a,b)=>a.start-b.start);
+      let end = 0;
+      return entries.filter(i => { const conflict = i.start < end - 1e-7; end = Math.max(end,i.end); return conflict; });
+    });
+  }
   function evaluateFrame(project, time) {
     const t = clamp(time, 0, Math.max(0, project.duration - 1e-7));
     const visible = visibleItems(project, t);
@@ -384,6 +399,7 @@
   }
   function applyOverlayPreset(project, selectedIds, preset = "equal") {
     const values = selectedIds.map((key) => item(project, key)).filter((i) => i?.kind === "video");
+    if (values.some((value) => isLocked(project, value))) throw new Error("Unlock the selected videos before applying an overlap preset.");
     const alpha = preset === "groovy" ? [1, .55, .35] : preset === "ghost" ? [1, .4, .2] : [1, .55, .35];
     values.forEach((value, index) => {
       value.blendMode = preset === "equal" ? "equal" : "alpha";
@@ -410,7 +426,7 @@
   }
   function updateCreditsDuration(project, value) {
     if (value.credits?.template !== "rolling") return;
-    const distance = project.canvas.height + creditsHeight(value) + value.credits.marginTop + value.credits.marginBottom;
+    const distance = value.transform.height + creditsHeight(value) + value.credits.marginTop + value.credits.marginBottom;
     if (value.credits.mode === "speed") value.end = value.start + distance / Math.max(1, value.credits.speed);
     else value.credits.speed = distance / span(value);
     normalize(project);
@@ -455,11 +471,26 @@
     let value;
     try { value = JSON.parse(text); } catch { throw new Error("This is not a valid .utvproj JSON file."); }
     if (value?.schemaVersion !== 1) throw new Error("This project version is not supported.");
+    const numeric = (v, min = -Infinity, max = Infinity) => Number.isFinite(v) && v >= min && v <= max;
+    const string = (v, max = 12000) => typeof v === "string" && v.length <= max;
+    const fail = (ok, message) => { if (!ok) throw new Error(message); };
+    fail(string(value.id, 200) && string(value.name, 180) && numeric(value.playhead, 0), "Invalid project identity or playhead.");
     for (const key of ["assets", "layers", "items", "mainOrder", "transitions"]) if (!Array.isArray(value[key])) throw new Error("Project is missing " + key + ".");
     if (!value.canvas || !(value.canvas.width > 0 && value.canvas.height > 0) || value.canvas.width * value.canvas.height > MAX_PIXELS) throw new Error("Invalid project dimensions.");
-    const unique = (entries) => new Set(entries.map((x) => x.id)).size === entries.length && entries.every((x) => typeof x.id === "string");
+    const unique = (entries) => entries.every((x) => x && string(x.id, 200) && x.id.length) && new Set(entries.map((x) => x.id)).size === entries.length;
     if (![value.assets, value.layers, value.items].every(unique)) throw new Error("Project contains duplicate or invalid IDs.");
     for (const entry of value.assets) if (!["video", "audio", "image"].includes(entry.kind) || typeof entry.contentHash !== "string" || typeof entry.name !== "string" || !(entry.size >= 0)) throw new Error("Invalid media description.");
+    for (const a of value.assets) {
+      fail(numeric(a.size, 0) && string(a.name, 1000), "Invalid media description.");
+      if (a.kind !== "image") fail(numeric(a.duration, MIN), "Invalid source duration.");
+      if (a.kind !== "audio") fail(numeric(a.width, 1) && numeric(a.height, 1), "Invalid source dimensions.");
+      if (a.thumbnail !== undefined) fail(string(a.thumbnail, 2 * 1024 * 1024) && /^data:image\/(png|jpeg|webp|gif|bmp);base64,[a-z0-9+/=\s]+$/i.test(a.thumbnail), "Invalid embedded thumbnail.");
+      if (a.waveform !== undefined) fail(Array.isArray(a.waveform) && a.waveform.length <= 8192 && a.waveform.every(n => numeric(n, 0, 1)), "Invalid waveform data.");
+    }
+    for (const track of value.layers) fail(["main-video", "overlay", "text", "image", "filter", "sound"].includes(track.kind) && string(track.name, 180) && numeric(track.order) && ["visible", "locked", "muted", "solo"].every(k => typeof track[k] === "boolean"), "Invalid layer settings.");
+    for (const required of createProject().layers) fail(layer(value, required.id)?.kind === required.kind, "A required timeline track is missing.");
+    fail(VIDEO_LAYERS.every((key, index) => layer(value, key).order === index * 10), "Video tracks must retain their compositing order.");
+    fail(new Set(value.mainOrder).size === value.mainOrder.length && value.mainOrder.every(key => item(value, key)?.layerId === "main") && value.items.filter(i => i.layerId === "main").every(i => value.mainOrder.includes(i.id)), "Invalid main timeline order.");
     for (const entry of value.items) {
       if (!KINDS.includes(entry.kind) || !layer(value, entry.layerId) || !Number.isFinite(entry.start) || !Number.isFinite(entry.end) || entry.start < 0 || entry.end - entry.start < MIN - 1e-7) throw new Error("Invalid timeline item.");
       if (entry.assetId && !asset(value, entry.assetId)) throw new Error("An item refers to missing media.");
@@ -468,12 +499,37 @@
       if (entry.kind === "audio" && (!entry.audio || !Number.isFinite(entry.audio.volume) || entry.audio.volume < 0 || entry.audio.volume > 2)) throw new Error("Invalid audio settings.");
       if (entry.kind === "filter" && !BLURS.includes(entry.filter?.type)) throw new Error("Invalid blur type.");
       if (!Array.isArray(entry.effects) || !Array.isArray(entry.opacityKeys)) throw new Error("Missing effect data.");
+      const track = layer(value, entry.layerId), source = asset(value, entry.assetId);
+      fail(numeric(entry.zIndex) && ["enabled", "locked"].every(k => typeof entry[k] === "boolean"), "Invalid item state.");
+      if (entry.kind === "video") fail(VIDEO_LAYERS.includes(entry.layerId) && source?.kind === "video", "Invalid video track or source.");
+      if (entry.kind === "image") fail(source?.kind === "image" && track.kind !== "sound", "Invalid image source or track.");
+      if (entry.kind === "audio") fail(track.kind === "sound" && ["audio", "video"].includes(source?.kind), "Invalid sound source or track.");
+      if (["video", "audio"].includes(entry.kind)) fail(numeric(entry.sourceIn, 0) && numeric(entry.sourceOut, entry.sourceIn + .000001, source.duration + .001), "Invalid source range.");
+      fail(numeric(entry.fadeIn, 0, 5) && numeric(entry.fadeOut, 0, 5), "Invalid fade settings.");
+      if (entry.kind !== "audio") fail(entry.transform && ["x", "y", "rotation", "cropX", "cropY"].every(k => numeric(entry.transform[k])) && ["width", "height", "cropWidth", "cropHeight"].every(k => numeric(entry.transform[k], .000001)), "Invalid item transform.");
+      fail(entry.opacityKeys.every(k => k && numeric(k.time, 0) && numeric(k.value, 0, 1) && ["linear", "smooth", "ease-in", "ease-out", "hold"].includes(k.easing)), "Invalid visibility curve.");
+      fail(entry.effects.every(f => f && EFFECTS.includes(f.type) && numeric(f.amount, f.type === "hue" ? -360 : 0, f.type === "hue" ? 360 : 3) && numeric(f.start, 0) && numeric(f.end, f.start) && typeof f.enabled === "boolean"), "Invalid effect data.");
+      if (entry.audio) fail(["leftGain", "rightGain"].every(k => numeric(entry.audio[k], 0, 2)) && ["fadeIn", "fadeOut"].every(k => numeric(entry.audio[k], 0)) && ["muted", "preservePitch", "loop", "wholeMovie"].every(k => typeof entry.audio[k] === "boolean"), "Invalid audio settings.");
+      if (entry.kind === "text") fail(entry.text && string(entry.text.content) && string(entry.text.font, 200) && numeric(entry.text.size, 1, 10000) && numeric(entry.text.weight, 100, 1000) && numeric(entry.text.lineHeight, .1, 10) && ["left", "center", "right"].includes(entry.text.align) && string(entry.text.color, 100) && string(entry.text.background, 100), "Invalid text settings.");
+      if (entry.kind === "filter") {
+        const f = entry.filter;
+        fail(track.kind === "filter" && numeric(f.amount, 0, {gaussian:50, box:30, motion:80, radial:100}[f.type]) && numeric(f.angle, 0, 360) && numeric(f.centerX, 0, 100) && numeric(f.centerY, 0, 100) && ["selected-layer", "everything-below"].includes(f.targetMode) && (f.targetMode !== "selected-layer" || Boolean(layer(value, f.targetLayerId))), "Invalid blur settings.");
+      }
+      if (entry.kind === "credits") {
+        const c = entry.credits;
+        fail(c && ["rolling", "static", "pages"].includes(c.template) && ["up", "down"].includes(c.direction) && ["speed", "fit"].includes(c.mode) && numeric(c.speed, .000001) && numeric(c.fontSize, 1, 10000) && numeric(c.lineHeight, .1, 10) && numeric(c.marginTop, 0) && numeric(c.marginBottom, 0) && Array.isArray(c.groups) && unique(c.groups) && c.groups.every(g => string(g.title, 1000) && string(g.content)), "Invalid credits settings.");
+      }
       delete entry.objectUrl;
     }
     for (const a of value.assets) { delete a.objectUrl; delete a.fileHandleKey; }
     value.soundBalance ||= { video: 1, music: 1, other: 1 };
     value.exportSettings = { ...createProject().exportSettings, ...value.exportSettings };
     if (!(value.exportSettings.fps >= 1 && value.exportSettings.fps <= 60 && value.exportSettings.bitrate >= .25 && value.exportSettings.bitrate <= 50)) throw new Error("Invalid export settings.");
+    fail(Number.isInteger(value.exportSettings.fps) && ["quick", "standard", "high"].includes(value.exportSettings.quality) && numeric(value.exportSettings.segmentInterval, .1) && ["video", "music", "other"].every(k => numeric(value.soundBalance[k], 0, 2)), "Invalid export or sound balance settings.");
+    fail(unique(value.transitions) && value.transitions.every(tr => {
+      const i = value.mainOrder.indexOf(tr.toId);
+      return i > 0 && value.mainOrder[i - 1] === tr.fromId && TRANSITIONS.includes(tr.type) && numeric(tr.duration, .1, 5) && ["left", "right", "up", "down"].includes(tr.direction) && ["linear", "smooth", "ease-in", "ease-out", "hold"].includes(tr.easing);
+    }), "Invalid transition data.");
     return normalize(value);
   }
   class History {
@@ -494,7 +550,7 @@
   const api = { MIN, MAX_PIXELS, VIDEO_LAYERS, KINDS, EFFECTS, BLURS, TRANSITIONS, id, copy, clamp, finite, rounded, active, span, sourceSpan,
     layer, asset, item, isLocked, mainItems, createProject, transform, baseItem, audioProps, normalize, reflow, addAsset, addMedia, addLayerItem,
     related, setLink, moveItem, reorderMain, trimItem, setSpeed, splitItem, duplicateItem, deleteItem, transitionMaximum, setTransition, removeTransition,
-    ease, curveAt, setKey, fadeAt, sourceTimeAt, setRepeat, snapTime, visibleItems, evaluateFrame, evaluateAudio, applyOverlayPreset, addEffect,
+    ease, curveAt, setKey, fadeAt, sourceTimeAt, setRepeat, snapTime, visibleItems, videoConflicts, evaluateFrame, evaluateAudio, applyOverlayPreset, addEffect,
     creditsHeight, updateCreditsDuration, fitTransform, segmentRanges, formatTime, exportDimensions, serialize, parseProject, History, visualEnd };
   root.UTStudio = Object.assign(root.UTStudio || {}, { Model: api });
   if (typeof module !== "undefined") module.exports = api;

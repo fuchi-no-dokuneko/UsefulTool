@@ -78,7 +78,9 @@
           : Math.min(
               source.kind === "image" ? 5 : source.duration,
               Math.max(style.length, target / assets.length),
-              remaining,
+              // Include the impending overlap so the final draft does not
+              // approach its requested length through tiny extra fragments.
+              remaining + (index ? Math.min(0.6, remaining / 4) : 0),
             );
       if (length < M.MIN) break;
       const value = M.addMedia(p, source.id, { duration: length });
@@ -110,6 +112,8 @@
           duration: Math.min(0.6, length / 5),
           easing: "smooth",
         });
+      if (options.length !== "full" && M.visualEnd(p) > target)
+        M.trimItem(p, value.id, "end", target);
       remaining = target - M.visualEnd(p);
       index++;
     }

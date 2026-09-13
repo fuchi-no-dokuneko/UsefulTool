@@ -121,6 +121,7 @@ test('locked item operations leave the timeline untouched', () => {
   const before = M.serialize(p);
   assert.equal(M.moveItem(p, v.id, 3), false); assert.equal(M.trimItem(p, v.id, 'end', 4), false);
   assert.equal(M.deleteItem(p, v.id), false); assert.equal(M.duplicateItem(p, v.id), null);
+  assert.throws(() => M.applyOverlayPreset(p, [v.id], 'groovy'), /Unlock/);
   assert.equal(M.serialize(p), before);
 });
 test('project round trip retains all object kinds, effects, keys, transitions and audio settings', () => {
@@ -165,4 +166,48 @@ test('incremental SHA-256 matches independent Node crypto, including block and c
   assert.equal(fileKind({name:'TRACK.MP3',type:''}), 'audio');
   assert.equal(fileKind({name:'photo.JPEG',type:''}), 'image');
   assert.throws(() => fileKind({name:'program.exe',type:''}), /Choose/);
+});
+
+test('malformed nested project data is rejected before it reaches the renderer or player', () => {
+  const p = movie(2);
+  M.addLayerItem(p, 'text'); M.addLayerItem(p, 'credits'); M.addLayerItem(p, 'filter');
+  M.addEffect(M.mainItems(p)[0], 'brightness');
+  const corruptions = [
+    q => q.layers.splice(0, 1),
+    q => q.layers[1].order = -1,
+    q => q.mainOrder.push(q.mainOrder[0]),
+    q => q.assets[0].thumbnail = 'https://example.invalid/track.png',
+    q => q.assets[0].waveform = [-1],
+    q => q.items[0].sourceOut = 500,
+    q => q.items[0].transform.width = -1,
+    q => q.items[0].effects[0].amount = null,
+    q => q.items[0].opacityKeys.push({time:0,value:5,easing:'linear'}),
+    q => q.items.find(i=>i.kind==='audio').audio.leftGain = 3,
+    q => q.items.find(i=>i.kind==='text').text = null,
+    q => q.items.find(i=>i.kind==='filter').filter.amount = 51,
+    q => q.items.find(i=>i.kind==='credits').credits.groups = [null],
+    q => q.exportSettings.fps = 1.5,
+    q => q.soundBalance.video = -1,
+    q => q.transitions.push({id:'bad',toId:q.mainOrder[0],fromId:'missing',duration:1,type:'wipe'})
+  ];
+  for (const corrupt of corruptions) { const invalid=M.copy(p); corrupt(invalid); assert.throws(()=>M.parseProject(JSON.stringify(invalid))); }
+  assert.doesNotThrow(()=>M.parseProject(M.serialize(p)));
+});
+
+test('copied visual layers can change their front/back order independently', () => {
+  const p = movie(1), text = M.addLayerItem(p, 'text'), duplicate = M.duplicateItem(p, text.id);
+  assert.notEqual(duplicate.layerId, text.layerId);
+  M.layer(p, duplicate.layerId).order = 8;
+  assert.ok(M.layer(p,text.layerId).order > 8);
+});
+
+test('credits Fit duration updates speed when trimmed and uses the actual credits box', () => {
+  const p = movie(1), c = M.addLayerItem(p, 'credits');
+  c.transform.height = 360;
+  M.updateCreditsDuration(p,c);
+  const speed = c.credits.speed;
+  M.trimItem(p,c.id,'end',c.start+5);
+  assert.equal(c.credits.speed, speed*2);
+  c.credits.mode='speed'; M.updateCreditsDuration(p,c);
+  assert.equal(M.span(c),5);
 });

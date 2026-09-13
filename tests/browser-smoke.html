@@ -17,10 +17,12 @@
   <iframe id="rot" src="../rot-cipher.html" hidden></iframe>
   <iframe id="pdf" src="../pdf-merge.html" hidden></iframe>
   <iframe id="imagesPdf" src="../images-to-pdf.html" hidden></iframe>
+  <iframe id="videoEditor" src="../video-editor.html" hidden></iframe>
   <iframe id="editor" src="../image-editor.html" hidden></iframe>
   <iframe id="chat" src="../lan-chat.html" hidden></iframe>
   <iframe id="home" src="../index.html" hidden></iframe>
   <pre id="result">RUNNING</pre>
+  <script src="video-studio/smoke.browser.js"></script>
   <script>
     const TIFF_BASE64 = "SUkqAAgAAAADAA8BAgAJAAAAMgAAAGmHBAABAAAAPAAAACWIBAABAAAAYgAAAAAAAABDYW1lcmFDbwAAAQADkAIAFAAAAE4AAAAAAAAAMjAyNjowNjozMCAxMjozNDo1NgAEAAEAAgACAAAATgAAAAIABQADAAAAmAAAAAMAAgACAAAARQAAAAQABQADAAAAsAAAAAAAAAAjAAAAAQAAACkAAAABAAAAHgAAAAEAAACLAAAAAQAAACkAAAABAAAADwAAAAEAAAA=";
 
@@ -488,6 +490,17 @@
       imagesPdfWindow.document.getElementById("caption").checked = false;
       imagesPdfWindow.document.getElementById("buildButton").click();
       await waitUntil(() => /Created 2 page/.test(imagesPdfWindow.document.getElementById("status").textContent), "matched image PDF build");
+
+      const videoFrame = document.getElementById("videoEditor");
+      videoFrame.hidden = false;
+      videoFrame.style.width = "1363px";
+      videoFrame.style.height = "936px";
+      await runVideoStudioSmoke(videoFrame, check, waitUntil);
+      await runVideoStudioSuites(check, async (predicate, label, timeout) => {
+        const started = performance.now();
+        while (!predicate()) { if (performance.now() - started > timeout) throw new Error(label + " timed out"); await new Promise(resolve => setTimeout(resolve, 30)); }
+      });
+      videoFrame.hidden = true;
 
       const editorWindow = document.getElementById("editor").contentWindow;
       for (let attempt = 0; attempt < 40 && !editorWindow.UsefulToolImageEditor; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 50));

@@ -61,10 +61,14 @@
       const serial = ++this.seekSerial,
         project = this.getProject();
       project.playhead = M.clamp(time, 0, project.duration);
-      await this.prepare(
-        project,
-        Math.min(project.playhead, Math.max(0, project.duration - 1e-6)),
-      );
+      try {
+        await this.prepare(
+          project,
+          Math.min(project.playhead, Math.max(0, project.duration - 1e-6)),
+        );
+      } catch (error) {
+        if (serial === this.seekSerial) throw error;
+      }
       if (serial === this.seekSerial)
         this.paint(project, project.playhead, this.preview);
     }
@@ -94,6 +98,11 @@
     async play(options = {}) {
       this.stop();
       const project = this.getProject();
+      if (M.videoConflicts(project).length)
+        throw new Error(
+          "Overlapping items occupy the same video track. Use Fix automatically or shorten an overlay before playback.",
+        );
+      if (options.signal?.aborted) return false;
       const start =
           options.start ??
           (project.playhead >= project.duration - 0.01 ? 0 : project.playhead),
@@ -111,6 +120,13 @@
         recording: Boolean(options.recording),
       };
       this.session = session;
+      const abort = () => {
+        if (this.session === session) this.stop();
+      };
+      options.signal?.addEventListener("abort", abort, { once: true });
+      completion.finally(() =>
+        options.signal?.removeEventListener("abort", abort),
+      );
       try {
         this.onState("preparing");
         await this.mixer.ready();
@@ -209,7 +225,8 @@
         throw error;
       }
     }
-    async recordRange(start, end, onProgress = () => {}) {
+    async recordRange(start, end, onProgress = () => {}, signal) {
+      if (signal?.aborted) return null;
       const project = this.getProject(),
         formats = supportedFormats();
       if (!this.preview.captureStream || !formats.length)
@@ -229,6 +246,7 @@
       const size = M.exportDimensions(project),
         output = Media.makeCanvas(size.width, size.height);
       await this.mixer.ready();
+      if (signal?.aborted) return null;
       const videoStream = output.captureStream(project.exportSettings.fps);
       const tracks = [...videoStream.getVideoTracks()];
       if (project.exportSettings.includeAudio)
@@ -255,6 +273,7 @@
           reject(recordError);
         };
       });
+      stopped.catch(() => {});
       const began = performance.now();
       try {
         const complete = await this.play({
@@ -262,6 +281,7 @@
           end,
           canvas: output,
           recording: true,
+          signal,
           onReady: () => {
             recorder.start(250);
             tracks[0].requestFrame?.();

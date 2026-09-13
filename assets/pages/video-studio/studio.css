@@ -1442,11 +1442,13 @@ dialog::backdrop {
   }
   .brand-name,
   .save-status,
+  .topbar #historyButtons,
   .topbar .offline-link {
     display: none;
   }
   .project-title {
     max-width: none;
+    min-width: 0;
   }
   .topbar-actions > .help-wrap:nth-child(-n + 2) {
     display: none;
@@ -1618,7 +1620,7 @@ dialog::backdrop {
 }
 @media (hover: none) and (pointer: coarse) {
   .help-wrap {
-    padding-right: 22px;
+    padding-right: 40px;
   }
   .help-wrap > .touch-help {
     display: block;
@@ -1626,8 +1628,9 @@ dialog::backdrop {
     right: 0;
     top: 50%;
     transform: translateY(-50%);
-    width: 22px;
-    min-height: 36px;
+    width: 40px;
+    min-width: 40px;
+    min-height: 40px;
     padding: 0;
     border: 0;
     background: transparent;
@@ -1642,18 +1645,46 @@ dialog::backdrop {
   .resize-handle .help-wrap > .touch-help {
     display: none;
   }
-  .workflow-stepper .help-wrap {
-    padding-right: 16px;
+  .import-secondary {
+    grid-template-columns: 1fr;
   }
-  .workflow-stepper .touch-help {
-    width: 16px;
-    font-size: 12px;
+  .timeline-head {
+    overflow-x: auto;
+    flex-shrink: 0;
   }
-  .transport .touch-help {
-    font-size: 12px;
-    width: 16px;
+}
+@media (max-width: 759px) and (hover: none) and (pointer: coarse) {
+  .topbar button:not(.touch-help) {
+    padding: 0 6px;
   }
+  .workflow-stepper {
+    height: 96px;
+  }
+  .workflow-stepper .help-wrap,
   .transport .help-wrap {
-    padding-right: 16px;
+    padding-right: 0;
+    padding-bottom: 40px;
+  }
+  .workflow-stepper .help-wrap > .touch-help,
+  .transport .help-wrap > .touch-help {
+    top: auto;
+    right: 50%;
+    bottom: 0;
+    transform: translateX(50%);
+  }
+  .transport .icon-button {
+    min-width: 40px;
+  }
+  .preview-card {
+    grid-template-rows: 40px 222px 88px;
+  }
+  .transport {
+    height: 88px;
+  }
+  .media-panel {
+    top: 160px;
+  }
+  .studio-shell {
+    min-height: calc(100vh - 160px);
   }
 }

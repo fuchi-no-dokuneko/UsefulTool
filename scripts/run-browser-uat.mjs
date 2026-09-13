@@ -427,6 +427,7 @@ async function main() {
     "--no-sandbox",
     "--disable-dev-shm-usage",
     "--disable-gpu",
+    "--autoplay-policy=no-user-gesture-required",
     `--remote-debugging-port=${debugPort}`,
     `--user-data-dir=${profileDirectory}`,
     "about:blank",
@@ -441,6 +442,7 @@ async function main() {
     const scripts = new Map();
     client.on("Debugger.scriptParsed", (script) => scripts.set(script.scriptId, script));
     await client.call("Page.enable");
+    await client.call("Emulation.setFocusEmulationEnabled", { enabled: true });
     await client.call("Runtime.enable");
     await client.call("Debugger.enable");
     await client.call("Profiler.enable");

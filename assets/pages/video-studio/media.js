@@ -49,16 +49,19 @@
     throw new Error("Choose a video, MP3, PNG, JPG, BMP, GIF or WebP file.");
   }
   function waitMedia(element, event = "loadeddata", timeout = 20000) {
+    if (element.utvDisposed) return Promise.reject(new DOMException("The previous media decoder has been closed.", "AbortError"));
     if (event === "loadeddata" && element.readyState >= 2) return Promise.resolve();
     return new Promise((resolve, reject) => {
       // Seeking can temporarily lower readyState after loadeddata has already
       // fired. canplay/seeked must also release a waiter for decoded pixels.
       const events = event === "loadeddata" ? ["loadeddata", "canplay", "seeked"] : [event];
-      const clean = () => { clearTimeout(timer); events.forEach(name => element.removeEventListener(name, ok)); element.removeEventListener("error", bad); };
+      const clean = () => { clearTimeout(timer); events.forEach(name => element.removeEventListener(name, ok)); element.removeEventListener("error", bad); element.removeEventListener("utv-disposed", disposed); };
       const ok = () => { if (event === "loadeddata" && element.readyState < 2) return; clean(); resolve(); };
       const bad = () => { clean(); reject(new Error("This browser could not decode the file. Try a different video codec or MP3.")); };
+      const disposed = () => { clean(); reject(new DOMException("The previous media decoder has been closed.", "AbortError")); };
       const timer = setTimeout(() => { clean(); reject(new Error("Reading the media timed out. Try a smaller file.")); }, timeout);
       events.forEach(name => element.addEventListener(name, ok)); element.addEventListener("error", bad, { once: true });
+      element.addEventListener("utv-disposed", disposed, {once:true});
     });
   }
   const pendingSeeks = new WeakMap();
@@ -187,15 +190,16 @@
         }
         previous = pixels; progress((i + 1) / count);
       }
-      const peaks = (descriptor.waveform || []).map((level, index, list) => ({ time: index / list.length * descriptor.duration, level })).filter((p) => p.level > .55);
+      const wave = descriptor.waveform || [], threshold = Math.max(.005, Math.max(0, ...wave) * .8);
+      const peaks = wave.map((level, index, list) => ({ time: index / list.length * descriptor.duration, level, index })).filter((p) => p.level >= threshold && p.level >= (wave[p.index - 1] || 0) && p.level >= (wave[p.index + 1] || 0));
       descriptor.analysis = { cuts: cuts.sort((a,b) => b.change - a.change), peaks };
       await seek(video, 0); return descriptor.analysis;
     }
     pause() { for (const element of this.elements.values()) element.pause(); }
     dispose() {
       this.pause();
-      for (const element of this.elements.values()) { element.removeAttribute("src"); element.load(); }
-      for (const entry of this.assets.values()) { if (entry.probe) { entry.probe.removeAttribute("src"); entry.probe.load(); } URL.revokeObjectURL(entry.url); }
+      for (const element of this.elements.values()) { element.utvDisposed = true; element.dispatchEvent(new Event("utv-disposed")); element.removeAttribute("src"); element.load(); }
+      for (const entry of this.assets.values()) { if (entry.probe) { entry.probe.utvDisposed = true; entry.probe.dispatchEvent(new Event("utv-disposed")); entry.probe.removeAttribute("src"); entry.probe.load(); } URL.revokeObjectURL(entry.url); }
       this.elements.clear(); this.assets.clear();
     }
   }

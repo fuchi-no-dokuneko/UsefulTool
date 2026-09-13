@@ -1455,11 +1455,13 @@ dialog::backdrop {
   }
   .brand-name,
   .save-status,
+  .topbar #historyButtons,
   .topbar .offline-link {
     display: none;
   }
   .project-title {
     max-width: none;
+    min-width: 0;
   }
   .topbar-actions > .help-wrap:nth-child(-n + 2) {
     display: none;
@@ -1631,7 +1633,7 @@ dialog::backdrop {
 }
 @media (hover: none) and (pointer: coarse) {
   .help-wrap {
-    padding-right: 22px;
+    padding-right: 40px;
   }
   .help-wrap > .touch-help {
     display: block;
@@ -1639,8 +1641,9 @@ dialog::backdrop {
     right: 0;
     top: 50%;
     transform: translateY(-50%);
-    width: 22px;
-    min-height: 36px;
+    width: 40px;
+    min-width: 40px;
+    min-height: 40px;
     padding: 0;
     border: 0;
     background: transparent;
@@ -1655,19 +1658,47 @@ dialog::backdrop {
   .resize-handle .help-wrap > .touch-help {
     display: none;
   }
-  .workflow-stepper .help-wrap {
-    padding-right: 16px;
+  .import-secondary {
+    grid-template-columns: 1fr;
   }
-  .workflow-stepper .touch-help {
-    width: 16px;
-    font-size: 12px;
+  .timeline-head {
+    overflow-x: auto;
+    flex-shrink: 0;
   }
-  .transport .touch-help {
-    font-size: 12px;
-    width: 16px;
+}
+@media (max-width: 759px) and (hover: none) and (pointer: coarse) {
+  .topbar button:not(.touch-help) {
+    padding: 0 6px;
   }
+  .workflow-stepper {
+    height: 96px;
+  }
+  .workflow-stepper .help-wrap,
   .transport .help-wrap {
-    padding-right: 16px;
+    padding-right: 0;
+    padding-bottom: 40px;
+  }
+  .workflow-stepper .help-wrap > .touch-help,
+  .transport .help-wrap > .touch-help {
+    top: auto;
+    right: 50%;
+    bottom: 0;
+    transform: translateX(50%);
+  }
+  .transport .icon-button {
+    min-width: 40px;
+  }
+  .preview-card {
+    grid-template-rows: 40px 222px 88px;
+  }
+  .transport {
+    height: 88px;
+  }
+  .media-panel {
+    top: 160px;
+  }
+  .studio-shell {
+    min-height: calc(100vh - 160px);
   }
 }
 
@@ -1846,6 +1877,8 @@ dialog::backdrop {
         if (tr.duration < .1) project.transitions.splice(project.transitions.indexOf(tr), 1);
         else time -= tr.duration;
       }
+      const moving = Math.abs(time - previousStart) > 1e-6;
+      if (moving && related(project, value).some(i => isLocked(project, i))) throw new Error("Unlock the later clip or its linked sound before changing earlier clips.");
       value.start = rounded(time); value.end = rounded(time + duration);
       for (const sibling of related(project, value)) if (sibling.id !== value.id) {
         const delta = value.start - previousStart; sibling.start = rounded(sibling.start + delta); sibling.end = rounded(sibling.end + delta);
@@ -1866,6 +1899,7 @@ dialog::backdrop {
     const source = asset(project, assetId);
     if (!source) throw new Error("Choose a media file first.");
     const kind = source.kind, target = options.layerId || (kind === "audio" ? "music" : "main");
+    if (layer(project, target)?.locked) throw new Error("Unlock the destination layer before adding media.");
     if (target === "main" && !project.items.some((i) => i.kind !== "audio" && i.kind !== "filter")) {
       const scale = Math.min(1, Math.sqrt(MAX_PIXELS / (source.width * source.height)));
       project.canvas.width = Math.max(2, Math.round(source.width * scale));
@@ -1982,7 +2016,7 @@ dialog::backdrop {
       if (isLocked(project, sibling)) { Object.assign(value, original); throw new Error("Unlock the linked sound first."); }
       sibling.start = value.start; sibling.end = value.end; sibling.sourceIn = value.sourceIn; sibling.sourceOut = value.sourceOut;
     }
-    if (value.credits?.mode === "speed") updateCreditsDuration(project, value);
+    if (value.credits) updateCreditsDuration(project, value);
     value.layerId === "main" ? reflow(project) : normalize(project); return true;
   }
   function setSpeed(project, itemId, speed) {
@@ -2033,6 +2067,10 @@ dialog::backdrop {
     const group = id("link"); let result;
     for (const sibling of related(project, value)) {
       const dupe = copy(sibling); dupe.id = id(sibling.kind); dupe.start = sibling.end; dupe.end = dupe.start + span(sibling);
+      if (!["video", "audio"].includes(dupe.kind) && dupe.layerId !== "main") {
+        const track = copy(layer(project, dupe.layerId));
+        track.id = id("layer"); track.order += .1; project.layers.push(track); dupe.layerId = track.id;
+      }
       if (dupe.linkedGroupId) dupe.linkedGroupId = group;
       if (dupe.audio) dupe.audio.wholeMovie = false;
       project.items.push(dupe);
@@ -2116,6 +2154,14 @@ dialog::backdrop {
       return active(value, time) && (value.kind === "audio") === audio && track?.visible && (!solo || track.solo) && (!audio || !track.muted && !value.audio.muted);
     }).sort((a, b) => layer(project, a.layerId).order - layer(project, b.layerId).order || a.zIndex - b.zIndex || a.id.localeCompare(b.id));
   }
+  function videoConflicts(project) {
+    return ["overlay-1", "overlay-2"].flatMap(key => {
+      if (!layer(project,key)?.visible) return [];
+      const entries = project.items.filter(i => i.kind === "video" && i.enabled && i.layerId === key).sort((a,b)=>a.start-b.start);
+      let end = 0;
+      return entries.filter(i => { const conflict = i.start < end - 1e-7; end = Math.max(end,i.end); return conflict; });
+    });
+  }
   function evaluateFrame(project, time) {
     const t = clamp(time, 0, Math.max(0, project.duration - 1e-7));
     const visible = visibleItems(project, t);
@@ -2139,6 +2185,7 @@ dialog::backdrop {
   }
   function applyOverlayPreset(project, selectedIds, preset = "equal") {
     const values = selectedIds.map((key) => item(project, key)).filter((i) => i?.kind === "video");
+    if (values.some((value) => isLocked(project, value))) throw new Error("Unlock the selected videos before applying an overlap preset.");
     const alpha = preset === "groovy" ? [1, .55, .35] : preset === "ghost" ? [1, .4, .2] : [1, .55, .35];
     values.forEach((value, index) => {
       value.blendMode = preset === "equal" ? "equal" : "alpha";
@@ -2165,7 +2212,7 @@ dialog::backdrop {
   }
   function updateCreditsDuration(project, value) {
     if (value.credits?.template !== "rolling") return;
-    const distance = project.canvas.height + creditsHeight(value) + value.credits.marginTop + value.credits.marginBottom;
+    const distance = value.transform.height + creditsHeight(value) + value.credits.marginTop + value.credits.marginBottom;
     if (value.credits.mode === "speed") value.end = value.start + distance / Math.max(1, value.credits.speed);
     else value.credits.speed = distance / span(value);
     normalize(project);
@@ -2210,11 +2257,26 @@ dialog::backdrop {
     let value;
     try { value = JSON.parse(text); } catch { throw new Error("This is not a valid .utvproj JSON file."); }
     if (value?.schemaVersion !== 1) throw new Error("This project version is not supported.");
+    const numeric = (v, min = -Infinity, max = Infinity) => Number.isFinite(v) && v >= min && v <= max;
+    const string = (v, max = 12000) => typeof v === "string" && v.length <= max;
+    const fail = (ok, message) => { if (!ok) throw new Error(message); };
+    fail(string(value.id, 200) && string(value.name, 180) && numeric(value.playhead, 0), "Invalid project identity or playhead.");
     for (const key of ["assets", "layers", "items", "mainOrder", "transitions"]) if (!Array.isArray(value[key])) throw new Error("Project is missing " + key + ".");
     if (!value.canvas || !(value.canvas.width > 0 && value.canvas.height > 0) || value.canvas.width * value.canvas.height > MAX_PIXELS) throw new Error("Invalid project dimensions.");
-    const unique = (entries) => new Set(entries.map((x) => x.id)).size === entries.length && entries.every((x) => typeof x.id === "string");
+    const unique = (entries) => entries.every((x) => x && string(x.id, 200) && x.id.length) && new Set(entries.map((x) => x.id)).size === entries.length;
     if (![value.assets, value.layers, value.items].every(unique)) throw new Error("Project contains duplicate or invalid IDs.");
     for (const entry of value.assets) if (!["video", "audio", "image"].includes(entry.kind) || typeof entry.contentHash !== "string" || typeof entry.name !== "string" || !(entry.size >= 0)) throw new Error("Invalid media description.");
+    for (const a of value.assets) {
+      fail(numeric(a.size, 0) && string(a.name, 1000), "Invalid media description.");
+      if (a.kind !== "image") fail(numeric(a.duration, MIN), "Invalid source duration.");
+      if (a.kind !== "audio") fail(numeric(a.width, 1) && numeric(a.height, 1), "Invalid source dimensions.");
+      if (a.thumbnail !== undefined) fail(string(a.thumbnail, 2 * 1024 * 1024) && /^data:image\/(png|jpeg|webp|gif|bmp);base64,[a-z0-9+/=\s]+$/i.test(a.thumbnail), "Invalid embedded thumbnail.");
+      if (a.waveform !== undefined) fail(Array.isArray(a.waveform) && a.waveform.length <= 8192 && a.waveform.every(n => numeric(n, 0, 1)), "Invalid waveform data.");
+    }
+    for (const track of value.layers) fail(["main-video", "overlay", "text", "image", "filter", "sound"].includes(track.kind) && string(track.name, 180) && numeric(track.order) && ["visible", "locked", "muted", "solo"].every(k => typeof track[k] === "boolean"), "Invalid layer settings.");
+    for (const required of createProject().layers) fail(layer(value, required.id)?.kind === required.kind, "A required timeline track is missing.");
+    fail(VIDEO_LAYERS.every((key, index) => layer(value, key).order === index * 10), "Video tracks must retain their compositing order.");
+    fail(new Set(value.mainOrder).size === value.mainOrder.length && value.mainOrder.every(key => item(value, key)?.layerId === "main") && value.items.filter(i => i.layerId === "main").every(i => value.mainOrder.includes(i.id)), "Invalid main timeline order.");
     for (const entry of value.items) {
       if (!KINDS.includes(entry.kind) || !layer(value, entry.layerId) || !Number.isFinite(entry.start) || !Number.isFinite(entry.end) || entry.start < 0 || entry.end - entry.start < MIN - 1e-7) throw new Error("Invalid timeline item.");
       if (entry.assetId && !asset(value, entry.assetId)) throw new Error("An item refers to missing media.");
@@ -2223,12 +2285,37 @@ dialog::backdrop {
       if (entry.kind === "audio" && (!entry.audio || !Number.isFinite(entry.audio.volume) || entry.audio.volume < 0 || entry.audio.volume > 2)) throw new Error("Invalid audio settings.");
       if (entry.kind === "filter" && !BLURS.includes(entry.filter?.type)) throw new Error("Invalid blur type.");
       if (!Array.isArray(entry.effects) || !Array.isArray(entry.opacityKeys)) throw new Error("Missing effect data.");
+      const track = layer(value, entry.layerId), source = asset(value, entry.assetId);
+      fail(numeric(entry.zIndex) && ["enabled", "locked"].every(k => typeof entry[k] === "boolean"), "Invalid item state.");
+      if (entry.kind === "video") fail(VIDEO_LAYERS.includes(entry.layerId) && source?.kind === "video", "Invalid video track or source.");
+      if (entry.kind === "image") fail(source?.kind === "image" && track.kind !== "sound", "Invalid image source or track.");
+      if (entry.kind === "audio") fail(track.kind === "sound" && ["audio", "video"].includes(source?.kind), "Invalid sound source or track.");
+      if (["video", "audio"].includes(entry.kind)) fail(numeric(entry.sourceIn, 0) && numeric(entry.sourceOut, entry.sourceIn + .000001, source.duration + .001), "Invalid source range.");
+      fail(numeric(entry.fadeIn, 0, 5) && numeric(entry.fadeOut, 0, 5), "Invalid fade settings.");
+      if (entry.kind !== "audio") fail(entry.transform && ["x", "y", "rotation", "cropX", "cropY"].every(k => numeric(entry.transform[k])) && ["width", "height", "cropWidth", "cropHeight"].every(k => numeric(entry.transform[k], .000001)), "Invalid item transform.");
+      fail(entry.opacityKeys.every(k => k && numeric(k.time, 0) && numeric(k.value, 0, 1) && ["linear", "smooth", "ease-in", "ease-out", "hold"].includes(k.easing)), "Invalid visibility curve.");
+      fail(entry.effects.every(f => f && EFFECTS.includes(f.type) && numeric(f.amount, f.type === "hue" ? -360 : 0, f.type === "hue" ? 360 : 3) && numeric(f.start, 0) && numeric(f.end, f.start) && typeof f.enabled === "boolean"), "Invalid effect data.");
+      if (entry.audio) fail(["leftGain", "rightGain"].every(k => numeric(entry.audio[k], 0, 2)) && ["fadeIn", "fadeOut"].every(k => numeric(entry.audio[k], 0)) && ["muted", "preservePitch", "loop", "wholeMovie"].every(k => typeof entry.audio[k] === "boolean"), "Invalid audio settings.");
+      if (entry.kind === "text") fail(entry.text && string(entry.text.content) && string(entry.text.font, 200) && numeric(entry.text.size, 1, 10000) && numeric(entry.text.weight, 100, 1000) && numeric(entry.text.lineHeight, .1, 10) && ["left", "center", "right"].includes(entry.text.align) && string(entry.text.color, 100) && string(entry.text.background, 100), "Invalid text settings.");
+      if (entry.kind === "filter") {
+        const f = entry.filter;
+        fail(track.kind === "filter" && numeric(f.amount, 0, {gaussian:50, box:30, motion:80, radial:100}[f.type]) && numeric(f.angle, 0, 360) && numeric(f.centerX, 0, 100) && numeric(f.centerY, 0, 100) && ["selected-layer", "everything-below"].includes(f.targetMode) && (f.targetMode !== "selected-layer" || Boolean(layer(value, f.targetLayerId))), "Invalid blur settings.");
+      }
+      if (entry.kind === "credits") {
+        const c = entry.credits;
+        fail(c && ["rolling", "static", "pages"].includes(c.template) && ["up", "down"].includes(c.direction) && ["speed", "fit"].includes(c.mode) && numeric(c.speed, .000001) && numeric(c.fontSize, 1, 10000) && numeric(c.lineHeight, .1, 10) && numeric(c.marginTop, 0) && numeric(c.marginBottom, 0) && Array.isArray(c.groups) && unique(c.groups) && c.groups.every(g => string(g.title, 1000) && string(g.content)), "Invalid credits settings.");
+      }
       delete entry.objectUrl;
     }
     for (const a of value.assets) { delete a.objectUrl; delete a.fileHandleKey; }
     value.soundBalance ||= { video: 1, music: 1, other: 1 };
     value.exportSettings = { ...createProject().exportSettings, ...value.exportSettings };
     if (!(value.exportSettings.fps >= 1 && value.exportSettings.fps <= 60 && value.exportSettings.bitrate >= .25 && value.exportSettings.bitrate <= 50)) throw new Error("Invalid export settings.");
+    fail(Number.isInteger(value.exportSettings.fps) && ["quick", "standard", "high"].includes(value.exportSettings.quality) && numeric(value.exportSettings.segmentInterval, .1) && ["video", "music", "other"].every(k => numeric(value.soundBalance[k], 0, 2)), "Invalid export or sound balance settings.");
+    fail(unique(value.transitions) && value.transitions.every(tr => {
+      const i = value.mainOrder.indexOf(tr.toId);
+      return i > 0 && value.mainOrder[i - 1] === tr.fromId && TRANSITIONS.includes(tr.type) && numeric(tr.duration, .1, 5) && ["left", "right", "up", "down"].includes(tr.direction) && ["linear", "smooth", "ease-in", "ease-out", "hold"].includes(tr.easing);
+    }), "Invalid transition data.");
     return normalize(value);
   }
   class History {
@@ -2249,7 +2336,7 @@ dialog::backdrop {
   const api = { MIN, MAX_PIXELS, VIDEO_LAYERS, KINDS, EFFECTS, BLURS, TRANSITIONS, id, copy, clamp, finite, rounded, active, span, sourceSpan,
     layer, asset, item, isLocked, mainItems, createProject, transform, baseItem, audioProps, normalize, reflow, addAsset, addMedia, addLayerItem,
     related, setLink, moveItem, reorderMain, trimItem, setSpeed, splitItem, duplicateItem, deleteItem, transitionMaximum, setTransition, removeTransition,
-    ease, curveAt, setKey, fadeAt, sourceTimeAt, setRepeat, snapTime, visibleItems, evaluateFrame, evaluateAudio, applyOverlayPreset, addEffect,
+    ease, curveAt, setKey, fadeAt, sourceTimeAt, setRepeat, snapTime, visibleItems, videoConflicts, evaluateFrame, evaluateAudio, applyOverlayPreset, addEffect,
     creditsHeight, updateCreditsDuration, fitTransform, segmentRanges, formatTime, exportDimensions, serialize, parseProject, History, visualEnd };
   root.UTStudio = Object.assign(root.UTStudio || {}, { Model: api });
   if (typeof module !== "undefined") module.exports = api;
@@ -2308,16 +2395,19 @@ dialog::backdrop {
     throw new Error("Choose a video, MP3, PNG, JPG, BMP, GIF or WebP file.");
   }
   function waitMedia(element, event = "loadeddata", timeout = 20000) {
+    if (element.utvDisposed) return Promise.reject(new DOMException("The previous media decoder has been closed.", "AbortError"));
     if (event === "loadeddata" && element.readyState >= 2) return Promise.resolve();
     return new Promise((resolve, reject) => {
       // Seeking can temporarily lower readyState after loadeddata has already
       // fired. canplay/seeked must also release a waiter for decoded pixels.
       const events = event === "loadeddata" ? ["loadeddata", "canplay", "seeked"] : [event];
-      const clean = () => { clearTimeout(timer); events.forEach(name => element.removeEventListener(name, ok)); element.removeEventListener("error", bad); };
+      const clean = () => { clearTimeout(timer); events.forEach(name => element.removeEventListener(name, ok)); element.removeEventListener("error", bad); element.removeEventListener("utv-disposed", disposed); };
       const ok = () => { if (event === "loadeddata" && element.readyState < 2) return; clean(); resolve(); };
       const bad = () => { clean(); reject(new Error("This browser could not decode the file. Try a different video codec or MP3.")); };
+      const disposed = () => { clean(); reject(new DOMException("The previous media decoder has been closed.", "AbortError")); };
       const timer = setTimeout(() => { clean(); reject(new Error("Reading the media timed out. Try a smaller file.")); }, timeout);
       events.forEach(name => element.addEventListener(name, ok)); element.addEventListener("error", bad, { once: true });
+      element.addEventListener("utv-disposed", disposed, {once:true});
     });
   }
   const pendingSeeks = new WeakMap();
@@ -2446,15 +2536,16 @@ dialog::backdrop {
         }
         previous = pixels; progress((i + 1) / count);
       }
-      const peaks = (descriptor.waveform || []).map((level, index, list) => ({ time: index / list.length * descriptor.duration, level })).filter((p) => p.level > .55);
+      const wave = descriptor.waveform || [], threshold = Math.max(.005, Math.max(0, ...wave) * .8);
+      const peaks = wave.map((level, index, list) => ({ time: index / list.length * descriptor.duration, level, index })).filter((p) => p.level >= threshold && p.level >= (wave[p.index - 1] || 0) && p.level >= (wave[p.index + 1] || 0));
       descriptor.analysis = { cuts: cuts.sort((a,b) => b.change - a.change), peaks };
       await seek(video, 0); return descriptor.analysis;
     }
     pause() { for (const element of this.elements.values()) element.pause(); }
     dispose() {
       this.pause();
-      for (const element of this.elements.values()) { element.removeAttribute("src"); element.load(); }
-      for (const entry of this.assets.values()) { if (entry.probe) { entry.probe.removeAttribute("src"); entry.probe.load(); } URL.revokeObjectURL(entry.url); }
+      for (const element of this.elements.values()) { element.utvDisposed = true; element.dispatchEvent(new Event("utv-disposed")); element.removeAttribute("src"); element.load(); }
+      for (const entry of this.assets.values()) { if (entry.probe) { entry.probe.utvDisposed = true; entry.probe.dispatchEvent(new Event("utv-disposed")); entry.probe.removeAttribute("src"); entry.probe.load(); } URL.revokeObjectURL(entry.url); }
       this.elements.clear(); this.assets.clear();
     }
   }
@@ -2848,13 +2939,13 @@ dialog::backdrop {
         }
       ctx.putImageData(image, 0, 0);
     }
-    blur(source, value, project) {
+    blur(source, value, project, opacity = 1) {
       const f = value.filter,
         width = source.width,
         height = source.height,
         sx = width / project.canvas.width,
         sy = height / project.canvas.height;
-      if (f.amount <= 0) return;
+      if (f.amount <= 0 || opacity <= 0) return;
       const processed = this.buffer("blur:" + value.id, width, height),
         ctx = processed.getContext("2d");
       if (f.type === "gaussian") {
@@ -2890,6 +2981,16 @@ dialog::backdrop {
           }
         }
       }
+      let filtered = processed;
+      if (opacity < 1) {
+        filtered = this.buffer("blur-mix:" + value.id, width, height);
+        const blend = filtered.getContext("2d");
+        blend.globalCompositeOperation = "lighter";
+        blend.globalAlpha = 1 - opacity;
+        blend.drawImage(source, 0, 0);
+        blend.globalAlpha = opacity;
+        blend.drawImage(processed, 0, 0);
+      }
       const target = source.getContext("2d"),
         tr = value.transform;
       target.save();
@@ -2905,7 +3006,7 @@ dialog::backdrop {
       target.clip();
       target.setTransform(1, 0, 0, 1, 0, 0);
       target.globalCompositeOperation = "copy";
-      target.drawImage(processed, 0, 0);
+      target.drawImage(filtered, 0, 0);
       target.restore();
     }
     render(project, time, output) {
@@ -2939,7 +3040,7 @@ dialog::backdrop {
         if (group.track.kind === "filter") {
           for (const e of group.entries)
             if (e.item.filter.targetMode === "everything-below")
-              this.blur(composite, e.item, project);
+              this.blur(composite, e.item, project, e.opacity);
           continue;
         }
         const layerCanvas = this.buffer(
@@ -2948,13 +3049,22 @@ dialog::backdrop {
             height,
           ),
           layerCtx = layerCanvas.getContext("2d");
-        const transition = plan.transitions.find((tr) =>
-          group.entries.some((e) => e.item.id === tr.toId),
+        const weightAt = (e) =>
+          e.item.opacity *
+          M.curveAt(e.item.opacityKeys, plan.time - e.item.start);
+        const transition = plan.transitions.find(
+          (tr) =>
+            group.entries.some((e) => e.item.id === tr.toId) &&
+            group.entries.some((e) => e.item.id === tr.fromId),
         );
+        let transitionWeight = null;
         if (transition) {
           const a = group.entries.find((e) => e.item.id === transition.fromId),
             b = group.entries.find((e) => e.item.id === transition.toId);
           if (a && b) {
+            transitionWeight = equalMix
+              ? Math.max(weightAt(a), weightAt(b))
+              : 1;
             const from = this.drawItem(
                 project,
                 { ...a, time: plan.time },
@@ -2967,8 +3077,26 @@ dialog::backdrop {
                 width,
                 height,
               );
+            const attenuate = (source, e) => {
+              const buffer = this.buffer(
+                "transition-opacity:" + e.item.id,
+                width,
+                height,
+              );
+              buffer.getContext("2d").globalAlpha = transitionWeight
+                ? e.opacity / transitionWeight
+                : 0;
+              buffer.getContext("2d").drawImage(source, 0, 0);
+              return buffer;
+            };
             layerCtx.drawImage(
-              this.transition(from, to, transition, width, height),
+              this.transition(
+                attenuate(from, a),
+                attenuate(to, b),
+                transition,
+                width,
+                height,
+              ),
               0,
               0,
             );
@@ -2998,7 +3126,7 @@ dialog::backdrop {
             f.item.filter.targetMode === "selected-layer" &&
             f.item.filter.targetLayerId === group.track.id
           )
-            this.blur(layerCanvas, f.item, project);
+            this.blur(layerCanvas, f.item, project, f.opacity);
         const visual = group.entries.find(
           (e) => e.item.kind === "video" || e.item.kind === "image",
         );
@@ -3007,9 +3135,7 @@ dialog::backdrop {
           visual &&
           (group.track.kind === "main-video" || group.track.kind === "overlay")
         ) {
-          const weight =
-            visual.item.opacity *
-            M.curveAt(visual.item.opacityKeys, plan.time - visual.item.start);
+          const weight = transitionWeight ?? weightAt(visual);
           if (equalMix && visual.item.kind === "video") {
             accumulatedWeight += weight;
             opacity = accumulatedWeight > 0 ? weight / accumulatedWeight : 0;
@@ -3371,10 +3497,14 @@ dialog::backdrop {
       const serial = ++this.seekSerial,
         project = this.getProject();
       project.playhead = M.clamp(time, 0, project.duration);
-      await this.prepare(
-        project,
-        Math.min(project.playhead, Math.max(0, project.duration - 1e-6)),
-      );
+      try {
+        await this.prepare(
+          project,
+          Math.min(project.playhead, Math.max(0, project.duration - 1e-6)),
+        );
+      } catch (error) {
+        if (serial === this.seekSerial) throw error;
+      }
       if (serial === this.seekSerial)
         this.paint(project, project.playhead, this.preview);
     }
@@ -3404,6 +3534,11 @@ dialog::backdrop {
     async play(options = {}) {
       this.stop();
       const project = this.getProject();
+      if (M.videoConflicts(project).length)
+        throw new Error(
+          "Overlapping items occupy the same video track. Use Fix automatically or shorten an overlay before playback.",
+        );
+      if (options.signal?.aborted) return false;
       const start =
           options.start ??
           (project.playhead >= project.duration - 0.01 ? 0 : project.playhead),
@@ -3421,6 +3556,13 @@ dialog::backdrop {
         recording: Boolean(options.recording),
       };
       this.session = session;
+      const abort = () => {
+        if (this.session === session) this.stop();
+      };
+      options.signal?.addEventListener("abort", abort, { once: true });
+      completion.finally(() =>
+        options.signal?.removeEventListener("abort", abort),
+      );
       try {
         this.onState("preparing");
         await this.mixer.ready();
@@ -3519,7 +3661,8 @@ dialog::backdrop {
         throw error;
       }
     }
-    async recordRange(start, end, onProgress = () => {}) {
+    async recordRange(start, end, onProgress = () => {}, signal) {
+      if (signal?.aborted) return null;
       const project = this.getProject(),
         formats = supportedFormats();
       if (!this.preview.captureStream || !formats.length)
@@ -3539,6 +3682,7 @@ dialog::backdrop {
       const size = M.exportDimensions(project),
         output = Media.makeCanvas(size.width, size.height);
       await this.mixer.ready();
+      if (signal?.aborted) return null;
       const videoStream = output.captureStream(project.exportSettings.fps);
       const tracks = [...videoStream.getVideoTracks()];
       if (project.exportSettings.includeAudio)
@@ -3565,6 +3709,7 @@ dialog::backdrop {
           reject(recordError);
         };
       });
+      stopped.catch(() => {});
       const began = performance.now();
       try {
         const complete = await this.play({
@@ -3572,6 +3717,7 @@ dialog::backdrop {
           end,
           canvas: output,
           recording: true,
+          signal,
           onReady: () => {
             recorder.start(250);
             tracks[0].requestFrame?.();
@@ -4355,12 +4501,15 @@ dialog::backdrop {
     control.disabled = disabled;
     if (id) control.id = id;
     control.setAttribute("aria-label", label);
-    attach(control, helpId, () => disabledReason);
+    control.dataset.disabledReason = disabledReason;
+    const reason = () =>
+      control.disabled ? control.dataset.disabledReason || "" : "";
+    attach(control, helpId, reason);
+    attach(wrapper, helpId, reason);
     if (disabled) {
       wrapper.tabIndex = 0;
       wrapper.setAttribute("aria-disabled", "true");
       wrapper.setAttribute("aria-label", label);
-      attach(wrapper, helpId, () => disabledReason);
     }
     if (onClick) control.addEventListener("click", onClick);
     wrapper.appendChild(control);
@@ -4372,7 +4521,7 @@ dialog::backdrop {
     info.dataset.helpId = "touchHelp";
     info.addEventListener("click", (event) => {
       event.stopPropagation();
-      show(info, helpId, disabledReason);
+      show(info, helpId, reason());
     });
     wrapper.appendChild(info);
     return wrapper;
@@ -4384,6 +4533,24 @@ dialog::backdrop {
     span.tabIndex = 0;
     return attach(span, helpId, reason);
   }
+  /** @param {HTMLButtonElement} control @param {boolean} disabled @param {string} reason */
+  function setDisabled(control, disabled, reason) {
+    control.disabled = disabled;
+    control.dataset.disabledReason = reason;
+    const wrapper = control.parentElement;
+    if (!wrapper?.classList.contains("help-wrap")) return;
+    if (disabled) {
+      wrapper.tabIndex = 0;
+      wrapper.setAttribute("aria-disabled", "true");
+      wrapper.setAttribute(
+        "aria-label",
+        control.getAttribute("aria-label") || "Unavailable action",
+      );
+    } else {
+      wrapper.removeAttribute("tabindex");
+      wrapper.removeAttribute("aria-disabled");
+    }
+  }
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") close();
   });
@@ -4392,7 +4559,14 @@ dialog::backdrop {
       close();
   });
   // @ts-expect-error The application namespace is initialized by model.js.
-  globalThis.UTStudio.Help = { HELP_CONTENT, button, attach, label, close };
+  globalThis.UTStudio.Help = {
+    HELP_CONTENT,
+    button,
+    attach,
+    label,
+    setDisabled,
+    close,
+  };
 })();
 
 </script>
@@ -4477,7 +4651,9 @@ dialog::backdrop {
           : Math.min(
               source.kind === "image" ? 5 : source.duration,
               Math.max(style.length, target / assets.length),
-              remaining,
+              // Include the impending overlap so the final draft does not
+              // approach its requested length through tiny extra fragments.
+              remaining + (index ? Math.min(0.6, remaining / 4) : 0),
             );
       if (length < M.MIN) break;
       const value = M.addMedia(p, source.id, { duration: length });
@@ -4509,6 +4685,8 @@ dialog::backdrop {
           duration: Math.min(0.6, length / 5),
           easing: "smooth",
         });
+      if (options.length !== "full" && M.visualEnd(p) > target)
+        M.trimItem(p, value.id, "end", target);
       remaining = target - M.visualEnd(p);
       index++;
     }
@@ -4579,6 +4757,7 @@ dialog::backdrop {
     soundExpanded = false,
     exporting = false,
     importing = false,
+    projectLoading = false,
     showCuts = false;
   let results = [],
     importErrors = [],
@@ -4612,8 +4791,11 @@ dialog::backdrop {
           report(error);
         }
       },
-      disabled: options.disabled || false,
+      disabled: options.disabled || projectLoading,
       disabledReason:
+        (projectLoading
+          ? "Wait for the project and its media to finish opening."
+          : "") ||
         options.reason ||
         (options.disabled
           ? exporting
@@ -4696,7 +4878,7 @@ dialog::backdrop {
     input.setAttribute("aria-label", label);
     if (options.id) input.id = options.id;
     H.attach(input, helpId, reason);
-    input.disabled = Boolean(options.disabled || exporting);
+    input.disabled = Boolean(options.disabled || exporting || projectLoading);
     const update = (commit) => {
       if (
         input.type === "number" &&
@@ -4740,7 +4922,7 @@ dialog::backdrop {
       input.value = value;
       input.setAttribute("aria-label", label);
       input.dataset.control = helpId;
-      input.disabled = Boolean(options.disabled || exporting);
+      input.disabled = Boolean(options.disabled || exporting || projectLoading);
       H.attach(input, helpId, reason);
     }
     const update = (source, commit) => {
@@ -4763,7 +4945,7 @@ dialog::backdrop {
       input = el("input");
     input.type = "checkbox";
     input.checked = value;
-    input.disabled = disabled || exporting;
+    input.disabled = disabled || exporting || projectLoading;
     input.dataset.control = helpId;
     input.setAttribute("aria-label", label);
     const reason = () =>
@@ -4778,11 +4960,12 @@ dialog::backdrop {
     return node;
   }
   function edit(fn, message = "Change saved", options = {}) {
-    if (exporting) return;
+    if (exporting || projectLoading) return;
     const before = M.copy(project);
     try {
       fn(project);
       M.normalize(project);
+      project.selectedItemId = M.item(project, selectedId) ? selectedId : null;
       if (options.commit !== false) history.push(project);
       errorMessage = "";
       store.schedule(project);
@@ -4834,7 +5017,8 @@ dialog::backdrop {
       (state, error) => {
         renderTransport();
         if (state === "error") report(error);
-        if (state === "paused" && !exporting) store.schedule(project);
+        if (state === "paused" && !exporting && !projectLoading)
+          store.schedule(project);
       },
     );
   }
@@ -4887,9 +5071,25 @@ dialog::backdrop {
     if (transportTime) transportTime.textContent = time(t);
     const meter = $("audioMeter");
     if (meter) meter.style.width = Math.min(100, peak * 100) + "%";
+    const cut = $("splitButton"),
+      value = selected();
+    if (cut)
+      H.setDisabled(
+        cut,
+        exporting ||
+          projectLoading ||
+          !value ||
+          M.isLocked(project, value) ||
+          t <= value.start + M.MIN ||
+          t >= value.end - M.MIN,
+        exporting
+          ? "Finish or cancel the export first."
+          : "Select an unlocked item and move the playhead inside it.",
+      );
     updateSelectionBox();
   }
-  async function seekTo(value) {
+  async function seekTo(value, duringLoad = false) {
+    if (projectLoading && !duringLoad) return;
     $("outputVideo").pause();
     $("outputVideo").hidden = true;
     $("previewCanvas").hidden = false;
@@ -4917,9 +5117,11 @@ dialog::backdrop {
     const previous = history.undo();
     if (previous) {
       project = previous;
-      selectedId = M.item(project, selectedId)
-        ? selectedId
-        : project.selectedItemId || project.items[0]?.id;
+      selectedId = M.item(project, project.selectedItemId)
+        ? project.selectedItemId
+        : M.item(project, selectedId)
+          ? selectedId
+          : project.items[0]?.id;
       store.schedule(project);
       clearResults();
       renderAll();
@@ -4933,9 +5135,11 @@ dialog::backdrop {
     const next = history.redo();
     if (next) {
       project = next;
-      selectedId = M.item(project, selectedId)
-        ? selectedId
-        : project.selectedItemId || project.items[0]?.id;
+      selectedId = M.item(project, project.selectedItemId)
+        ? project.selectedItemId
+        : M.item(project, selectedId)
+          ? selectedId
+          : project.items[0]?.id;
       store.schedule(project);
       clearResults();
       renderAll();
@@ -5019,35 +5223,50 @@ dialog::backdrop {
     return node;
   }
   async function replaceProject(next) {
-    engine.stop();
-    const files = new Map();
-    for (const a of next.assets) {
-      const existing = project.assets.find(
-        (old) =>
-          old.name === a.name &&
-          old.size === a.size &&
-          old.contentHash === a.contentHash,
-      );
-      if (existing && library.has(existing.id))
-        files.set(a.id, library.assets.get(existing.id).file);
-    }
-    await engine.dispose();
-    library.dispose();
-    library = new Media.MediaLibrary();
-    project = next;
-    selectedId = next.selectedItemId || M.mainItems(next)[0]?.id || null;
-    setupEngine();
-    for (const a of next.assets)
-      if (files.has(a.id)) {
-        await library.attach(a, files.get(a.id));
-        await store.putFile(a, files.get(a.id));
-      }
-    await store.restore(project, library);
-    history = new M.History(project);
-    clearResults();
-    store.schedule(project);
+    if (projectLoading)
+      throw new Error("Wait for the current project to finish opening.");
+    projectLoading = true;
     renderAll();
-    await seekTo(project.playhead);
+    try {
+      engine.stop();
+      const files = new Map();
+      for (const a of next.assets) {
+        const existing = project.assets.find(
+          (old) =>
+            old.name === a.name &&
+            old.size === a.size &&
+            old.contentHash === a.contentHash,
+        );
+        if (existing && library.has(existing.id))
+          files.set(a.id, library.assets.get(existing.id).file);
+      }
+      await engine.dispose();
+      library.dispose();
+      library = new Media.MediaLibrary();
+      project = next;
+      selectedId = next.selectedItemId || M.mainItems(next)[0]?.id || null;
+      assetSelected = M.item(next, selectedId)?.assetId || null;
+      const selectedAsset = next.assets.find((a) => a.id === assetSelected);
+      mediaTab =
+        selectedAsset?.kind ||
+        (next.assets.some((a) => a.kind === mediaTab)
+          ? mediaTab
+          : next.assets[0]?.kind || "video");
+      setupEngine();
+      for (const a of next.assets)
+        if (files.has(a.id)) {
+          await library.attach(a, files.get(a.id));
+          await store.putFile(a, files.get(a.id));
+        }
+      await store.restore(project, library);
+      history = new M.History(project);
+      clearResults();
+      store.schedule(project);
+      await seekTo(project.playhead, true);
+    } finally {
+      projectLoading = false;
+      renderAll();
+    }
   }
   async function startNew() {
     closeDialog();
@@ -5058,6 +5277,8 @@ dialog::backdrop {
     history = new M.History(project);
     library = new Media.MediaLibrary();
     selectedId = null;
+    assetSelected = null;
+    mediaTab = "video";
     importErrors = [];
     importStatus = "";
     setupEngine();
@@ -5125,6 +5346,33 @@ dialog::backdrop {
           },
           { wrapperClass: "full-width" },
         ),
+      );
+      foot.append(
+        B(
+          "undo",
+          "Undo",
+          () => {
+            closeDialog();
+            undo();
+          },
+          {
+            disabled: !history.canUndo || exporting,
+            reason: "Make an edit before using Undo.",
+          },
+        ),
+        B(
+          "redo",
+          "Redo",
+          () => {
+            closeDialog();
+            redo();
+          },
+          {
+            disabled: !history.canRedo || exporting,
+            reason: "Undo an edit before using Redo.",
+          },
+        ),
+        el("small", "", saveStatus),
       );
     });
   }
@@ -5601,6 +5849,7 @@ dialog::backdrop {
           importErrors.push({ name: file.name, reason: error.message, kind });
         }
       }
+      project.selectedItemId = selectedId;
       history.push(project);
       importStatus =
         added.length +
@@ -6478,7 +6727,7 @@ dialog::backdrop {
             track.name = v;
             renderTimeline();
           }, "Layer renamed"),
-          { type: "text" },
+          { type: "text", maxLength: 180 },
         ),
         check("Show layer", "showLayer", track.visible, (v) =>
           edit(() => {
@@ -6550,15 +6799,7 @@ dialog::backdrop {
     );
   }
   function conflicts() {
-    return ["overlay-1", "overlay-2"].flatMap((key) => {
-      const values = project.items
-        .filter((i) => i.layerId === key && i.kind === "video")
-        .sort((a, b) => a.start - b.start);
-      return values.filter(
-        (value, index) =>
-          index && value.start < values[index - 1].end - 0.00001,
-      );
-    });
+    return M.videoConflicts(project);
   }
   function fixConflicts() {
     edit(
@@ -6569,9 +6810,20 @@ dialog::backdrop {
             .filter((i) => i.layerId === key && i.kind === "video")
             .sort((a, b) => a.start - b.start)) {
             if (value.start < end) {
-              const duration = M.span(value);
-              value.start = end;
-              value.end = end + duration;
+              if (M.isLocked(project, value))
+                throw new Error(
+                  "Unlock the overlapping item before fixing its time.",
+                );
+              const siblings = M.related(project, value),
+                delta = end - value.start;
+              if (siblings.some((i) => M.isLocked(project, i)))
+                throw new Error(
+                  "Unlock the linked item before fixing its time.",
+                );
+              for (const sibling of siblings) {
+                sibling.start += delta;
+                sibling.end += delta;
+              }
             }
             end = value.end;
           }
@@ -8774,10 +9026,15 @@ dialog::backdrop {
           "generateMovie",
           "Make the draft",
           async (event) => {
+            const generateButton = event.currentTarget;
             const ids = [
               ...body.querySelectorAll(".media-choice input:checked"),
             ].map((i) => i.value);
-            event.currentTarget.disabled = true;
+            H.setDisabled(
+              generateButton,
+              true,
+              "Wait for the draft to finish, or choose Cancel.",
+            );
             progress.hidden = false;
             engine.stop();
             try {
@@ -8799,12 +9056,15 @@ dialog::backdrop {
               await engine.dispose();
               library.pause();
               for (const element of library.elements.values()) {
+                element.utvDisposed = true;
+                element.dispatchEvent(new Event("utv-disposed"));
                 element.removeAttribute("src");
                 element.load();
               }
               library.elements.clear();
               project = next;
               selectedId = M.mainItems(project)[0]?.id;
+              project.selectedItemId = selectedId;
               history.push(project);
               setupEngine();
               closeDialog();
@@ -8815,7 +9075,7 @@ dialog::backdrop {
             } catch (error) {
               if (!cancelled) {
                 progress.textContent = error.message;
-                event.currentTarget.disabled = false;
+                H.setDisabled(generateButton, false, "");
               }
             }
           },
@@ -8824,7 +9084,8 @@ dialog::backdrop {
       );
     });
   }
-  let exportMessage = "";
+  let exportMessage = "",
+    exportAbort = null;
   function renderExportControls(node) {
     const settings = project.exportSettings,
       formats = root.UTStudio.supportedFormats();
@@ -8944,6 +9205,7 @@ dialog::backdrop {
           "Cancel export",
           () => {
             exportMessage = "Export cancelled. Your project is ready to edit.";
+            exportAbort?.abort();
             engine.stop();
           },
           { id: "cancelButton", primary: true, wrapperClass: "full-width" },
@@ -9057,7 +9319,6 @@ dialog::backdrop {
   async function exportMovie(segmented) {
     if (exporting) return;
     engine.stop();
-    await store.flush();
     const ranges = segmented
       ? M.segmentRanges(
           project.duration,
@@ -9068,11 +9329,14 @@ dialog::backdrop {
     clearResults();
     exportMessage = "";
     exporting = true;
+    exportAbort = new AbortController();
     document.body.classList.add("is-exporting");
     renderAll();
     const before = project.playhead;
     try {
+      await store.flush();
       for (let index = 0; index < ranges.length; index++) {
+        if (exportAbort.signal.aborted) break;
         const range = ranges[index],
           result = await engine.recordRange(
             range.start,
@@ -9102,6 +9366,7 @@ dialog::backdrop {
                       Math.ceil(progress.remaining) +
                       " sec remaining";
             },
+            exportAbort.signal,
           );
         if (!result) break;
         result.name =
@@ -9119,6 +9384,8 @@ dialog::backdrop {
       exportMessage = error.message;
       report(error);
     } finally {
+      if (exportAbort.signal.aborted) clearResults();
+      exportAbort = null;
       exporting = false;
       document.body.classList.remove("is-exporting");
       project.playhead = before;
@@ -9139,6 +9406,7 @@ dialog::backdrop {
       H.close();
     });
     document.addEventListener("keydown", (event) => {
+      if (projectLoading) return;
       if (dialogNode.open) return;
       if (event.target.closest("input,textarea,select,[contenteditable=true]"))
         return;
@@ -9220,7 +9488,12 @@ dialog::backdrop {
     renderAll();
     try {
       const saved = await store.load();
-      if (saved?.items.length) {
+      if (
+        saved &&
+        (saved.items.length ||
+          saved.assets.length ||
+          saved.name !== "Untitled movie")
+      ) {
         dialog("Continue your movie", (body, foot) => {
           body.append(
             el("p", "", saved.name),
@@ -9284,6 +9557,9 @@ dialog::backdrop {
     },
     get exporting() {
       return exporting;
+    },
+    get loading() {
+      return projectLoading;
     },
     importFiles,
     selectItem,

@@ -81,6 +81,29 @@
       near(pixel(out), [128, 0, 0]),
     );
     red.opacityKeys = [];
+    const incoming = video("#0000ff");
+    incoming.blendMode = "alpha";
+    incoming.opacity = 0.5;
+    red.opacity = 0.25;
+    M.setTransition(p, incoming.id, {
+      type: "crossfade",
+      duration: 1,
+      easing: "linear",
+    });
+    renderer.render(p, 4.5, out);
+    check(
+      "transition respects each source visibility independently",
+      near(pixel(out), [32, 0, 64]),
+    );
+    red.fadeOut = 1;
+    renderer.render(p, 4.5, out);
+    check(
+      "transition also multiplies the source fade",
+      near(pixel(out), [16, 0, 64]),
+    );
+    M.deleteItem(p, incoming.id);
+    red.opacity = 1;
+    red.fadeOut = 0;
     for (const type of M.TRANSITIONS) {
       const a = solid("#ff0000"),
         b = solid("#0000ff");
@@ -164,6 +187,22 @@
       );
     }
     const later = M.addLayerItem(p, "text", { start: 6, duration: 1 });
+    blur.opacity = 0;
+    renderer.render(p, 1, out);
+    check(
+      "zero filter visibility leaves the target pixels unchanged",
+      near(pixel(out, 22, 16), [255, 255, 255]),
+    );
+    blur.opacity = 1;
+    blur.fadeIn = 2;
+    renderer.render(p, 0.5, out);
+    const gentleBlur = pixel(out, 22, 16)[0];
+    renderer.render(p, 2.5, out);
+    check(
+      "filter fades interpolate the processed region",
+      gentleBlur > pixel(out, 22, 16)[0],
+    );
+    blur.fadeIn = 0;
     later.text.content = "";
     renderer.render(p, 6, out);
     check(

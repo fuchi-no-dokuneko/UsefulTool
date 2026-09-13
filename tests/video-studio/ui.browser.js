@@ -52,9 +52,7 @@
         box(".preview-card").height === 454 &&
         box(".timeline-card").height === 362,
     );
-    const source = await (
-      await fetch("../../build/reports/video-studio/fixtures/source.mp4")
-    ).blob();
+    const source = await (await fetch("fixtures/source.mp4")).blob();
     await api.importFiles(
       [1, 2, 3].map(
         (i) =>
@@ -141,9 +139,7 @@
           .getElementById("interactionBox")
           .classList.contains("filter-selection"),
     );
-    const music = await (
-      await fetch("../../build/reports/video-studio/fixtures/music.mp3")
-    ).blob();
+    const music = await (await fetch("fixtures/music.mp3")).blob();
     await api.importFiles(
       [new w.File([music], "music.mp3", { type: "audio/mpeg" })],
       "audio",
@@ -225,7 +221,14 @@
     );
     // Keep the real recording short while retaining all three videos, text, image, blur and independent audio.
     const result = await api.engine.recordRange(0.3, 0.9);
-    recordingDebug = result ? {size:result.blob.size,width:result.width,height:result.height,type:result.mimeType} : {result:null};
+    recordingDebug = result
+      ? {
+          size: result.blob.size,
+          width: result.width,
+          height: result.height,
+          type: result.mimeType,
+        }
+      : { result: null };
     check(
       "real 1080p export produces a video file with mixed audio",
       result?.blob.size > 1000 &&
@@ -244,24 +247,66 @@
         Math.abs(video.duration - 0.6) < 0.3,
     );
     URL.revokeObjectURL(video.src);
-    const pcm = await new w.OfflineAudioContext(2,1,48000).decodeAudioData(await result.blob.arrayBuffer());
-    const peak = pcm.getChannelData(0).reduce((maximum,sample)=>Math.max(maximum,Math.abs(sample)),0);
-    check('the exported file contains audible stereo PCM from the shared mix',pcm.numberOfChannels===2&&peak>.005);
+    const pcm = await new w.OfflineAudioContext(2, 1, 48000).decodeAudioData(
+      await result.blob.arrayBuffer(),
+    );
+    const peak = pcm
+      .getChannelData(0)
+      .reduce((maximum, sample) => Math.max(maximum, Math.abs(sample)), 0);
+    check(
+      "the exported file contains audible stereo PCM from the shared mix",
+      pcm.numberOfChannels === 2 && peak > 0.005,
+    );
     await api.store.flush();
-    const saved = JSON.parse(api.Model.serialize(api.project)), oldApi=api;
-    const loaded = new Promise(resolve=>frame.addEventListener('load',resolve,{once:true}));
-    w.location.reload(); await loaded;
-    await wait(()=>frame.contentWindow.UsefulToolVideoEditor?.ready&&frame.contentWindow.UsefulToolVideoEditor!==oldApi);
-    w=frame.contentWindow;d=frame.contentDocument;api=w.UsefulToolVideoEditor;
-    check('a real page refresh offers Continue last project',Boolean(d.getElementById('continueProjectButton')));
-    click('#continueProjectButton');
-    await wait(()=>api.project.items.length===saved.items.length&&api.project.assets.every(a=>api.library.has(a.id))&&!d.getElementById('studioDialog').open);
-    check('refresh recovery preserves exact objects layers curves and export settings',JSON.stringify(api.project.items)===JSON.stringify(saved.items)&&JSON.stringify(api.project.layers)===JSON.stringify(saved.layers)&&JSON.stringify(api.project.exportSettings)===JSON.stringify(saved.exportSettings));
-    click('#step-export');click('#exportButton');
-    await wait(()=>api.exporting);
-    check('export view shows progress and cancellation while recording',Boolean(d.getElementById('exportProgress'))&&Boolean(d.getElementById('cancelButton')));
-    await wait(()=>!api.exporting&&api.results.length>0);
-    check('the full Export video flow produces preview and Download video',Boolean(d.getElementById('downloadButton'))&&!d.getElementById('outputVideo').hidden&&api.results[0].blob.size>1000);
+    const saved = JSON.parse(api.Model.serialize(api.project)),
+      oldApi = api;
+    const loaded = new Promise((resolve) =>
+      frame.addEventListener("load", resolve, { once: true }),
+    );
+    w.location.reload();
+    await loaded;
+    await wait(
+      () =>
+        frame.contentWindow.UsefulToolVideoEditor?.ready &&
+        frame.contentWindow.UsefulToolVideoEditor !== oldApi,
+    );
+    w = frame.contentWindow;
+    d = frame.contentDocument;
+    api = w.UsefulToolVideoEditor;
+    check(
+      "a real page refresh offers Continue last project",
+      Boolean(d.getElementById("continueProjectButton")),
+    );
+    click("#continueProjectButton");
+    await wait(
+      () =>
+        !api.loading &&
+        api.project.items.length === saved.items.length &&
+        api.project.assets.every((a) => api.library.has(a.id)) &&
+        !d.getElementById("studioDialog").open,
+    );
+    check(
+      "refresh recovery preserves exact objects layers curves and export settings",
+      JSON.stringify(api.project.items) === JSON.stringify(saved.items) &&
+        JSON.stringify(api.project.layers) === JSON.stringify(saved.layers) &&
+        JSON.stringify(api.project.exportSettings) ===
+          JSON.stringify(saved.exportSettings),
+    );
+    click("#step-export");
+    click("#exportButton");
+    await wait(() => api.exporting);
+    check(
+      "export view shows progress and cancellation while recording",
+      Boolean(d.getElementById("exportProgress")) &&
+        Boolean(d.getElementById("cancelButton")),
+    );
+    await wait(() => !api.exporting && api.results.length > 0);
+    check(
+      "the full Export video flow produces preview and Download video",
+      Boolean(d.getElementById("downloadButton")) &&
+        !d.getElementById("outputVideo").hidden &&
+        api.results[0].blob.size > 1000,
+    );
     window.TEST_RESULT = { passed: true, checks };
   } catch (error) {
     window.TEST_RESULT = {
