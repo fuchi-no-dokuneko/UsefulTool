@@ -40,3 +40,9 @@ The established browser suite passes **218/218**, including a resized-source cro
 The exact scoped source archive also passes **347/347 shared-site checks** with **95.09% maintained-source line coverage** (11,522/12,117). Its fifteen offline pages, manifest and codec bundle reproduce byte-for-byte. The current worktree, including the existing additional tool page, passes **356/356 checks**, **95.06% coverage** (11,757/12,368), and all sixteen hosted/offline page checks. The 95% coverage threshold is unchanged.
 
 Publication targets the existing `usefultool` Pages project through its documented direct-deployment procedure. The isolated static artifact preserves the current worktree's other tools. Final publication verification compares live bytes on both the stable and deployment-specific URLs and exercises hosted import, playback and fixed-frame export.
+
+## Verified production publication
+
+Published runtime revision `ee8e4f41411fe1efdada19e7bfeebff620be925b` to the existing [Timeline Video Studio](https://usefultool-e6j.pages.dev/video-editor). The [deployment snapshot](https://7d3ec1d6.usefultool-e6j.pages.dev/video-editor) reached production success. All 44 comparisons across the stable and snapshot URLs match the tested artifact. Before publication, all 57 other-tool files matched the existing site byte-for-byte.
+
+An actual hosted Chromium session at 1363×936 imported three videos with six correctly linked picture/sound items, played and paused through the controls, and encoded a 0.3-second Standard 1080p VP9/Opus result with exactly nine frames and 14,400 stereo audio samples. Production security and local-media network restrictions remain enforced by HTTP headers. Deployment, byte-comparison and hosted-browser receipts are retained in `build/reports/video-studio/production-release/`.
