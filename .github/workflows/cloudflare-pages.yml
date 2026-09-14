@@ -8,6 +8,12 @@ on:
 permissions: {}
 
 jobs:
+  video-acceptance:
+    name: Video Studio release gate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/video-studio.yml
+
   validate:
     name: Unit, UAT, and coverage
     runs-on: ubuntu-latest
@@ -106,7 +112,7 @@ jobs:
           if-no-files-found: error
 
   deploy:
-    needs: validate
+    needs: [validate, video-acceptance]
     runs-on: ubuntu-latest
     permissions:
       actions: read

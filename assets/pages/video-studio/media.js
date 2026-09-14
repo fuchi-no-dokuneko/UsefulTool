@@ -116,7 +116,7 @@
     } catch { return { waveform: [], waveformStatus: "No decodable waveform; playback may still be available" }; }
   }
   class MediaLibrary {
-    constructor() { this.assets = new Map(); this.elements = new Map(); }
+    constructor() { this.assets = new Map(); this.elements = new Map(); this.frames = new Map(); }
     async read(file, requestedKind) {
       const kind = fileKind(file);
       if (requestedKind && kind !== requestedKind) throw new Error("This file is not a supported " + requestedKind + " file.");
@@ -175,8 +175,97 @@
       const element = document.createElement(value.kind === "video" ? "video" : "audio");
       element.preload = "auto"; element.playsInline = true; element.muted = value.kind === "video";
       element.preservesPitch = true; element.src = entry.url;
-      this.elements.set(value.id, element); return element;
+      this.elements.set(value.id, element);
+      if (value.kind === "video" && root.createImageBitmap) {
+        const state = { element, bitmap: null, serial: 0, pending: null, timestamp: null, drawnAt: null, disposed: false };
+        this.frames.set(value.id, state);
+        const decoded = (_, metadata) => {
+          if (state.disposed) return;
+          if (!state.pending && !state.fallback)
+            this.captureFrame(value, null, metadata.mediaTime, false).catch(() => {});
+          state.callback = element.requestVideoFrameCallback(decoded);
+        };
+        if (element.requestVideoFrameCallback) state.callback = element.requestVideoFrameCallback(decoded);
+      }
+      return element;
     }
+    async captureFrame(value, signal, timestamp, force = true) {
+      if (value.kind !== "video" || !root.createImageBitmap) return;
+      const element = this.element(value), state = this.frames.get(value.id);
+      if (!state || state.disposed || state.fallback || element.readyState < 2) return;
+      if (signal?.aborted) throw new DOMException("Frame preparation was cancelled.", "AbortError");
+      if (!force && state.pending) return state.pending;
+      // A callback may arrive late for an offscreen media element. Snapshot the
+      // decoder's actual frame and retain its presentation timestamp, rather
+      // than labelling old pixels with the advancing media clock.
+      const frame = root.VideoFrame ? new root.VideoFrame(element) : element;
+      const at = frame === element ? timestamp ?? element.currentTime : frame.timestamp / 1e6;
+      const transform = value.transform;
+      const fullWidth = element.videoWidth, fullHeight = element.videoHeight;
+      // Match the displayed preview, capped at 960px. Preserve native pixels for crops
+      // and enlarged layers; uncropped pictures need no larger intermediate.
+      const limit = Math.min(960, this.frameLimit?.() || 960);
+      const resize = transform && transform.cropWidth >= fullWidth &&
+        transform.cropHeight >= fullHeight && transform.width <= fullWidth &&
+        transform.height <= fullHeight && Math.max(fullWidth, fullHeight) > limit;
+      const scale = resize ? limit / Math.max(fullWidth, fullHeight) : 1;
+      const bitmapOptions = resize ? { resizeWidth: Math.round(fullWidth * scale), resizeHeight: Math.round(fullHeight * scale) } : {};
+      if (!force && state.bitmap && at === state.timestamp) { if (frame !== element) frame.close(); return; }
+      const serial = ++state.serial;
+      // Transfer the decoded picture asynchronously. The compositor only reads
+      // completed bitmaps and never waits inside drawImage(video) during playback.
+      const operation = Promise.resolve().then(() => root.createImageBitmap(frame, bitmapOptions)).then(bitmap => {
+        if (state.disposed || serial !== state.serial) { bitmap.close(); return; }
+        state.bitmap?.close(); state.bitmap = bitmap; state.timestamp = at;
+      }).catch(error => {
+        if (state.disposed || serial !== state.serial) return;
+        if (["NotSupportedError", "TypeError"].includes(error.name)) state.fallback = true;
+        else throw error;
+      }).finally(() => { if (frame !== element) frame.close(); });
+      state.pending = operation;
+      operation.finally(() => { if (state.pending === operation) state.pending = null; }).catch(() => {});
+      if (!signal) return operation;
+      let abort;
+      const stopped = new Promise((_, reject) => {
+        abort = () => {
+          if (serial === state.serial) state.serial++;
+          reject(new DOMException("Frame preparation was cancelled.", "AbortError"));
+        };
+        signal.addEventListener("abort", abort, { once: true });
+      });
+      try { await Promise.race([operation, stopped]); }
+      finally { signal.removeEventListener("abort", abort); }
+    }
+    frameFor(value) {
+      const element = this.element(value), state = this.frames.get(value.id);
+      if (!state || state.fallback) return element;
+      const tr = value.transform;
+      if (state.bitmap && state.bitmap.width < element.videoWidth && tr &&
+          (tr.cropWidth < element.videoWidth || tr.cropHeight < element.videoHeight ||
+            tr.width > element.videoWidth || tr.height > element.videoHeight ||
+            Math.max(state.bitmap.width, state.bitmap.height) < Math.min(element.videoWidth > element.videoHeight ? element.videoWidth : element.videoHeight, this.frameLimit?.() || 960))) {
+        state.drawnAt = null;
+        return element;
+      }
+      if (!state.pending && (!element.requestVideoFrameCallback ||
+          (!element.paused && !element.seeking && Math.abs(element.currentTime - state.timestamp) > 1 / 60)))
+        this.captureFrame(value, null, undefined, false).catch(() => {});
+      // An asynchronous conversion can be delayed under load. Do not keep
+      // displaying its older cached pixels after the decoder has moved on.
+      if (state.bitmap && !element.paused && !element.seeking &&
+          element.currentTime - state.timestamp > .075) {
+        state.drawnAt = null;
+        if (root.VideoFrame) {
+          const current = new root.VideoFrame(element);
+          state.drawnAt = current.timestamp / 1e6;
+          current.close();
+        }
+        return element;
+      }
+      state.drawnAt = state.timestamp;
+      return state.bitmap;
+    }
+    frameTimestamp(value) { return this.frames.get(value.id)?.drawnAt; }
     async relink(descriptor, file) {
       if (descriptor.size !== file.size || descriptor.name !== file.name || descriptor.contentHash !== await hashFile(file)) throw new Error("This file does not match the saved name, size and content. Choose the original file.");
       await this.attach(descriptor, file); return descriptor;
@@ -207,6 +296,11 @@
     pause() { for (const element of this.elements.values()) element.pause(); }
     dispose() {
       this.pause();
+      for (const state of this.frames.values()) {
+        state.disposed = true; state.serial++; state.bitmap?.close();
+        if (state.callback !== undefined) state.element.cancelVideoFrameCallback?.(state.callback);
+      }
+      this.frames.clear();
       for (const element of this.elements.values()) { element.utvDisposed = true; element.dispatchEvent(new Event("utv-disposed")); element.removeAttribute("src"); element.load(); }
       for (const entry of this.assets.values()) { if (entry.probe) { entry.probe.utvDisposed = true; entry.probe.dispatchEvent(new Event("utv-disposed")); entry.probe.removeAttribute("src"); entry.probe.load(); } URL.revokeObjectURL(entry.url); }
       this.elements.clear(); this.assets.clear();

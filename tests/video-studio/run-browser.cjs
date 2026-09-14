@@ -10,6 +10,7 @@ const http = require("node:http");
 const os = require("node:os");
 const { execFileSync } = require("node:child_process");
 const { pathToFileURL } = require("node:url");
+const { createHash } = require("node:crypto");
 const root = path.resolve(__dirname, "../..");
 const reports = path.join(root, "build/reports/video-studio");
 const fixtures = path.join(reports, "fixtures");
@@ -61,6 +62,31 @@ const mime = {
   ".png": "image/png",
 };
 const server = http.createServer((req, res) => {
+  const artifact =
+    /^\/__video-studio-test__\/(release-standard)\.webm$/.exec(
+      req.url,
+    );
+  if (req.method === "POST" && artifact) {
+    const destination = path.join(reports, artifact[1] + ".webm");
+    const file = fs.createWriteStream(destination + ".tmp");
+    let bytes = 0;
+    req.on("data", (chunk) => {
+      bytes += chunk.length;
+      if (bytes > 256 * 1024 * 1024) {
+        req.destroy();
+        file.destroy();
+      }
+    });
+    req.pipe(file);
+    file.on("finish", () => {
+      fs.renameSync(destination + ".tmp", destination);
+      res.writeHead(201).end("Saved local test artifact");
+    });
+    file.on("error", () => {
+      if (!res.headersSent) res.writeHead(500).end();
+    });
+    return;
+  }
   let file;
   try {
     file = path.resolve(
@@ -96,6 +122,8 @@ const server = http.createServer((req, res) => {
         "video-studio-tests-",
       ),
     );
+    const downloads = path.join(profile, "downloads");
+    fs.mkdirSync(downloads);
     const binary =
       process.env.CHROME_BINARY ||
       [
@@ -105,6 +133,10 @@ const server = http.createServer((req, res) => {
       ].find(fs.existsSync);
     const options = new chrome.Options()
       .setChromeBinaryPath(binary)
+      .setUserPreferences({
+        "download.default_directory": downloads,
+        "download.prompt_for_download": false,
+      })
       .addArguments(
         "--headless=new",
         "--no-sandbox",
@@ -138,6 +170,7 @@ const server = http.createServer((req, res) => {
       .setTimeouts({ pageLoad: 30000, script: 90000, implicit: 0 });
     const page = process.argv[2] || "core.html";
     if (page === "long-playback.html") require("./create-long-fixtures.cjs");
+    if (page === "release.html") require("./create-release-fixtures.cjs");
     if (page === "touch.html") {
       await driver.sendDevToolsCommand("Emulation.setDeviceMetricsOverride", {
         width: 390,
@@ -153,10 +186,53 @@ const server = http.createServer((req, res) => {
     const url = "http://127.0.0.1:" + server.address().port;
     await driver.get(url + "/tests/video-studio/" + page);
     await driver.wait(
-      () => driver.executeScript("return !!window.TEST_RESULT"),
-      page === "long-playback.html" ? 300000 : 90000,
+      async () => {
+        const state = await driver.executeScript(
+          "return {done:!!window.TEST_RESULT,request:window.UAT_REQUEST}",
+        );
+        if (state.request) {
+          const request = state.request;
+          await driver.executeScript("window.UAT_REQUEST=null");
+          try {
+            await driver.switchTo().frame("studio");
+            await driver.findElement(By.css(request.selector)).click();
+            await driver.switchTo().defaultContent();
+            await driver.executeScript("window.UAT_RESPONSE=arguments[0]", {
+              id: request.id,
+            });
+          } catch (error) {
+            await driver.switchTo().defaultContent();
+            await driver.executeScript("window.UAT_RESPONSE=arguments[0]", {
+              id: request.id,
+              error: error.message,
+            });
+          }
+        }
+        return state.done;
+      },
+      page === "release.html"
+        ? 2400000
+        : page === "long-playback.html"
+          ? 300000
+          : 90000,
     );
     const result = await driver.executeScript("return window.TEST_RESULT");
+    if (page === "release.html" && result.downloadName) {
+      const downloaded = path.join(
+        downloads,
+        path.basename(result.downloadName),
+      );
+      await driver.wait(() => fs.existsSync(downloaded), 30000);
+      const digest = (file) =>
+        createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+      result.checks.push({
+        name: "actual Download video click saves the complete encoded file",
+        passed:
+          digest(downloaded) ===
+          digest(path.join(reports, "release-standard.webm")),
+      });
+      result.passed = result.checks.every((c) => c.passed);
+    }
     if (page === "offline.html" && result.passed) {
       // Opening the downloaded file is a distinct origin/security context from
       // serving its embedded code over localhost. Exercise the real file too.

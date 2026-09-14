@@ -23,7 +23,8 @@
     check(
       "offline HTML embeds every script and stylesheet",
       !d.querySelector('script[src],link[rel="stylesheet"]') &&
-        d.querySelectorAll("script[data-inlined-from]").length === 10,
+        d.querySelectorAll("script[data-inlined-from]").length === 11 &&
+        Boolean(w.UTStudio.Export && w.UTVideoCodecs),
     );
     const file = new w.File(
       [await (await fetch("fixtures/source.mp4")).blob()],
@@ -32,8 +33,11 @@
     );
     await api.importFiles([file], "video");
     check(
-      "offline import makes a video with independent original audio",
+      "offline import makes a video with linked original audio",
       api.project.items.length === 2 &&
+        api.project.items.every(
+          (i) => i.linkEnabled && i.linkId === api.project.items[0].linkId,
+        ) &&
         api.project.assets[0].waveform.some((n) => n > 0),
     );
     api.addNewItem("text");

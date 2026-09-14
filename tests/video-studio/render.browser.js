@@ -73,6 +73,24 @@
     M.layer(p, "overlay-2").visible = false;
     red.blendMode = "alpha";
     red.opacity = 1;
+    const originalSource = library.elements.get(red.id),
+      originalTransform = M.copy(red.transform),
+      smaller = Media.makeCanvas(16, 16),
+      smallerContext = smaller.getContext("2d");
+    smallerContext.fillStyle = "red";
+    smallerContext.fillRect(0, 0, 8, 16);
+    smallerContext.fillStyle = "blue";
+    smallerContext.fillRect(8, 0, 8, 16);
+    library.elements.set(red.id, smaller);
+    red.transform.cropX = 16;
+    red.transform.cropWidth = 16;
+    renderer.render(p, 1, out);
+    check(
+      "resized video frames preserve source-coordinate cropping",
+      near(pixel(out), [0, 0, 255]),
+    );
+    library.elements.set(red.id, originalSource);
+    red.transform = originalTransform;
     M.setKey(red, 0, 0);
     M.setKey(red, 2, 1);
     renderer.render(p, 1, out);

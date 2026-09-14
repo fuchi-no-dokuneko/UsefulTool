@@ -641,6 +641,14 @@
       "Editing controls",
       "Open or close the controls for the selected item.",
     ],
+    audioLimit: [
+      "Review overlapping sounds",
+      "At most three sounds can play together, including video sound. Mute or move a sound to make room, then preview or export the movie.",
+    ],
+    fixAudioLimit: [
+      "Mute extra sounds",
+      "Mute unlocked overlapping sounds, starting from the last track, until at most three play together. Keep their clips for editing and undo this change at any time.",
+    ],
   };
   /** @typedef {keyof typeof HELP_CONTENT} HelpId */
   /** @typedef {{ helpId: HelpId, label: string, onClick?: (event: MouseEvent) => void, disabled?: boolean, disabledReason?: string, className?: string, id?: string, icon?: boolean }} HelpButtonProps */
@@ -695,16 +703,20 @@
     if (!HELP_CONTENT[helpId])
       throw new Error("Every control needs a registered helpId: " + helpId);
     target.dataset.helpId = helpId;
+    const currentId = () => /** @type {HelpId} */ (target.dataset.helpId);
     target.addEventListener("pointerenter", () => {
       clearTimeout(hideTimer);
       clearTimeout(showTimer);
-      showTimer = window.setTimeout(() => show(target, helpId, reason()), 400);
+      showTimer = window.setTimeout(
+        () => show(target, currentId(), reason()),
+        400,
+      );
     });
     target.addEventListener("pointerleave", () => {
       clearTimeout(showTimer);
       hideTimer = window.setTimeout(close, 150);
     });
-    target.addEventListener("focus", () => show(target, helpId, reason()));
+    target.addEventListener("focus", () => show(target, currentId(), reason()));
     target.addEventListener("blur", close);
     return target;
   }
@@ -749,7 +761,7 @@
     info.dataset.helpId = "touchHelp";
     info.addEventListener("click", (event) => {
       event.stopPropagation();
-      show(info, helpId, reason());
+      show(info, /** @type {HelpId} */ (control.dataset.helpId), reason());
     });
     wrapper.appendChild(info);
     return wrapper;
@@ -779,6 +791,20 @@
       wrapper.removeAttribute("aria-disabled");
     }
   }
+  /** @param {HTMLButtonElement} control @param {HelpId} helpId @param {string} label @param {string} [text] */
+  function setButtonLabel(control, helpId, label, text = label) {
+    control.dataset.helpId = helpId;
+    control.textContent = text;
+    control.setAttribute("aria-label", label);
+    const wrapper = control.parentElement;
+    if (wrapper) {
+      wrapper.dataset.helpId = helpId;
+      if (control.disabled) wrapper.setAttribute("aria-label", label);
+      wrapper
+        .querySelector(".touch-help")
+        ?.setAttribute("aria-label", "About " + label);
+    }
+  }
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") close();
   });
@@ -793,6 +819,7 @@
     attach,
     label,
     setDisabled,
+    setButtonLabel,
     close,
   };
 })();

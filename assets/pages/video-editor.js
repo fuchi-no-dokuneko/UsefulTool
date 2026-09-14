@@ -37,6 +37,13 @@
     renderer,
     mixer,
     engine;
+  let pendingFieldEdit = false;
+  function commitFieldEdit() {
+    if (!pendingFieldEdit) return;
+    pendingFieldEdit = false;
+    history.push(project);
+    updateHistory();
+  }
   let selectedId = null,
     mediaTab = "video",
     zoom = 70,
@@ -71,6 +78,7 @@
       label,
       onClick: (event) => {
         try {
+          commitFieldEdit();
           const result = onClick?.(event);
           if (result?.catch) result.catch(report);
         } catch (error) {
@@ -185,6 +193,10 @@
       if (!options.options) update(false);
     });
     input.addEventListener("change", () => update(true));
+    input.addEventListener("blur", commitFieldEdit);
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !options.multiline) commitFieldEdit();
+    });
     node.append(heading, input);
     return node;
   }
@@ -221,6 +233,10 @@
     for (const input of [number, slider]) {
       input.addEventListener("input", () => update(input, false));
       input.addEventListener("change", () => update(input, true));
+      input.addEventListener("blur", commitFieldEdit);
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") commitFieldEdit();
+      });
     }
     heading.append(H.label(helpId, label, reason), number);
     node.append(heading, slider);
@@ -247,17 +263,20 @@
   }
   function edit(fn, message = "Change saved", options = {}) {
     if (exporting || projectLoading) return;
+    if (options.commit !== false) commitFieldEdit();
     const before = M.copy(project);
     try {
       fn(project);
       M.normalize(project);
       project.selectedItemId = M.item(project, selectedId) ? selectedId : null;
       if (options.commit !== false) history.push(project);
+      else pendingFieldEdit = true;
       errorMessage = "";
       store.schedule(project);
       clearResults();
       if (options.timeline !== false) renderTimeline();
       if (options.context) renderContext();
+      updateAudioWarning();
       updateHistory();
       updateSelectionBox();
       requestPaint();
@@ -385,12 +404,15 @@
     $("outputVideo").pause();
     $("outputVideo").hidden = true;
     $("previewCanvas").hidden = false;
-    await engine.seek(value);
+    const currentEngine = engine;
+    const done = await engine.seek(value);
+    if (currentEngine !== engine || done === false) return;
     store.schedule(project);
     renderTransport();
     renderTimeline();
   }
   function selectItem(id, seek = true) {
+    commitFieldEdit();
     selectedId = id;
     project.selectedItemId = id;
     errorMessage = "";
@@ -405,6 +427,7 @@
   }
   function undo() {
     if (exporting) return;
+    commitFieldEdit();
     engine.stop();
     const previous = history.undo();
     if (previous) {
@@ -423,6 +446,7 @@
   }
   function redo() {
     if (exporting) return;
+    commitFieldEdit();
     engine.stop();
     const next = history.redo();
     if (next) {
@@ -552,6 +576,7 @@
         }
       await store.restore(project, library);
       history = new M.History(project);
+      pendingFieldEdit = false;
       clearResults();
       store.schedule(project);
       await seekTo(project.playhead, true);
@@ -567,6 +592,7 @@
     await store.clear();
     project = M.createProject();
     history = new M.History(project);
+    pendingFieldEdit = false;
     library = new Media.MediaLibrary();
     selectedId = null;
     assetSelected = null;
@@ -685,7 +711,7 @@
         ],
         [
           "4 · Export",
-          "Review your movie and choose a quality. Keep this tab visible while the browser records the movie.",
+          "Review your movie and choose a quality. Keep this tab open until your video is ready to download.",
         ],
       ])
         body.append(group(title, el("p", "muted", description)));
@@ -807,6 +833,48 @@
     if (!engine) return;
     const disabled = !project.duration || exporting;
     const playback = engine.playing && !exporting;
+    const status = $("previewStatus");
+    if (status)
+      status.textContent = engine.seeking
+        ? "Loading frame…"
+        : engine.preparing
+          ? "Preparing playback…"
+          : "";
+    // Keep pointer/focus targets mounted while decoder work finishes. Replacing
+    // Play between pointerdown and pointerup would discard the user's click.
+    if ($("playButton")) {
+      for (const button of $("transport").querySelectorAll(
+        ".help-wrap > button:first-child",
+      )) {
+        const available = ["muteButton", "fullscreenButton"].includes(
+          button.id,
+        );
+        H.setDisabled(
+          button,
+          projectLoading || (!available && disabled),
+          projectLoading
+            ? "Wait for the project to open."
+            : "Add media or finish exporting before using this control.",
+        );
+      }
+      H.setButtonLabel(
+        $("playButton"),
+        playback ? "pause" : "play",
+        playback ? "Pause" : "Play",
+      );
+      H.setButtonLabel(
+        $("muteButton"),
+        "previewMute",
+        mixer.muted ? "Unmute preview" : "Mute preview",
+        mixer.muted ? "◌" : "♪",
+      );
+      $("seek").max = project.duration;
+      $("seek").step = 1 / project.exportSettings.fps;
+      $("seek").value = project.playhead;
+      $("seek").disabled = disabled || projectLoading;
+      $("timeLabel").textContent = time(project.playhead);
+      return;
+    }
     const seek = el("input", "seek-field");
     seek.type = "range";
     seek.min = 0;
@@ -832,7 +900,7 @@
       B(
         playback ? "pause" : "play",
         playback ? "Pause" : "Play",
-        () => (playback ? engine.stop() : engine.play()),
+        () => (engine.playing ? engine.stop() : engine.play()),
         {
           id: "playButton",
           disabled,
@@ -1232,7 +1300,6 @@
     renderMedia();
     renderContext();
     renderTimeline();
-    renderTransport();
     $("stageEmpty").hidden = project.items.some(
       (i) => i.kind !== "audio" && i.kind !== "filter",
     );
@@ -1246,7 +1313,12 @@
         { id: "stageTitle" },
       ),
       Object.assign(el("span", "stage-facts"), { id: "stageFacts" }),
+      Object.assign(el("span", "stage-facts"), {
+        id: "previewStatus",
+        role: "status",
+      }),
     );
+    renderTransport();
     resizePreview();
     requestPaint();
   }
@@ -1550,7 +1622,7 @@
             const badge = el(
               "span",
               "clip-time",
-              entry.linkEnabled ? "↔ Sound linked" : "↔ Original sound",
+              entry.linkEnabled ? "↔ Sound linked" : "♪ Original sound",
             );
             badge.style.position = "absolute";
             badge.style.right = "4px";
@@ -1668,6 +1740,7 @@
   }
   function beginTimelineDrag(event, id, mode) {
     if (exporting || event.button !== 0) return;
+    commitFieldEdit();
     const value = M.item(project, id);
     selectedId = id;
     project.selectedItemId = id;
@@ -1991,6 +2064,7 @@
         event.button !== 0
       )
         return;
+      commitFieldEdit();
       event.preventDefault();
       engine.stop();
       H.close();
@@ -2092,6 +2166,54 @@
   }
   function conflicts() {
     return M.videoConflicts(project);
+  }
+  function updateAudioWarning() {
+    const card = $("audioConflictCard");
+    if (!card) return;
+    const conflict = M.audioConflicts(project)[0];
+    card.hidden = !conflict;
+    if (!conflict) return;
+    card.replaceChildren(
+      el(
+        "p",
+        "notice error",
+        conflict.items.length +
+          " sounds overlap at " +
+          time(conflict.start) +
+          ". Only three sounds can play together.",
+      ),
+      B("audioLimit", "Review overlapping sounds", () => {
+        dialog("Review overlapping sounds", (body, foot) => {
+          body.append(
+            el(
+              "p",
+              "",
+              "Video sound and music all count toward the three-sound limit. Mute a sound here, or select its clip and move or shorten it.",
+            ),
+          );
+          for (const sound of conflict.items)
+            body.append(
+              check(
+                named(sound) + " · Mute",
+                "muteItem",
+                sound.audio.muted,
+                (muted) =>
+                  edit(() => {
+                    sound.audio.muted = muted;
+                  }, "Sound muted"),
+                M.isLocked(project, sound),
+              ),
+            );
+          foot.append(B("close", "Done", closeDialog));
+        });
+      }),
+      B("fixAudioLimit", "Mute extra sounds", () =>
+        edit(() => M.fixAudioConflicts(project), "Extra sounds muted", {
+          context: true,
+          toast: true,
+        }),
+      ),
+    );
   }
   function fixConflicts() {
     edit(
@@ -2245,6 +2367,10 @@
     error.hidden = !errorMessage;
     error.setAttribute("role", "alert");
     node.append(error);
+    const audioWarning = el("section", "section");
+    audioWarning.id = "audioConflictCard";
+    node.append(audioWarning);
+    updateAudioWarning();
     if (conflicts().length)
       node.append(
         group(
@@ -4773,6 +4899,7 @@
     new ResizeObserver(resizePreview).observe($("stageViewport"));
   }
   async function boot() {
+    await root.UTStudio.Export.loadFormats();
     setupEngine();
     setupFileInputs();
     setupStage();

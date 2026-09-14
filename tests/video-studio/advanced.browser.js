@@ -81,9 +81,9 @@
     );
     drag(handle, -zoom * 0.2, 0);
     check(
-      "pointer trim shortens picture while preserving independent sound and selection",
+      "pointer trim shortens linked picture and sound while retaining selection",
       Math.abs(M.item(api.project, first.id).end - (end - 0.2)) < 0.02 &&
-        M.item(api.project, mainSound.id).end === soundEnd &&
+        Math.abs(M.item(api.project, mainSound.id).end - (soundEnd - 0.2)) < 0.02 &&
         api.selectedItem.id === first.id,
     );
     check(

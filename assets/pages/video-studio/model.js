@@ -61,6 +61,10 @@
     });
     project.duration = rounded(Math.max(visualEnd(project), 0, ...project.items.filter((i) => i.kind === "audio" && !i.audio.wholeMovie).map((i) => i.end)));
     for (const value of project.items) {
+      if (value.linkId || value.linkedGroupId) {
+        value.linkId = value.linkId || value.linkedGroupId;
+        value.linkedGroupId = value.linkId;
+      }
       if (value.kind === "audio" && value.audio.wholeMovie) {
         value.start = 0; value.end = Math.max(MIN, visualEnd(project)); value.audio.loop = true;
         value.audio.fadeOut = Math.min(1, span(value));
@@ -133,10 +137,11 @@
     project.items.push(value);
     if (target === "main") project.mainOrder.splice(options.index ?? project.mainOrder.length, 0, value.id);
     if (kind === "video") {
-      value.linkedGroupId = id("link");
+      value.linkId = value.linkedGroupId = id("link");
+      value.linkEnabled = true;
       const sound = baseItem("audio", "video-sound", start, duration);
       Object.assign(sound, { name: source.name + " · sound", assetId: source.id, sourceId: source.id,
-        linkedGroupId: value.linkedGroupId, audio: audioProps("video") });
+        linkId: value.linkId, linkedGroupId: value.linkId, linkEnabled: true, audio: audioProps("video") });
       project.items.push(sound);
     }
     if (target === "main") reflow(project); else normalize(project);
@@ -265,7 +270,7 @@
       sibling.effects = sibling.effects.filter((fx) => fx.start < offset).map((fx) => ({ ...fx, end: Math.min(fx.end, offset) }));
       right.fadeIn = 0; sibling.fadeOut = 0;
       if (right.audio) { right.audio.fadeIn = 0; sibling.audio.fadeOut = 0; right.audio.wholeMovie = false; sibling.audio.wholeMovie = false; }
-      if (right.linkedGroupId) right.linkedGroupId = rightGroup;
+      if (right.linkedGroupId) right.linkId = right.linkedGroupId = rightGroup;
       project.items.push(right);
       if (sibling.layerId === "main") {
         project.mainOrder.splice(project.mainOrder.indexOf(sibling.id) + 1, 0, right.id);
@@ -285,7 +290,7 @@
         const track = copy(layer(project, dupe.layerId));
         track.id = id("layer"); track.order += .1; project.layers.push(track); dupe.layerId = track.id;
       }
-      if (dupe.linkedGroupId) dupe.linkedGroupId = group;
+      if (dupe.linkedGroupId) dupe.linkId = dupe.linkedGroupId = group;
       if (dupe.audio) dupe.audio.wholeMovie = false;
       project.items.push(dupe);
       if (dupe.layerId === "main") project.mainOrder.splice(project.mainOrder.indexOf(sibling.id) + 1, 0, dupe.id);
@@ -390,12 +395,35 @@
   }
   function evaluateAudio(project, range) {
     const time = typeof range === "number" ? range : range.start;
-    return visibleItems(project, time, true).map((value) => {
-      const balance = project.soundBalance[value.audio.category] ?? 1;
-      const gain = value.audio.volume * fadeAt(value, time, true) * balance;
+    return visibleItems(project, time, true).slice(0, MAX_AUDIO_SOURCES).map((value) => {
       return { item: value, sourceTime: sourceTimeAt(value, time), playbackRate: value.playbackRate,
-        left: gain * value.audio.leftGain, right: gain * value.audio.rightGain, preservePitch: value.audio.preservePitch };
+        ...audioGains(project, value, time), preservePitch: value.audio.preservePitch };
     });
+  }
+  function audioGains(project, value, time) {
+    const gain = value.audio.volume * fadeAt(value, time, true) * (project.soundBalance[value.audio.category] ?? 1);
+    return { left: gain * value.audio.leftGain, right: gain * value.audio.rightGain };
+  }
+  const MAX_AUDIO_SOURCES = 3;
+  function audioConflicts(project) {
+    const points = [...new Set(project.items.filter(i => i.kind === "audio").flatMap(i => [i.start, i.end]))].sort((a, b) => a - b);
+    const conflicts = [];
+    for (let index = 0; index < points.length - 1; index++) {
+      const start = points[index], end = points[index + 1];
+      const sounds = visibleItems(project, (start + end) / 2, true);
+      if (sounds.length > MAX_AUDIO_SOURCES) conflicts.push({ start, end, items: sounds, excess: sounds.slice(MAX_AUDIO_SOURCES) });
+    }
+    return conflicts;
+  }
+  function fixAudioConflicts(project) {
+    const muted = [];
+    for (let conflict; (conflict = audioConflicts(project)[0]);) {
+      const sound = [...conflict.items].reverse().find(i => !isLocked(project, i));
+      if (!sound) throw new Error("Unlock or move a sound to resolve the three-sound limit.");
+      sound.audio.muted = true;
+      muted.push(sound.id);
+    }
+    return muted;
   }
   function applyOverlayPreset(project, selectedIds, preset = "equal") {
     const values = selectedIds.map((key) => item(project, key)).filter((i) => i?.kind === "video");
@@ -550,7 +578,7 @@
   const api = { MIN, MAX_PIXELS, VIDEO_LAYERS, KINDS, EFFECTS, BLURS, TRANSITIONS, id, copy, clamp, finite, rounded, active, span, sourceSpan,
     layer, asset, item, isLocked, mainItems, createProject, transform, baseItem, audioProps, normalize, reflow, addAsset, addMedia, addLayerItem,
     related, setLink, moveItem, reorderMain, trimItem, setSpeed, splitItem, duplicateItem, deleteItem, transitionMaximum, setTransition, removeTransition,
-    ease, curveAt, setKey, fadeAt, sourceTimeAt, setRepeat, snapTime, visibleItems, videoConflicts, evaluateFrame, evaluateAudio, applyOverlayPreset, addEffect,
+    ease, curveAt, setKey, fadeAt, sourceTimeAt, setRepeat, snapTime, visibleItems, videoConflicts, MAX_AUDIO_SOURCES, audioConflicts, fixAudioConflicts, audioGains, evaluateFrame, evaluateAudio, applyOverlayPreset, addEffect,
     creditsHeight, updateCreditsDuration, fitTransform, segmentRanges, formatTime, exportDimensions, serialize, parseProject, History, visualEnd };
   root.UTStudio = Object.assign(root.UTStudio || {}, { Model: api });
   if (typeof module !== "undefined") module.exports = api;

@@ -1,17 +1,7 @@
 (function (root) {
   "use strict";
   const { Model: M, Media } = root.UTStudio;
-  const FORMATS = [
-    ["video/webm;codecs=vp9,opus", "WebM · VP9 + Opus", "webm"],
-    ["video/webm;codecs=vp8,opus", "WebM · VP8 + Opus", "webm"],
-    ["video/webm", "WebM · Browser default", "webm"],
-    ["video/mp4;codecs=avc1.42E01E,mp4a.40.2", "MP4 · H.264 + AAC", "mp4"],
-    ["video/mp4", "MP4 · Browser default", "mp4"],
-  ];
-  const supportedFormats = () =>
-    typeof MediaRecorder === "undefined"
-      ? []
-      : FORMATS.filter(([type]) => MediaRecorder.isTypeSupported(type));
+  const supportedFormats = () => root.UTStudio.Export?.supportedFormats() || [];
   class Engine {
     constructor(
       getProject,
@@ -33,6 +23,12 @@
       });
       this.session = null;
       this.seekSerial = 0;
+      this.seeking = false;
+      this.library.frameLimit = () =>
+        Math.max(this.preview.width, this.preview.height);
+    }
+    get preparing() {
+      return Boolean(this.session && this.session.anchor === null);
     }
     get playing() {
       return Boolean(this.session);
@@ -51,6 +47,7 @@
             element.playbackRate = e.item.playbackRate;
             element.preservesPitch = e.item.audio?.preservePitch ?? true;
             await Media.seek(element, e.sourceTime, signal);
+            await this.library.captureFrame?.(e.item, signal);
           }
         }),
       );
@@ -62,6 +59,8 @@
         project = this.getProject();
       project.playhead = M.clamp(time, 0, project.duration);
       const controller = (this.seekController = new AbortController());
+      this.seeking = true;
+      this.onState("seeking");
       try {
         await this.prepare(
           project,
@@ -70,9 +69,15 @@
         );
       } catch (error) {
         if (serial === this.seekSerial) throw error;
+      } finally {
+        if (serial === this.seekSerial) {
+          this.seeking = false;
+          this.onState("paused");
+        }
       }
       if (serial === this.seekSerial)
         this.paint(project, project.playhead, this.preview);
+      return serial === this.seekSerial;
     }
     paint(project, time, target = this.preview) {
       const plan = this.renderer.render(project, time, target);
@@ -101,6 +106,7 @@
     stop() {
       ++this.seekSerial;
       this.seekController?.abort();
+      this.seeking = false;
       const session = this.session;
       if (session) {
         this.getProject().playhead = this.currentTime;
@@ -163,7 +169,12 @@
         state.element,
         M.sourceTimeAt(state.item, time),
         session.controller.signal,
-      ).then(() => {
+      ).then(async () => {
+        if (session.cancelled) return;
+        await this.library.captureFrame?.(
+          state.item,
+          session.controller.signal,
+        );
         if (session.cancelled) return;
         state.ready = true;
         this.settings(state);
@@ -199,8 +210,10 @@
         if (state.loopCycle !== undefined && cycle !== state.loopCycle) {
           state.loopCycle = cycle;
           state.ready = false;
-          state.playing = false;
-          element.pause();
+          if (item.kind !== "audio") {
+            state.playing = false;
+            element.pause();
+          }
           this.prepareState(session, state, time);
           return;
         }
@@ -223,8 +236,12 @@
       error /= item.playbackRate;
       if (Math.abs(error) > 0.25) {
         state.ready = false;
-        state.playing = false;
-        element.pause();
+        // Audio seeks keep the existing playback stream alive. Pausing here
+        // introduces a second startup gap after a delayed native music repeat.
+        if (item.kind !== "audio") {
+          state.playing = false;
+          element.pause();
+        }
         this.prepareState(session, state, time);
       } else {
         // Small decoder-clock differences are corrected gradually; avoid a
@@ -260,6 +277,12 @@
     play(options = {}) {
       this.stop();
       const project = this.getProject();
+      if (M.audioConflicts(project).length)
+        return Promise.reject(
+          new Error(
+            "Only three sounds can play at the same time. Use Review overlapping sounds to mute or move a sound before playback.",
+          ),
+        );
       if (M.videoConflicts(project).length)
         return Promise.reject(
           new Error(
@@ -383,101 +406,7 @@
       return completion;
     }
     async recordRange(start, end, onProgress = () => {}, signal) {
-      if (signal?.aborted) return null;
-      const project = this.getProject(),
-        formats = supportedFormats();
-      if (!this.preview.captureStream || !formats.length)
-        throw new Error(
-          "This browser cannot export video. Open the project in a browser with video recording support.",
-        );
-      const missing = project.assets.filter(
-        (a) =>
-          project.items.some((i) => i.assetId === a.id && i.enabled) &&
-          !this.library.has(a.id),
-      );
-      if (missing.length)
-        throw new Error("Relink " + missing[0].name + " before exporting.");
-      const type =
-        formats.find((f) => f[0] === project.exportSettings.format) ||
-        formats[0];
-      const size = M.exportDimensions(project),
-        output = Media.makeCanvas(size.width, size.height);
-      await this.mixer.ready();
-      if (signal?.aborted) return null;
-      const videoStream = output.captureStream(project.exportSettings.fps);
-      const tracks = [...videoStream.getVideoTracks()];
-      if (project.exportSettings.includeAudio)
-        tracks.push(
-          ...this.mixer.capture.stream.getAudioTracks().map((t) => t.clone()),
-        );
-      const stream = new MediaStream(tracks),
-        recorder = new MediaRecorder(stream, {
-          mimeType: type[0],
-          videoBitsPerSecond: Math.round(
-            project.exportSettings.bitrate * 1000000,
-          ),
-          audioBitsPerSecond: 192000,
-        });
-      const chunks = [];
-      let recordError;
-      const stopped = new Promise((resolve, reject) => {
-        recorder.ondataavailable = (e) => {
-          if (e.data.size) chunks.push(e.data);
-        };
-        recorder.onstop = resolve;
-        recorder.onerror = (e) => {
-          recordError = e.error || new Error("Video recording failed.");
-          reject(recordError);
-        };
-      });
-      stopped.catch(() => {});
-      const began = performance.now();
-      try {
-        const complete = await this.play({
-          start,
-          end,
-          canvas: output,
-          recording: true,
-          signal,
-          onReady: () => {
-            recorder.start(250);
-            tracks[0].requestFrame?.();
-          },
-          onTick: (processed, total) => {
-            const elapsed = (performance.now() - began) / 1000;
-            onProgress({
-              percent: processed / total,
-              processed,
-              total,
-              remaining:
-                processed > 0.05
-                  ? (elapsed / processed) * (total - processed)
-                  : null,
-            });
-          },
-          onError: (error) => {
-            recordError = error;
-          },
-        });
-        if (recorder.state !== "inactive") recorder.stop();
-        else if (!chunks.length) return null;
-        await stopped;
-        if (recordError) throw recordError;
-        if (!complete) return null;
-        const raw = new Blob(chunks, { type: recorder.mimeType || type[0] });
-        const blob = await root.UTStudio.finalizeWebmDuration(raw, end - start);
-        return {
-          blob,
-          width: size.width,
-          height: size.height,
-          duration: end - start,
-          extension: type[2],
-          mimeType: raw.type,
-        };
-      } finally {
-        if (recorder.state !== "inactive") recorder.stop();
-        for (const track of tracks) track.stop();
-      }
+      return root.UTStudio.Export.record(this, start, end, onProgress, signal);
     }
     async dispose() {
       this.stop();

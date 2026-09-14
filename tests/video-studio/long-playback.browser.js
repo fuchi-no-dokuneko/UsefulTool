@@ -55,17 +55,38 @@
     M.normalize(clean);
     api.setStep("arrange");
     function instrument() {
+      let phases = [];
+      for (const name of [
+        "drawItem",
+        "transition",
+        "blur",
+        "text",
+        "credits",
+      ]) {
+        const method = api.renderer[name].bind(api.renderer);
+        api.renderer[name] = (...args) => {
+          const began = performance.now(),
+            result = method(...args);
+          phases.push({ name, ms: performance.now() - began });
+          return result;
+        };
+      }
       const original = api.renderer.render.bind(api.renderer);
       api.renderer.render = (project, time, target) => {
+        phases = [];
         const start = performance.now(),
           plan = original(project, time, target);
+        const ms = performance.now() - start;
         if (activeRun)
           renders.push({
             run: activeRun,
             at: start,
             time,
-            ms: performance.now() - start,
+            ms,
             layers: plan.videoCount,
+            ...(ms > 40
+              ? { phases, width: target.width, height: target.height }
+              : {}),
           });
         return plan;
       };
@@ -132,7 +153,8 @@
           paused: e?.paused,
           seeking: e?.seeking,
           ready: e?.readyState,
-          frameSource: e?.testFrameTime,
+          frameSource:
+            api.library.frameTimestamp?.(entry.item) ?? e?.testFrameTime,
         };
       };
       const music = sounds.find((e) => e.item.audio.category === "music");
@@ -185,10 +207,7 @@
         // incorrectly reporting e.g. 0.88s progress over 0.88s as a playback stall.
         const due = samples.at(-1).at + 1000;
         await new Promise((resolve) =>
-          setTimeout(
-            resolve,
-            Math.max(0, due - performance.now()),
-          ),
+          setTimeout(resolve, Math.max(0, due - performance.now())),
         );
         samples.push(sample());
         window.TEST_PROGRESS.current = {
@@ -203,11 +222,11 @@
       const pauseMs = performance.now() - pauseBegan;
       const pausePosition = api.project.playhead;
       await new Promise((r) => setTimeout(r, 120));
-      const deltas = samples.slice(1).map((s, i) => ({
-        second: i + 1,
-        media: s.time - samples[i].time,
-        real: (s.at - samples[i].at) / 1000,
-      }));
+      const deltas = samples.slice(1).map((s, i) => {
+        const media = s.time - samples[i].time,
+          real = (s.at - samples[i].at) / 1000;
+        return { second: i + 1, media, real, rate: media / real };
+      });
       const drift =
         samples.at(-1).time -
         samples[0].time -
@@ -215,7 +234,14 @@
       const startMs = firstFrame === null ? null : firstFrame - began;
       const itemError = (s) =>
         [...s.pictures, ...s.sounds]
-          .filter((e) => Number.isFinite(e.source))
+          // During a native repeat, currentTime resets before decoded data are
+          // ready. That metadata-only timestamp is not the audible position.
+          // The independent music analyser below still requires audible output.
+          .filter(
+            (e) =>
+              Number.isFinite(e.source) &&
+              !(e.loopLength && e.seeking && e.ready < 2),
+          )
           .map((e) => {
             const difference = Math.abs(e.source - e.expected);
             return (
@@ -242,15 +268,24 @@
         drift,
         maxSyncError,
         maxFrameError: Math.max(0, ...frameErrors),
+        maxRenderMs: Math.max(
+          0,
+          ...renders.filter((r) => r.run === name).map((r) => r.ms),
+        ),
         samples,
         deltas,
         firstSound: firstSound?.id,
       };
       runs.push(result);
       check(
-        name + ": every one-second sample advances 0.9–1.1 seconds",
-        deltas.every((s) => s.media >= 0.9 && s.media <= 1.1),
-        deltas.filter((s) => s.media < 0.9 || s.media > 1.1),
+        name + ": every one-second observation maintains 0.9–1.1× playback",
+        deltas.every((s) => s.rate >= 0.9 && s.rate <= 1.1),
+        deltas.filter((s) => s.rate < 0.9 || s.rate > 1.1),
+      );
+      check(
+        name + ": no synchronous frame composition blocks controls for 100 ms",
+        result.maxRenderMs < 100,
+        result.maxRenderMs,
       );
       check(
         name + ": total clock drift is below 100 ms",
@@ -304,7 +339,14 @@
       ["overlay-1", 18, 32],
       ["overlay-2", 28, 17],
     ]) {
-      M.addMedia(layered, video.id, { layerId, start, duration });
+      const overlay = M.addMedia(layered, video.id, {
+        layerId,
+        start,
+        duration,
+      });
+      layered.items.find(
+        (i) => i.kind === "audio" && i.linkId === overlay.linkId,
+      ).audio.muted = true;
     }
     const text = M.addLayerItem(layered, "text", { start: 12, duration: 64 });
     text.text.content = "Long-video playback regression";

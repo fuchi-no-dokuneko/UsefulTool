@@ -77,9 +77,9 @@
     await api.seekTo(second.start + 0.3);
     click("#splitButton");
     check(
-      "trim and Cut here create independently editable pieces",
+      "trim and Cut here create matching picture and sound pieces",
       api.project.mainOrder.length === 4 &&
-        api.project.items.filter((i) => i.kind === "audio").length === 3,
+        api.project.items.filter((i) => i.kind === "audio").length === 4,
     );
     api.selectItem(api.Model.mainItems(api.project)[0].id, false);
     await api.seekTo(0.2);
@@ -157,6 +157,7 @@
       (i) => i.kind === "audio" && i.audio.category === "video",
     );
     api.selectItem(original.id, false);
+    click('#contextPanel button[data-help-id="unlinkAudio"]');
     change('[data-control="speed"][type="number"]', 2);
     check(
       "original audio can run at 2x while its source picture stays at 1x",
@@ -167,9 +168,12 @@
         ).playbackRate === 1,
     );
     check(
-      "more than three sounds can mix at the same time",
-      api.Model.evaluateAudio(api.project, 0.4).length > 3,
+      "four overlapping sounds trigger the three-source limit",
+      api.Model.evaluateAudio(api.project, 0.4).length === 3 && api.Model.audioConflicts(api.project).length > 0,
     );
+    api.edit(() => {
+      api.project.items.find(i => i.kind === "audio" && i.linkId === overlays[1].linkId).audio.muted = true;
+    }, "Mute an overlay sound", { context: true });
     await api.seekTo(0.4);
     const selection = api.selectedItem.id;
     const playing = api.engine.play();

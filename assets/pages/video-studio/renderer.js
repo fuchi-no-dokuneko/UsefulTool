@@ -151,19 +151,36 @@
       else {
         const runtime = this.library.assets.get(value.assetId);
         const source =
-          value.kind === "image" ? runtime?.image : this.library.element(value);
-        if (source && (value.kind === "image" || source.readyState >= 2)) {
+          value.kind === "image"
+            ? runtime?.image
+            : this.library.frameFor
+              ? this.library.frameFor(value)
+              : this.library.element(value);
+        if (
+          source &&
+          (value.kind === "image" ||
+            !("readyState" in source) ||
+            source.readyState >= 2)
+        ) {
           const original = M.asset(project, value.assetId);
           const sw = original.width,
             sh = original.height;
+          const sx =
+              value.kind === "video" && !("videoWidth" in source)
+                ? source.width / sw
+                : 1,
+            sy =
+              value.kind === "video" && !("videoWidth" in source)
+                ? source.height / sh
+                : 1;
           const x = M.clamp(tr.cropX, 0, sw - 1),
             y = M.clamp(tr.cropY, 0, sh - 1);
           ctx.drawImage(
             source,
-            x,
-            y,
-            M.clamp(tr.cropWidth, 1, sw - x),
-            M.clamp(tr.cropHeight, 1, sh - y),
+            x * sx,
+            y * sy,
+            M.clamp(tr.cropWidth, 1, sw - x) * sx,
+            M.clamp(tr.cropHeight, 1, sh - y) * sy,
             -tr.width / 2,
             -tr.height / 2,
             tr.width,

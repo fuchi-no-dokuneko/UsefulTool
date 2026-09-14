@@ -1,6 +1,6 @@
 # Timeline Video Studio implementation contract
 
-The supplied September 13, 2026 specification and the user's appended answers govern this work. Changes are confined to the video editor, its tests, documentation, and its generated offline page. Other tools and pre-existing working-tree changes are outside this task.
+The supplied September 13, 2026 specification, appended answers and September 14 follow-up UAT govern this work. The latest UAT supersedes earlier answers where they conflict: imported picture/sound edits start linked, and at most three audio sources may play simultaneously. Changes are confined to the video editor, its tests, documentation, delivery configuration and generated offline page. Other tools and pre-existing working-tree changes are outside this task.
 
 ## Accepted clarifications
 
@@ -8,7 +8,7 @@ The supplied September 13, 2026 specification and the user's appended answers go
 - Project JSON save/open/copy and 500 ms autosave remain. Reloading a tab must restore both edits and imported media. Browser restart recovery is not required. IndexedDB media are scoped by a tab session key; missing media can be relinked.
 - Main video, Overlay 1, and Overlay 2 are the three video tracks. Ordinary overlaps do not create transitions. Default overlap contributions are equal and normalized. Users can change visibility and add interpolation points. Named Groovy presets retain their specified explicit alpha values.
 - Transitions are created explicitly (including a user-requested AutoMovie). A main-track transition can decode a fourth video while both overlays are active.
-- Audio concurrency has no artificial three-item cap. Each imported video creates a separate audio item with source/group identity. Picture and sound can be edited independently, including different speeds. Optional linked editing is available. Sound that ends early leaves silence unless Repeat is enabled.
+- All simultaneous original sounds and music count toward one three-source limit. Conflicting placements remain editable, with a visible explanation and mute/move/trim correction actions; preview and export require the conflict to be resolved. Each imported video creates a separate, initially linked audio item with shared `linkId`, source range, timing and speed. Explicit unlinking permits independent picture/sound edits and speeds. Sound that ends early leaves silence unless Repeat is enabled.
 - Blur has a directly editable rectangular region in the preview, plus time and layer targets.
 - React is not required. Keep a static browser application suitable for Cloudflare hosting and the self-contained offline page.
 - Main-track images last 5 seconds; image overlays last 3 seconds. Image-only movies can enter Arrange.
@@ -23,7 +23,13 @@ The supplied September 13, 2026 specification and the user's appended answers go
 
 Each substantial validated batch is committed using explicitly scoped paths.
 
-## Implemented and checked
+## Follow-up UAT contract
+
+Export advances through project time in fixed `1 / fps` steps, waits for complete decoded source frames, invokes the shared compositor, and submits every output frame with an explicit timestamp. WebCodecs encoding uses backpressure and quality latency mode; it cannot silently drop frames to keep up with wall time. Stereo audio uses the shared source mapping, gain and limiter rules, with offline pitch-preserving speed processing. Codec support is probed before offering a format.
+
+The release command exercises thirteen local assets and an actual 113.3-second Standard 1080p export, then verifies all 3,399 frames with FFprobe and decoded pixels/audio with FFmpeg. It also tests linked batch edits, independent Undo boundaries, audio-limit correction, scrolled pointer targets, immediate Play after Seek, complete recovery and the downloaded file. Current evidence and status live in [the release gate](video-studio-release-gate.md).
+
+## Initial implementation evidence — September 13
 
 - Batch 1: unified project model, source identity, editing operations, 80-step history, session IndexedDB media cache, save/open and relinking. Commit `a78350b`.
 - Batches 2–3: four-step interface, contextual controls, shared help registry, layered timeline and preview manipulation, frame compositor, stereo bus and limiter, titles, credits, music, images, transitions, effects, AutoMovie, interpolation curves, playback speed and real-time full/segmented export. Commit `aaf54c7`.

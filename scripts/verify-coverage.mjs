@@ -5,10 +5,15 @@ import path from "node:path";
 
 const root = process.cwd();
 const threshold = Number(process.env.COVERAGE_THRESHOLD || "95");
-const reportPath = path.join(root, "build", "reports", "browser-uat", "coverage.json");
+const reportDirectory = process.env.UAT_REPORT_DIRECTORY
+  ? path.resolve(root, process.env.UAT_REPORT_DIRECTORY)
+  : path.join(root, "build", "reports", "browser-uat");
+const reportPath = path.join(reportDirectory, "coverage.json");
 const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
 const maintained = ["toolkit.js", ...fs.readdirSync(path.join(root, "assets", "pages"), { recursive: true })
-  .filter((name) => name.endsWith(".js"))
+  // Match the collector's existing vendor exclusion. Bundled third-party
+  // libraries are verified by the media acceptance tests, not maintained-source coverage.
+  .filter((name) => name.endsWith(".js") && !name.split(path.sep).includes("vendor"))
   .sort()
   .map((name) => `assets/pages/${name}`)];
 const measured = new Map(report.files.map((item) => [item.file, item]));
@@ -32,7 +37,7 @@ const gate = {
   failures
 };
 fs.writeFileSync(
-  path.join(root, "build", "reports", "browser-uat", "coverage-gate.json"),
+  path.join(reportDirectory, "coverage-gate.json"),
   JSON.stringify(gate, null, 2) + "\n"
 );
 

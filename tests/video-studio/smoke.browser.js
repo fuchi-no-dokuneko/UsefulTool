@@ -102,6 +102,7 @@ window.runVideoStudioSuites = async function (check, waitUntil) {
     "advanced",
     "controls",
     "gestures",
+    "regressions",
   ]) {
     sessionStorage.removeItem("utvstudio-session");
     const frame = document.createElement("iframe");

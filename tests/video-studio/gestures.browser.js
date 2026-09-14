@@ -92,6 +92,7 @@
           i.linkedGroupId === M.item(api.project, id).linkedGroupId,
       ),
       soundTime = originalSound.start;
+    M.setLink(api.project, id, false);
     dragTo(id, "overlay-1", 30);
     check(
       "vertical pointer drag moves a picture from Main video to Overlay 1",

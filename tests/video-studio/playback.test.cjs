@@ -185,6 +185,34 @@ test("a slow incoming decoder cannot freeze the main playhead or existing sound"
   assert.equal(await playing, false);
 });
 
+test("correcting an audio clock does not pause or restart the audible stream", async () => {
+  const h = harness((item, now) =>
+    item.kind === "audio" && now >= 3000 ? 120 : 0,
+  );
+  const playing = h.engine.play();
+  await h.drain();
+  await h.advance(3000);
+  const item = h.project.items.find((item) => item.kind === "audio"),
+    sound = h.elements.get(item.id),
+    starts = () =>
+      h.calls.filter((call) => call.kind === "play" && call.item === item.id)
+        .length;
+  sound.currentTime -= 0.6;
+  const before = starts();
+  await h.advance(220);
+  assert.equal(
+    sound.paused,
+    false,
+    "a pending correction must not silence playback",
+  );
+  await h.advance(1000);
+  assert.equal(sound.paused, false);
+  assert.equal(starts(), before, "correction uses the existing playing stream");
+  assert.ok(Math.abs(sound.currentTime - h.engine.currentTime) < 0.1);
+  h.engine.stop();
+  await playing;
+});
+
 test("pause cancels pending preparation and cannot be undone by a late decoder", async () => {
   const h = harness((item) => (item.layerId === "overlay-1" ? 5000 : 0));
   M.addMedia(h.project, "source", {

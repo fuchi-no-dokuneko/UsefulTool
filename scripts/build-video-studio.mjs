@@ -75,6 +75,7 @@ await fs.mkdir(path.join(output, "offline"), { recursive: true });
 await fs.writeFile(path.join(output, "video-editor.html"), source);
 await fs.writeFile(path.join(output, "index.html"), source);
 await fs.writeFile(path.join(output, "offline/video-editor.html"), offline);
+await fs.rm(path.join(output, "assets"), { recursive: true, force: true });
 for (const ref of references) {
   await fs.mkdir(path.dirname(path.join(output, ref)), { recursive: true });
   await fs.copyFile(path.join(root, ref), path.join(output, ref));

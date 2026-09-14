@@ -18,11 +18,13 @@ test('import order and separate original sound form a playable 36-second movie',
   assert.equal(a.length, 3);
   assert.equal(p.duration, 36);
   assert.equal(a[0].linkedGroupId, M.mainItems(p)[0].linkedGroupId);
-  assert.equal(a[0].linkEnabled, false);
+  assert.equal(a[0].linkEnabled, true);
+  assert.equal(a[0].linkId, M.mainItems(p)[0].linkId);
   assert.equal(M.evaluateFrame(p, 15).items[0].sourceTime, 3);
 });
 test('sound can run at 2x while picture stays at 1x, then leave silence or repeat', () => {
   const p = movie(1), v = M.mainItems(p)[0], a = p.items.find(i => i.kind === 'audio');
+  M.setLink(p, a.id, false);
   M.setSpeed(p, a.id, 2);
   assert.equal(v.end, 12); assert.equal(a.end, 6);
   assert.equal(M.evaluateAudio(p, 7).length, 0);
@@ -32,7 +34,7 @@ test('sound can run at 2x while picture stays at 1x, then leave silence or repea
   const dupe = M.duplicateItem(p, a.id);
   assert.equal(dupe.start, 12); assert.equal(v.end, 12);
 });
-test('linked editing is explicit and keeps source cuts and speed together', () => {
+test('linked editing starts enabled and keeps source cuts and speed together', () => {
   const p = movie(1), v = M.mainItems(p)[0], a = p.items.find(i => i.kind === 'audio');
   M.setLink(p, v.id, true); M.setSpeed(p, v.id, 2);
   assert.equal(a.end, 6); assert.equal(a.playbackRate, 2);
@@ -45,6 +47,7 @@ test('linked editing is explicit and keeps source cuts and speed together', () =
 });
 test('loop split preserves the original loop region and phase after the cut', () => {
   const p = movie(1), a = p.items.find(i => i.kind === 'audio');
+  M.setLink(p, a.id, false);
   M.setSpeed(p, a.id, 2); M.setRepeat(p, a.id, true);
   const before = M.sourceTimeAt(a, 7.5);
   const right = M.splitItem(p, a.id, 4);
@@ -86,15 +89,51 @@ test('transitions clamp to usable adjacent frames and prevent triple main inters
   M.removeTransition(p, M.mainItems(p)[1].id);
   assert.deepEqual(M.mainItems(p).map(i => i.start), [0,2,4]);
 });
-test('mixing has no three-audio cap and video opacity never changes sound gain', () => {
+test('the shared audio limit detects overlap and caps the stereo plan at three sources', () => {
   const p = movie(1), source = media(p, 'audio', 12, 'music.mp3');
   for (let i = 0; i < 5; i++) M.addMedia(p, source.id, {start: 0});
   M.mainItems(p)[0].opacity = .1;
-  assert.equal(M.evaluateAudio(p, 2).length, 6);
+  assert.equal(M.audioConflicts(p)[0].items.length, 6);
+  assert.equal(M.evaluateAudio(p, 2).length, 3);
   assert.ok(M.evaluateAudio(p, 2).every(a => a.left === 1));
   M.layer(p, 'music').solo = true;
-  assert.equal(M.evaluateAudio(p, 2).length, 5);
+  assert.equal(M.evaluateAudio(p, 2).length, 3);
   p.soundBalance.music = .5; assert.equal(M.evaluateAudio(p, 2)[0].right, .5);
+});
+test('audio limit uses half-open time ranges and respects muted hidden and solo tracks', () => {
+  const p = movie(1), source = media(p, 'audio', 4, 'boundary.mp3');
+  const a = M.addMedia(p, source.id, {start: 0});
+  const b = M.addMedia(p, source.id, {start: 0});
+  const c = M.addMedia(p, source.id, {start: 4});
+  assert.equal(M.audioConflicts(p).length, 0);
+  M.moveItem(p, c.id, 3);
+  assert.deepEqual(M.audioConflicts(p).map(c => [c.start, c.end]), [[3, 4]]);
+  c.audio.muted = true;
+  assert.equal(M.audioConflicts(p).length, 0);
+  c.audio.muted = false;
+  M.layer(p, 'music').visible = false;
+  assert.equal(M.audioConflicts(p).length, 0);
+  M.layer(p, 'music').visible = true;
+  M.layer(p, 'music').solo = true;
+  assert.equal(M.evaluateAudio(p, 3.5).length, 3);
+  assert.equal(M.audioConflicts(p).length, 0);
+  assert.ok([a, b, c].every(i => M.evaluateAudio(p, 3.5).some(e => e.item.id === i.id)));
+});
+test('automatic audio correction preserves locked clips and never deletes source items', () => {
+  const p = movie(1), source = media(p, 'audio', 12, 'locked.mp3');
+  for (let i = 0; i < 3; i++) M.addMedia(p, source.id, {start: 0});
+  const sounds = M.visibleItems(p, 1, true), last = sounds.at(-1), length = p.items.length;
+  last.locked = true;
+  const muted = M.fixAudioConflicts(p);
+  assert.equal(muted.length, 1);
+  assert.notEqual(muted[0], last.id);
+  assert.equal(last.audio.muted, false);
+  assert.equal(p.items.length, length);
+  assert.equal(M.audioConflicts(p).length, 0);
+  for (const sound of sounds) { sound.audio.muted = false; sound.locked = true; }
+  const before = M.serialize(p);
+  assert.throws(() => M.fixAudioConflicts(p), /Unlock or move/);
+  assert.equal(M.serialize(p), before);
 });
 test('whole movie music repeats at its own rate and fades during the final second', () => {
   const p = movie(1), sound = M.addMedia(p, media(p, 'audio', 3, 'short.mp3').id);

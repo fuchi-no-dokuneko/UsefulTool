@@ -24,7 +24,7 @@ Timing results are recorded in `build/reports/video-studio/long-playback.json`, 
 
 Each observation schedules its next sample one second later. The earlier absolute catch-up schedule produced a false failure after a delayed timer: 0.878 seconds of media progress over only 0.879 real seconds. That report is retained locally as `long-playback-sampling-catchup.json`. The corrected sampler records actual elapsed intervals and keeps the original 0.9–1.1-second progress and 100ms drift/synchronization limits.
 
-## Verified results
+## Verified results for the previous eae1f1f release
 
 Desktop Chromium 152 passed all **22 long-playback checks** on the final code. Values below come from the retained report; elapsed time includes ordinary timer scheduling variation.
 
@@ -47,6 +47,24 @@ The Node checks passed **27/27**, including six targeted playback regressions; h
 | Pause below 100ms | Measured through the actual control, then verifies fixed time and paused decoders |
 | Audio, video and playhead stay aligned | Every sample checks source clocks and presented video-frame timestamps within 100ms |
 | Overlays, blur, credits and repeating music | Active in the mixed project; music output must remain audible after every repeat |
+
+## September 14 follow-up
+
+Repeated long previews exposed synchronous video-to-canvas read stalls. Preview now snapshots decoded frames and converts them asynchronously to reusable bitmaps. Uncropped intermediates follow the displayed preview size, within its existing 960px cap. Crops retain original pixels, and the compositor maps coordinates correctly for resized sources. When conversion is delayed, the compositor can draw the decoder's current frame. New seeks supersede old conversions, cancellation releases the caller, and project disposal closes frame resources. Export uses its own full-resolution decoded sources and the shared compositor.
+
+Frame timing uses the decoded frame's presentation timestamp, as specified by the [VideoFrame constructor](https://www.w3.org/TR/webcodecs/#dom-videoframe-videoframe). Tests record the timestamp of the pixels actually drawn, including the current-frame fallback. Audio clock correction seeks within the existing playing stream without adding a pause/restart gap to a delayed repeat.
+
+The sampler retains raw media and wall-clock deltas and computes their ratio. A delayed timer previously classified 1.1057 media seconds over 1.1357 real seconds as excessive speed, although the actual rate was 0.9736×. The threshold remains 0.9–1.1× for every observation. A new check rejects synchronous composition lasting 100ms. Source-clock comparisons exclude a repeating audio element's metadata-only timestamp while it is seeking; the separate analyser still requires audible music at every observation. Drift, valid source positions and drawn-frame positions retain their 100ms limits.
+
+All **25 long-preview checks** pass. The final report records:
+
+| Scenario | Rate range | Drift | Start / pause | Max source / drawn-frame error | Max composition |
+| --- | --- | --- | --- | --- | --- |
+| main video from 12s, 60s run | 0.9832–1.0108× | -18.5ms | 26.0 / 1.4ms | 26.5 / 66.5ms | 8.5ms |
+| layered movie from 12s, 60s run | 0.9484–1.0527× | -8.7ms | 38.1 / 7.7ms | 71.5 / 96.4ms | 32.5ms |
+| layered movie from 45s, 45s run | 0.9689–1.0349× | -8.5ms | 41.2 / 1.4ms | 47.0 / 67.2ms | 19.1ms |
+
+The follow-up adds eight frame-resource regressions and an audio-correction regression. The combined model, playback, frame-resource and static suite passes **38/38**. Earlier failed diagnostic runs are retained locally and are not counted as passing evidence.
 
 ## Commands
 
