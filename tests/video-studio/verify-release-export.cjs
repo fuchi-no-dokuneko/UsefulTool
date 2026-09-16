@@ -28,21 +28,21 @@ const metadata = probe([
 const video = metadata.streams.find((s) => s.codec_type === "video"),
   audio = metadata.streams.find((s) => s.codec_type === "audio");
 check(
-  "FFprobe independently counts exactly 3399 VP9 frames at 1920x1080 and 30fps",
+  "FFprobe independently counts exactly 3150 VP9 frames at 1920x1080 and 30fps",
   video?.codec_name === "vp9" &&
     video.width === 1920 &&
     video.height === 1080 &&
-    video.nb_read_frames === "3399" &&
+    video.nb_read_frames === "3150" &&
     video.r_frame_rate === "30/1" &&
     video.avg_frame_rate === "30/1",
   video,
 );
 check(
-  "Opus output contains two 48kHz channels and synchronized 113.3-second duration",
+  "Opus output contains two 48kHz channels and synchronized 105-second duration",
   audio?.codec_name === "opus" &&
     audio.channels === 2 &&
     audio.sample_rate === "48000" &&
-    Math.abs(Number(metadata.format.duration) - 113.3) < 1 / 30,
+    Math.abs(Number(metadata.format.duration) - 105) < 1 / 30,
   metadata.format,
 );
 const frames = probe([
@@ -54,10 +54,22 @@ const frames = probe([
 ]).frames;
 const times = frames.map((f) => Number(f.best_effort_timestamp_time)),
   intervals = times.slice(1).map((t, i) => t - times[i]);
+const audioFrames = probe([
+  "-select_streams", "a:0", "-show_frames", "-show_entries",
+  "frame=best_effort_timestamp_time,pkt_duration_time,nb_samples",
+]).frames;
+const videoEnd = times.at(-1) + Number(frames.at(-1).pkt_duration_time || 1 / 30),
+  audioLast = audioFrames.at(-1),
+  audioEnd = Number(audioLast.best_effort_timestamp_time) + Number(audioLast.nb_samples) / 48000;
+check(
+  "independently decoded audio and video end within one 30fps frame",
+  Math.abs(audioEnd - videoEnd) <= 1 / 30 && Math.abs(audioEnd - 105) <= 1 / 30,
+  { videoEnd, audioEnd, differenceMs: Math.abs(audioEnd - videoEnd) * 1000 },
+);
 const maxClockError = Math.max(...times.map((t, i) => Math.abs(t - i / 30)));
 check(
   "every encoded frame is on the fixed 1/30-second project clock",
-  times.length === 3399 &&
+  times.length === 3150 &&
     maxClockError < 0.0011 &&
     intervals.every((t) => t >= 0.032 && t <= 0.035),
   {
@@ -204,7 +216,7 @@ const power = (seconds, hz, channel = 0) => {
   }
   return (re * re + im * im) / (count * count);
 };
-const tones = [104, 107, 110, 112].map((time) => ({
+const tones = [102, 103, 104, 104.5].map((time) => ({
   time,
   left: power(time, 660),
   right: power(time, 660, 1),

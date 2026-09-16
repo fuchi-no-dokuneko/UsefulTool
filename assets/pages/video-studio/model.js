@@ -2,6 +2,8 @@
 (function (root) {
   "use strict";
   const MIN = 0.01;
+  const SCHEMA_VERSION = 2;
+  const TIMELINE_KEYS = ["items", "layers", "mainOrder", "transitions", "playhead", "selectedItemId", "soundBalance", "workflow"];
   const MAX_PIXELS = 33177600;
   const VIDEO_LAYERS = ["main", "overlay-1", "overlay-2"];
   const KINDS = ["video", "audio", "image", "text", "filter", "credits"];
@@ -26,7 +28,7 @@
 
   function createProject() {
     const now = Date.now();
-    return { schemaVersion: 1, id: id("project"), name: "Untitled movie", createdAt: now, updatedAt: now,
+    return { schemaVersion: SCHEMA_VERSION, id: id("project"), name: "Untitled movie", createdAt: now, updatedAt: now,
       assets: [], items: [], mainOrder: [], transitions: [], playhead: 0, duration: 0,
       canvas: { width: 1280, height: 720, background: "#000000" },
       layers: [makeLayer("main", "main-video", "Main video", 0), makeLayer("overlay-1", "overlay", "Overlay 1", 10),
@@ -54,6 +56,12 @@
     return Math.max(0, ...project.items.filter((i) => i.kind !== "audio" && i.kind !== "filter").map((i) => i.end));
   }
   function normalize(project) {
+    // A verified video-only source must never contribute an original sound.
+    const silent = new Set(project.assets.filter(a => a.kind === "video" && a.hasAudio === false).map(a => a.id));
+    project.items = project.items.filter(i => i.kind !== "audio" || !silent.has(i.assetId));
+    for (const value of project.items) if (value.kind === "video" && silent.has(value.assetId)) {
+      delete value.linkId; delete value.linkedGroupId; value.linkEnabled = false;
+    }
     project.mainOrder = project.mainOrder.filter((key) => project.items.some((i) => i.id === key && i.layerId === "main"));
     project.transitions = project.transitions.filter((tr) => {
       const index = project.mainOrder.indexOf(tr.toId);
@@ -107,7 +115,7 @@
   }
   function addAsset(project, descriptor) {
     const existing = project.assets.find((a) => a.name === descriptor.name && a.size === descriptor.size && a.contentHash === descriptor.contentHash);
-    if (existing) return existing;
+    if (existing) { if (descriptor.hasAudio !== undefined) existing.hasAudio = descriptor.hasAudio; return existing; }
     const entry = { ...copy(descriptor), id: descriptor.id || id("asset") };
     delete entry.objectUrl;
     project.assets.push(entry);
@@ -136,7 +144,7 @@
     else value.transform = transform(project, source.width, source.height);
     project.items.push(value);
     if (target === "main") project.mainOrder.splice(options.index ?? project.mainOrder.length, 0, value.id);
-    if (kind === "video") {
+    if (kind === "video" && source.hasAudio === true) {
       value.linkId = value.linkedGroupId = id("link");
       value.linkEnabled = true;
       const sound = baseItem("audio", "video-sound", start, duration);
@@ -178,7 +186,38 @@
   function setLink(project, itemId, enabled) {
     const value = item(project, itemId);
     if (!value?.linkedGroupId) return;
-    for (const sibling of project.items.filter((i) => i.linkedGroupId === value.linkedGroupId)) sibling.linkEnabled = Boolean(enabled);
+    for (const sibling of project.items.filter((i) => i.linkedGroupId === value.linkedGroupId)) {
+      sibling.linkEnabled = Boolean(enabled);
+      sibling.linkIntent = enabled ? "linked" : "unlinked";
+    }
+  }
+  function legacyLinkCandidates(project) {
+    return project.items.filter(video => {
+      if (video.kind !== "video" || video.linkEnabled !== false || !video.linkedGroupId || video.linkIntent === "unlinked" || asset(project, video.assetId)?.hasAudio === false) return false;
+      const pair = project.items.filter(i => i.linkedGroupId === video.linkedGroupId);
+      const sound = pair.find(i => i.kind === "audio" && i.audio?.category === "video");
+      return pair.length === 2 && sound && sound.linkEnabled === false && sound.linkIntent !== "unlinked" && sound.assetId === video.assetId &&
+        !sound.audio.loop && !sound.audio.wholeMovie && !sound.audio.offset &&
+        ["start", "end", "sourceIn", "sourceOut", "playbackRate"].every(key => Math.abs(sound[key] - video[key]) < 1e-6);
+    });
+  }
+  function migrateProject(project) {
+    if (project.schemaVersion === 1) {
+      const candidates = legacyLinkCandidates(project).map(i => i.id);
+      project.linkRepair = { status: candidates.length ? "pending" : "resolved", candidateIds: candidates };
+      project.schemaVersion = SCHEMA_VERSION;
+    }
+    return project;
+  }
+  function timelineCheckpoint(project) {
+    return copy(Object.fromEntries(TIMELINE_KEYS.map(key => [key, project[key] ?? null])));
+  }
+  function restoreTimeline(project) {
+    if (!project.previousTimeline) return false;
+    Object.assign(project, copy(project.previousTimeline));
+    delete project.previousTimeline;
+    normalize(project);
+    return true;
   }
   function moveItem(project, itemId, start, layerId) {
     const value = item(project, itemId);
@@ -494,11 +533,11 @@
     value.assets = value.assets.map(({ objectUrl, fileHandleKey, ...rest }) => rest);
     return JSON.stringify(value, null, 2);
   }
-  function parseProject(text) {
+  function parseProject(text, checkpoint = false) {
     if (text.length > 32 * 1024 * 1024) throw new Error("This project file is too large.");
     let value;
     try { value = JSON.parse(text); } catch { throw new Error("This is not a valid .utvproj JSON file."); }
-    if (value?.schemaVersion !== 1) throw new Error("This project version is not supported.");
+    if (![1, SCHEMA_VERSION].includes(value?.schemaVersion)) throw new Error("This project version is not supported.");
     const numeric = (v, min = -Infinity, max = Infinity) => Number.isFinite(v) && v >= min && v <= max;
     const string = (v, max = 12000) => typeof v === "string" && v.length <= max;
     const fail = (ok, message) => { if (!ok) throw new Error(message); };
@@ -510,6 +549,7 @@
     for (const entry of value.assets) if (!["video", "audio", "image"].includes(entry.kind) || typeof entry.contentHash !== "string" || typeof entry.name !== "string" || !(entry.size >= 0)) throw new Error("Invalid media description.");
     for (const a of value.assets) {
       fail(numeric(a.size, 0) && string(a.name, 1000), "Invalid media description.");
+      if (a.hasAudio !== undefined) fail(typeof a.hasAudio === "boolean", "Invalid audio track metadata.");
       if (a.kind !== "image") fail(numeric(a.duration, MIN), "Invalid source duration.");
       if (a.kind !== "audio") fail(numeric(a.width, 1) && numeric(a.height, 1), "Invalid source dimensions.");
       if (a.thumbnail !== undefined) fail(string(a.thumbnail, 2 * 1024 * 1024) && /^data:image\/(png|jpeg|webp|gif|bmp);base64,[a-z0-9+/=\s]+$/i.test(a.thumbnail), "Invalid embedded thumbnail.");
@@ -558,7 +598,14 @@
       const i = value.mainOrder.indexOf(tr.toId);
       return i > 0 && value.mainOrder[i - 1] === tr.fromId && TRANSITIONS.includes(tr.type) && numeric(tr.duration, .1, 5) && ["left", "right", "up", "down"].includes(tr.direction) && ["linear", "smooth", "ease-in", "ease-out", "hold"].includes(tr.easing);
     }), "Invalid transition data.");
-    return normalize(value);
+    if (value.linkRepair !== undefined) fail(value.linkRepair && ["pending", "resolved"].includes(value.linkRepair.status) && Array.isArray(value.linkRepair.candidateIds) && value.linkRepair.candidateIds.every(key => string(key, 200)), "Invalid link migration state.");
+    if (value.previousTimeline !== undefined) {
+      fail(!checkpoint && value.previousTimeline && typeof value.previousTimeline === "object" && TIMELINE_KEYS.every(key => key in value.previousTimeline), "Invalid previous timeline checkpoint.");
+      const previous = { ...value, ...Object.fromEntries(TIMELINE_KEYS.map(key => [key, value.previousTimeline[key]])) };
+      delete previous.previousTimeline;
+      value.previousTimeline = timelineCheckpoint(parseProject(JSON.stringify(previous), true));
+    }
+    return migrateProject(normalize(value));
   }
   class History {
     constructor(project) { this.entries = [serialize(project)]; this.index = 0; }
@@ -575,11 +622,12 @@
     get canUndo() { return this.index > 0; }
     get canRedo() { return this.index < this.entries.length - 1; }
   }
-  const api = { MIN, MAX_PIXELS, VIDEO_LAYERS, KINDS, EFFECTS, BLURS, TRANSITIONS, id, copy, clamp, finite, rounded, active, span, sourceSpan,
+  const api = { MIN, SCHEMA_VERSION, MAX_PIXELS, VIDEO_LAYERS, KINDS, EFFECTS, BLURS, TRANSITIONS, id, copy, clamp, finite, rounded, active, span, sourceSpan,
     layer, asset, item, isLocked, mainItems, createProject, transform, baseItem, audioProps, normalize, reflow, addAsset, addMedia, addLayerItem,
     related, setLink, moveItem, reorderMain, trimItem, setSpeed, splitItem, duplicateItem, deleteItem, transitionMaximum, setTransition, removeTransition,
     ease, curveAt, setKey, fadeAt, sourceTimeAt, setRepeat, snapTime, visibleItems, videoConflicts, MAX_AUDIO_SOURCES, audioConflicts, fixAudioConflicts, audioGains, evaluateFrame, evaluateAudio, applyOverlayPreset, addEffect,
-    creditsHeight, updateCreditsDuration, fitTransform, segmentRanges, formatTime, exportDimensions, serialize, parseProject, History, visualEnd };
+    creditsHeight, updateCreditsDuration, fitTransform, segmentRanges, formatTime, exportDimensions, serialize, parseProject, History, visualEnd,
+    legacyLinkCandidates, migrateProject, timelineCheckpoint, restoreTimeline };
   root.UTStudio = Object.assign(root.UTStudio || {}, { Model: api });
   if (typeof module !== "undefined") module.exports = api;
 })(globalThis);

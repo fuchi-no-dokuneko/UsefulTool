@@ -34,26 +34,48 @@
     },
   };
   async function generate(original, library, options, onProgress = () => {}) {
+    const signal = options.signal;
+    signal?.throwIfAborted();
     const style = styles[options.template] || styles.family;
     const assets = options.assetIds
       .map((key) => M.asset(original, key))
-      .filter((a) => a && a.kind !== "audio");
+      .filter((a) => a && a.kind !== "audio")
+      .map((a) => M.copy(a));
     if (!assets.length) throw new Error("Choose at least one video or image.");
-    for (let i = 0; i < assets.length; i++)
-      if (assets[i].kind === "video")
-        await library.analyze(assets[i], (fraction) =>
+    const analysisAssets =
+      options.length === "full" && !["fast", "calm"].includes(options.template)
+        ? []
+        : assets.filter((a) => a.kind === "video" && !a.analysis);
+    for (let i = 0; i < analysisAssets.length; i++) {
+      signal?.throwIfAborted();
+      await library.analyze(
+        analysisAssets[i],
+        (fraction) =>
           onProgress({
-            name: assets[i].name,
-            percent: (i + fraction) / assets.length,
+            name: analysisAssets[i].name,
+            percent: (i + fraction) / analysisAssets.length,
           }),
-        );
+        signal,
+      );
+    }
+    signal?.throwIfAborted();
     const p = M.createProject();
     p.id = original.id;
     p.name = original.name;
     p.createdAt = original.createdAt;
     p.canvas = M.copy(original.canvas);
     p.assets = M.copy(original.assets);
+    // Keep completed analysis for subsequent drafts without touching the input
+    // project when generation is cancelled or fails.
+    for (const source of analysisAssets)
+      if (source.analysis)
+        M.asset(p, source.id).analysis = M.copy(source.analysis);
     p.exportSettings = M.copy(original.exportSettings);
+    if (original.linkRepair) p.linkRepair = M.copy(original.linkRepair);
+    if (original.items.length)
+      p.previousTimeline = M.timelineCheckpoint(original);
+    else if (original.previousTimeline)
+      p.previousTimeline = M.copy(original.previousTimeline);
     const score = (a) => a.analysis?.cuts[0]?.change || 0;
     if (options.template === "fast") assets.sort((a, b) => score(b) - score(a));
     if (options.template === "calm") assets.sort((a, b) => score(a) - score(b));
@@ -68,6 +90,7 @@
     let remaining = target,
       index = 0;
     while (remaining >= M.MIN && index < assets.length * 10) {
+      signal?.throwIfAborted();
       const source = assets[index % assets.length];
       if (index >= assets.length && options.length === "full") break;
       const length =
@@ -84,6 +107,9 @@
             );
       if (length < M.MIN) break;
       const value = M.addMedia(p, source.id, { duration: length });
+      // addMedia fits the first clip's canvas; drafts retain project settings.
+      p.canvas = M.copy(original.canvas);
+      M.fitTransform(p, value, "fit");
       if (source.kind === "video" && options.length !== "full") {
         const candidate = source.analysis?.cuts.find(
           (c) => c.time + length <= source.duration,
@@ -102,8 +128,10 @@
         const sound = p.items.find(
           (i) => i.kind === "audio" && i.linkedGroupId === value.linkedGroupId,
         );
-        sound.sourceIn = value.sourceIn;
-        sound.sourceOut = value.sourceOut;
+        if (sound) {
+          sound.sourceIn = value.sourceIn;
+          sound.sourceOut = value.sourceOut;
+        }
       }
       M.setLink(p, value.id, true);
       if (index > 0 && M.transitionMaximum(p, value.id) >= 0.1)
@@ -132,6 +160,8 @@
     p.workflow = "arrange";
     p.playhead = 0;
     M.normalize(p);
+    signal?.throwIfAborted();
+    onProgress({ name: "Draft ready", percent: 1 });
     return p;
   }
   root.UTStudio.AutoMovie = { styles, generate };

@@ -65,13 +65,15 @@
       return missing;
     }
     async clear() {
-      clearTimeout(this.timer); this.latest = null; await this.queue.catch(() => {});
-      await this.transact("projects", "readwrite", (store) => store.delete(this.key));
+      clearTimeout(this.timer); await this.queue.catch(() => {});
       const db = await this.open();
       await new Promise((resolve, reject) => {
-        const tx = db.transaction("files", "readwrite"), range = IDBKeyRange.bound(this.key + ":", this.key + ":\uffff");
-        tx.objectStore("files").delete(range); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
+        const tx = db.transaction(["projects", "files"], "readwrite"), range = IDBKeyRange.bound(this.key + ":", this.key + ":\uffff");
+        tx.objectStore("projects").delete(this.key);
+        tx.objectStore("files").delete(range); tx.oncomplete = resolve;
+        tx.onerror = tx.onabort = () => reject(tx.error || new Error("Could not clear this session. Your current project is still available."));
       });
+      this.latest = null;
     }
   }
   root.UTStudio.SessionStore = SessionStore;

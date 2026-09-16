@@ -276,8 +276,8 @@
       type: "crossfade",
       duration: 0.5,
     });
-    M.addMedia(project, asset("picture.jpg").id, { duration: 5 });
-    M.addMedia(project, asset("picture.webp").id, { duration: 6.8 });
+    M.addMedia(project, asset("picture.jpg").id, { duration: 1.7 });
+    M.addMedia(project, asset("picture.webp").id, { duration: 1.8 });
     const overlays = [
       M.addMedia(project, asset("timecode-90s.mp4").id, {
         layerId: "overlay-1",
@@ -308,7 +308,7 @@
     blur.filter.amount = 12;
     const credits = M.addLayerItem(project, "credits", {
       start: 100,
-      duration: 13.3,
+      duration: 5,
     });
     credits.credits.background = "transparent";
     M.addEffect(M.mainItems(project)[3], "contrast");
@@ -533,8 +533,8 @@
         .every((v) => synced(v, paired(api.project, v))),
     );
     check(
-      "release project has the required 113.3-second mixed composition",
-      Math.abs(api.project.duration - 113.3) < 1e-6 &&
+      "release project has the required 105-second mixed composition",
+      Math.abs(api.project.duration - 105) < 1e-6 &&
         api.project.items.some((i) => i.kind === "text") &&
         api.project.items.some((i) => i.kind === "filter") &&
         api.project.items.some((i) => i.kind === "credits"),
@@ -560,9 +560,9 @@
     api.project.exportSettings.bitrate = 6;
     api.project.exportSettings.format = "video/webm;codecs=vp9,opus";
     api.setStep("export");
-    window.TEST_PROGRESS.current = "Exporting Standard 1080p, 3,399 frames";
+    window.TEST_PROGRESS.current = "Exporting Standard 1080p, 3,150 frames";
     const references = [],
-      referenceFrames = new Set([0, 113, 600, 870, 1650, 2550, 3060, 3360]);
+      referenceFrames = new Set([0, 113, 600, 870, 1650, 2550, 3060, 3120]);
     const originalRender = w.UTStudio.Renderer.prototype.render;
     w.UTStudio.Renderer.prototype.render = function (project, time, canvas) {
       const plan = originalRender.call(this, project, time, canvas),
@@ -596,9 +596,9 @@
       );
     metrics.exportSeconds = (performance.now() - began) / 1000;
     check(
-      "Standard export encodes all 3,399 frames and exact stereo sample count",
-      output.frameCount === 3399 &&
-        output.audioSamples === 5438400 &&
+      "Standard export encodes all 3,150 frames and exact stereo sample count",
+      output.frameCount === 3150 &&
+        output.audioSamples === 5040000 &&
         output.width === 1920 &&
         output.height === 1080,
       {

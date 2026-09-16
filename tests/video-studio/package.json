@@ -4,8 +4,9 @@
   "private": true,
   "scripts": {
     "test": "node --test model.test.cjs playback.test.cjs media-frames.test.cjs static.test.cjs",
-    "test:browser": "node run-browser.cjs core.html && node run-browser.cjs render.html && node run-browser.cjs ui.html && node run-browser.cjs advanced.html && node run-browser.cjs controls.html && node run-browser.cjs gestures.html && node run-browser.cjs regressions.html && node run-browser.cjs touch.html && node run-browser.cjs offline.html",
+    "test:browser": "node run-browser.cjs core.html && node run-browser.cjs render.html && node run-browser.cjs ui.html && node run-browser.cjs advanced.html && node run-browser.cjs controls.html && node run-browser.cjs gestures.html && node run-browser.cjs regressions.html && node run-browser.cjs review.html && node run-browser.cjs touch.html && node run-browser.cjs offline.html",
     "test:long-playback": "node run-browser.cjs long-playback.html",
+    "test:desktop-review": "node run-browser.cjs review.html",
     "test:release": "node run-browser.cjs release.html && node verify-release-export.cjs",
     "check:help": "tsc --noEmit --allowJs --checkJs --target ES2022 --lib ES2022,DOM ../../assets/pages/video-studio/help.js"
   },

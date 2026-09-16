@@ -480,7 +480,7 @@
       copy = JSON.parse(await (await fetch(downloads.at(-1).url)).text());
     check(
       "Save project and Save a copy download versioned JSON with independent copy identity",
-      saved.schemaVersion === 1 &&
+      saved.schemaVersion === M.SCHEMA_VERSION &&
         copy.id !== saved.id &&
         copy.name.endsWith(" copy"),
     );

@@ -328,6 +328,25 @@
         );
       activeRun = null;
     }
+    await api.replaceProject(M.copy(clean));
+    await api.seekTo(0);
+    let fullStarted;
+    const fullSamples = [];
+    const fullCompleted = await api.engine.play({
+      start: 0,
+      end: 90,
+      onReady: () => { fullStarted = performance.now(); },
+      onTick: time => {
+        if (!fullSamples.length || time - fullSamples.at(-1).time >= 1 || time === 90) {
+          fullSamples.push({ time, real: (performance.now() - fullStarted) / 1000 });
+          window.TEST_PROGRESS.current = { name: "Full 90-second preview", time };
+        }
+      },
+    });
+    const fullElapsed = (performance.now() - fullStarted) / 1000;
+    check("the complete 90-second video plays to its natural end with under 100ms drift", fullCompleted && api.project.playhead === 90 && Math.abs(fullElapsed - 90) < .1, { elapsed: fullElapsed, drift: fullElapsed - 90 });
+    const fullDeltas = fullSamples.slice(1).map((s, i) => ({ media: s.time - fullSamples[i].time, real: s.real - fullSamples[i].real }));
+    check("full 90-second preview has no stalled or accelerated one-second intervals", fullDeltas.every(s => s.media / s.real >= .9 && s.media / s.real <= 1.1), fullDeltas);
     await run("main video from 12s", clean, 12, 60);
     const layered = M.copy(clean);
     const first = M.mainItems(layered)[0];

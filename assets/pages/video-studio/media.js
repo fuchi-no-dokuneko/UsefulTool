@@ -145,7 +145,7 @@
           if (!(descriptor.width && descriptor.height)) throw new Error("This file has no readable video frames.");
           descriptor.thumbnail = poster(element, descriptor.width, descriptor.height);
         }
-        Object.assign(descriptor, await waveform(file));
+        if (kind === "audio" || descriptor.hasAudio) Object.assign(descriptor, await waveform(file));
       }
       return descriptor;
     }
@@ -154,6 +154,15 @@
       if (existing) return existing;
       const entry = { file, url: URL.createObjectURL(file) };
       try {
+        if (descriptor.kind === "video") {
+          const C = root.UTVideoCodecs;
+          const input = new C.Input({ formats: C.ALL_FORMATS, source: new C.BlobSource(file) });
+          try {
+            const tracks = await input.getAudioTracks();
+            const metadata = await Promise.all(tracks.map(async track => ({ channels: await track.getNumberOfChannels(), sampleRate: await track.getSampleRate() })));
+            descriptor.hasAudio = metadata.some(track => track.channels > 0 && track.sampleRate > 0);
+          } finally { input.dispose(); }
+        }
         if (descriptor.kind === "image") {
           const image = new Image(); image.src = entry.url; await image.decode(); entry.image = image;
           if (/\.(gif|webp)$/i.test(descriptor.name)) {
@@ -270,16 +279,23 @@
       if (descriptor.size !== file.size || descriptor.name !== file.name || descriptor.contentHash !== await hashFile(file)) throw new Error("This file does not match the saved name, size and content. Choose the original file.");
       await this.attach(descriptor, file); return descriptor;
     }
-    async analyze(descriptor, progress = () => {}) {
+    async analyze(descriptor, progress = () => {}, signal) {
+      signal?.throwIfAborted();
       if (descriptor.analysis) return descriptor.analysis;
       if (descriptor.kind !== "video") return { cuts: [], peaks: [] };
       const entry = this.assets.get(descriptor.id);
       if (!entry) throw new Error("Relink " + descriptor.name + " before making a movie.");
-      const video = entry.probe, c = makeCanvas(48, 27), ctx = c.getContext("2d", { willReadFrequently: true });
+      // A dedicated decoder can be closed immediately without disturbing preview.
+      const video = document.createElement("video"), c = makeCanvas(48, 27), ctx = c.getContext("2d", { willReadFrequently: true });
+      video.preload = "auto"; video.muted = true; video.playsInline = true; video.src = entry.url;
+      const close = () => { video.pause(); video.removeAttribute("src"); video.load(); };
+      signal?.addEventListener("abort", close, { once: true });
+      try {
       const count = Math.max(2, Math.min(60, Math.ceil(descriptor.duration))), cuts = []; let previous = null;
       for (let i = 0; i < count; i++) {
         const time = Math.min(descriptor.duration - .001, i * descriptor.duration / count);
-        await seek(video, time); ctx.drawImage(video, 0, 0, c.width, c.height);
+        signal?.throwIfAborted();
+        await seek(video, time, signal); ctx.drawImage(video, 0, 0, c.width, c.height);
         const pixels = ctx.getImageData(0, 0, c.width, c.height).data;
         if (previous) {
           let difference = 0;
@@ -290,8 +306,10 @@
       }
       const wave = descriptor.waveform || [], threshold = Math.max(.005, Math.max(0, ...wave) * .8);
       const peaks = wave.map((level, index, list) => ({ time: index / list.length * descriptor.duration, level, index })).filter((p) => p.level >= threshold && p.level >= (wave[p.index - 1] || 0) && p.level >= (wave[p.index + 1] || 0));
+      signal?.throwIfAborted();
       descriptor.analysis = { cuts: cuts.sort((a,b) => b.change - a.change), peaks };
-      await seek(video, 0); return descriptor.analysis;
+      return descriptor.analysis;
+      } finally { signal?.removeEventListener("abort", close); close(); }
     }
     pause() { for (const element of this.elements.values()) element.pause(); }
     dispose() {

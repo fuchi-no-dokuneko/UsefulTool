@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 const M = require('../../assets/pages/video-studio/model.js');
 const { SHA256, hashFile, fileKind } = require('../../assets/pages/video-studio/media.js');
 function media(p, kind = 'video', duration = 12, name = 'sample.mp4') {
-  return M.addAsset(p, { kind, name, size: 100, contentHash: name, mimeType: kind + '/test', duration, width: 1280, height: 720 });
+  return M.addAsset(p, { kind, name, size: 100, contentHash: name, mimeType: kind + '/test', duration, width: 1280, height: 720, hasAudio: kind !== 'image' });
 }
 function movie(count = 3) {
   const p = M.createProject();
@@ -249,4 +249,58 @@ test('credits Fit duration updates speed when trimmed and uses the actual credit
   assert.equal(c.credits.speed, speed*2);
   c.credits.mode='speed'; M.updateCreditsDuration(p,c);
   assert.equal(M.span(c),5);
+});
+
+test('only verified audio metadata creates original sound, including after legacy normalization', () => {
+  for (const hasAudio of [false, undefined]) {
+    const p = M.createProject(), source = media(p);
+    if (hasAudio === undefined) delete source.hasAudio; else source.hasAudio = hasAudio;
+    const v = M.addMedia(p, source.id);
+    assert.equal(p.items.length, 1);
+    assert.equal(v.linkedGroupId, undefined);
+    M.setSpeed(p, v.id, 2); M.trimItem(p, v.id, 'end', 4);
+    M.duplicateItem(p, M.splitItem(p, v.id, 2).id);
+    assert.equal(p.items.length, 3);
+    assert.equal(M.evaluateAudio(M.parseProject(M.serialize(p)), 1).length, 0);
+  }
+  const legacy = movie(1);
+  legacy.assets[0].hasAudio = false;
+  const restored = M.parseProject(M.serialize(legacy));
+  assert.equal(restored.items.length, 1);
+  assert.equal(restored.items[0].linkedGroupId, undefined);
+});
+
+test('schema migration never repairs ambiguous or explicitly unlinked pairs automatically', () => {
+  for (const key of ['assetId', 'start', 'end', 'sourceIn', 'sourceOut', 'playbackRate', 'linkIntent', 'matching']) {
+    const p = movie(1), v = M.mainItems(p)[0], a = p.items.find(i => i.kind === 'audio');
+    p.schemaVersion = 1; v.linkEnabled = a.linkEnabled = false;
+    delete v.linkId; delete a.linkId;
+    if (key === 'assetId') a.assetId = media(p, 'video', 12, 'other.mp4').id;
+    else if (key === 'linkIntent') a.linkIntent = 'unlinked';
+    else if (key !== 'matching') a[key] += key === 'sourceOut' ? -1 : 1;
+    const migrated = M.parseProject(M.serialize(p));
+    assert.equal(migrated.schemaVersion, 2);
+    assert.equal(migrated.items.some(i => i.linkEnabled), false);
+    assert.deepEqual(migrated.linkRepair.candidateIds, key === 'matching' ? [v.id] : []);
+    migrated.linkRepair.status = 'resolved';
+    assert.equal(M.parseProject(M.serialize(migrated)).linkRepair.status, 'resolved');
+  }
+  const current = movie(1);
+  M.setLink(current, current.items[0].id, false);
+  assert.equal(M.parseProject(M.serialize(current)).linkRepair, undefined);
+});
+
+test('portable timeline checkpoints preserve project settings and reject invalid nested edits', () => {
+  const p = movie(2), previous = M.timelineCheckpoint(p);
+  p.previousTimeline = previous;
+  M.deleteItem(p, p.items[0].id);
+  p.name = 'Keep current name'; p.canvas.width = 640; p.exportSettings.fps = 24;
+  const restored = M.parseProject(M.serialize(p));
+  assert.equal(M.restoreTimeline(restored), true);
+  assert.equal(restored.name, 'Keep current name');
+  assert.equal(restored.canvas.width, 640); assert.equal(restored.exportSettings.fps, 24);
+  assert.deepEqual(M.timelineCheckpoint(restored), previous);
+  assert.equal(restored.previousTimeline, undefined);
+  p.previousTimeline.items[0].transform.height = -1;
+  assert.throws(() => M.parseProject(M.serialize(p)), /transform/);
 });

@@ -169,6 +169,7 @@ const server = http.createServer((req, res) => {
       .manage()
       .setTimeouts({ pageLoad: 30000, script: 90000, implicit: 0 });
     const page = process.argv[2] || "core.html";
+    if (page === "review.html") execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-i", path.join(fixtures, "source.mp4"), "-c:v", "copy", "-an", path.join(fixtures, "uat-silent-video.mp4")]);
     if (page === "long-playback.html") require("./create-long-fixtures.cjs");
     if (page === "release.html") require("./create-release-fixtures.cjs");
     if (page === "touch.html") {

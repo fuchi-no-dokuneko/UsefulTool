@@ -1793,6 +1793,8 @@ dialog::backdrop {
 (function (root) {
   "use strict";
   const MIN = 0.01;
+  const SCHEMA_VERSION = 2;
+  const TIMELINE_KEYS = ["items", "layers", "mainOrder", "transitions", "playhead", "selectedItemId", "soundBalance", "workflow"];
   const MAX_PIXELS = 33177600;
   const VIDEO_LAYERS = ["main", "overlay-1", "overlay-2"];
   const KINDS = ["video", "audio", "image", "text", "filter", "credits"];
@@ -1817,7 +1819,7 @@ dialog::backdrop {
 
   function createProject() {
     const now = Date.now();
-    return { schemaVersion: 1, id: id("project"), name: "Untitled movie", createdAt: now, updatedAt: now,
+    return { schemaVersion: SCHEMA_VERSION, id: id("project"), name: "Untitled movie", createdAt: now, updatedAt: now,
       assets: [], items: [], mainOrder: [], transitions: [], playhead: 0, duration: 0,
       canvas: { width: 1280, height: 720, background: "#000000" },
       layers: [makeLayer("main", "main-video", "Main video", 0), makeLayer("overlay-1", "overlay", "Overlay 1", 10),
@@ -1845,6 +1847,12 @@ dialog::backdrop {
     return Math.max(0, ...project.items.filter((i) => i.kind !== "audio" && i.kind !== "filter").map((i) => i.end));
   }
   function normalize(project) {
+    // A verified video-only source must never contribute an original sound.
+    const silent = new Set(project.assets.filter(a => a.kind === "video" && a.hasAudio === false).map(a => a.id));
+    project.items = project.items.filter(i => i.kind !== "audio" || !silent.has(i.assetId));
+    for (const value of project.items) if (value.kind === "video" && silent.has(value.assetId)) {
+      delete value.linkId; delete value.linkedGroupId; value.linkEnabled = false;
+    }
     project.mainOrder = project.mainOrder.filter((key) => project.items.some((i) => i.id === key && i.layerId === "main"));
     project.transitions = project.transitions.filter((tr) => {
       const index = project.mainOrder.indexOf(tr.toId);
@@ -1898,7 +1906,7 @@ dialog::backdrop {
   }
   function addAsset(project, descriptor) {
     const existing = project.assets.find((a) => a.name === descriptor.name && a.size === descriptor.size && a.contentHash === descriptor.contentHash);
-    if (existing) return existing;
+    if (existing) { if (descriptor.hasAudio !== undefined) existing.hasAudio = descriptor.hasAudio; return existing; }
     const entry = { ...copy(descriptor), id: descriptor.id || id("asset") };
     delete entry.objectUrl;
     project.assets.push(entry);
@@ -1927,7 +1935,7 @@ dialog::backdrop {
     else value.transform = transform(project, source.width, source.height);
     project.items.push(value);
     if (target === "main") project.mainOrder.splice(options.index ?? project.mainOrder.length, 0, value.id);
-    if (kind === "video") {
+    if (kind === "video" && source.hasAudio === true) {
       value.linkId = value.linkedGroupId = id("link");
       value.linkEnabled = true;
       const sound = baseItem("audio", "video-sound", start, duration);
@@ -1969,7 +1977,38 @@ dialog::backdrop {
   function setLink(project, itemId, enabled) {
     const value = item(project, itemId);
     if (!value?.linkedGroupId) return;
-    for (const sibling of project.items.filter((i) => i.linkedGroupId === value.linkedGroupId)) sibling.linkEnabled = Boolean(enabled);
+    for (const sibling of project.items.filter((i) => i.linkedGroupId === value.linkedGroupId)) {
+      sibling.linkEnabled = Boolean(enabled);
+      sibling.linkIntent = enabled ? "linked" : "unlinked";
+    }
+  }
+  function legacyLinkCandidates(project) {
+    return project.items.filter(video => {
+      if (video.kind !== "video" || video.linkEnabled !== false || !video.linkedGroupId || video.linkIntent === "unlinked" || asset(project, video.assetId)?.hasAudio === false) return false;
+      const pair = project.items.filter(i => i.linkedGroupId === video.linkedGroupId);
+      const sound = pair.find(i => i.kind === "audio" && i.audio?.category === "video");
+      return pair.length === 2 && sound && sound.linkEnabled === false && sound.linkIntent !== "unlinked" && sound.assetId === video.assetId &&
+        !sound.audio.loop && !sound.audio.wholeMovie && !sound.audio.offset &&
+        ["start", "end", "sourceIn", "sourceOut", "playbackRate"].every(key => Math.abs(sound[key] - video[key]) < 1e-6);
+    });
+  }
+  function migrateProject(project) {
+    if (project.schemaVersion === 1) {
+      const candidates = legacyLinkCandidates(project).map(i => i.id);
+      project.linkRepair = { status: candidates.length ? "pending" : "resolved", candidateIds: candidates };
+      project.schemaVersion = SCHEMA_VERSION;
+    }
+    return project;
+  }
+  function timelineCheckpoint(project) {
+    return copy(Object.fromEntries(TIMELINE_KEYS.map(key => [key, project[key] ?? null])));
+  }
+  function restoreTimeline(project) {
+    if (!project.previousTimeline) return false;
+    Object.assign(project, copy(project.previousTimeline));
+    delete project.previousTimeline;
+    normalize(project);
+    return true;
   }
   function moveItem(project, itemId, start, layerId) {
     const value = item(project, itemId);
@@ -2285,11 +2324,11 @@ dialog::backdrop {
     value.assets = value.assets.map(({ objectUrl, fileHandleKey, ...rest }) => rest);
     return JSON.stringify(value, null, 2);
   }
-  function parseProject(text) {
+  function parseProject(text, checkpoint = false) {
     if (text.length > 32 * 1024 * 1024) throw new Error("This project file is too large.");
     let value;
     try { value = JSON.parse(text); } catch { throw new Error("This is not a valid .utvproj JSON file."); }
-    if (value?.schemaVersion !== 1) throw new Error("This project version is not supported.");
+    if (![1, SCHEMA_VERSION].includes(value?.schemaVersion)) throw new Error("This project version is not supported.");
     const numeric = (v, min = -Infinity, max = Infinity) => Number.isFinite(v) && v >= min && v <= max;
     const string = (v, max = 12000) => typeof v === "string" && v.length <= max;
     const fail = (ok, message) => { if (!ok) throw new Error(message); };
@@ -2301,6 +2340,7 @@ dialog::backdrop {
     for (const entry of value.assets) if (!["video", "audio", "image"].includes(entry.kind) || typeof entry.contentHash !== "string" || typeof entry.name !== "string" || !(entry.size >= 0)) throw new Error("Invalid media description.");
     for (const a of value.assets) {
       fail(numeric(a.size, 0) && string(a.name, 1000), "Invalid media description.");
+      if (a.hasAudio !== undefined) fail(typeof a.hasAudio === "boolean", "Invalid audio track metadata.");
       if (a.kind !== "image") fail(numeric(a.duration, MIN), "Invalid source duration.");
       if (a.kind !== "audio") fail(numeric(a.width, 1) && numeric(a.height, 1), "Invalid source dimensions.");
       if (a.thumbnail !== undefined) fail(string(a.thumbnail, 2 * 1024 * 1024) && /^data:image\/(png|jpeg|webp|gif|bmp);base64,[a-z0-9+/=\s]+$/i.test(a.thumbnail), "Invalid embedded thumbnail.");
@@ -2349,7 +2389,14 @@ dialog::backdrop {
       const i = value.mainOrder.indexOf(tr.toId);
       return i > 0 && value.mainOrder[i - 1] === tr.fromId && TRANSITIONS.includes(tr.type) && numeric(tr.duration, .1, 5) && ["left", "right", "up", "down"].includes(tr.direction) && ["linear", "smooth", "ease-in", "ease-out", "hold"].includes(tr.easing);
     }), "Invalid transition data.");
-    return normalize(value);
+    if (value.linkRepair !== undefined) fail(value.linkRepair && ["pending", "resolved"].includes(value.linkRepair.status) && Array.isArray(value.linkRepair.candidateIds) && value.linkRepair.candidateIds.every(key => string(key, 200)), "Invalid link migration state.");
+    if (value.previousTimeline !== undefined) {
+      fail(!checkpoint && value.previousTimeline && typeof value.previousTimeline === "object" && TIMELINE_KEYS.every(key => key in value.previousTimeline), "Invalid previous timeline checkpoint.");
+      const previous = { ...value, ...Object.fromEntries(TIMELINE_KEYS.map(key => [key, value.previousTimeline[key]])) };
+      delete previous.previousTimeline;
+      value.previousTimeline = timelineCheckpoint(parseProject(JSON.stringify(previous), true));
+    }
+    return migrateProject(normalize(value));
   }
   class History {
     constructor(project) { this.entries = [serialize(project)]; this.index = 0; }
@@ -2366,11 +2413,12 @@ dialog::backdrop {
     get canUndo() { return this.index > 0; }
     get canRedo() { return this.index < this.entries.length - 1; }
   }
-  const api = { MIN, MAX_PIXELS, VIDEO_LAYERS, KINDS, EFFECTS, BLURS, TRANSITIONS, id, copy, clamp, finite, rounded, active, span, sourceSpan,
+  const api = { MIN, SCHEMA_VERSION, MAX_PIXELS, VIDEO_LAYERS, KINDS, EFFECTS, BLURS, TRANSITIONS, id, copy, clamp, finite, rounded, active, span, sourceSpan,
     layer, asset, item, isLocked, mainItems, createProject, transform, baseItem, audioProps, normalize, reflow, addAsset, addMedia, addLayerItem,
     related, setLink, moveItem, reorderMain, trimItem, setSpeed, splitItem, duplicateItem, deleteItem, transitionMaximum, setTransition, removeTransition,
     ease, curveAt, setKey, fadeAt, sourceTimeAt, setRepeat, snapTime, visibleItems, videoConflicts, MAX_AUDIO_SOURCES, audioConflicts, fixAudioConflicts, audioGains, evaluateFrame, evaluateAudio, applyOverlayPreset, addEffect,
-    creditsHeight, updateCreditsDuration, fitTransform, segmentRanges, formatTime, exportDimensions, serialize, parseProject, History, visualEnd };
+    creditsHeight, updateCreditsDuration, fitTransform, segmentRanges, formatTime, exportDimensions, serialize, parseProject, History, visualEnd,
+    legacyLinkCandidates, migrateProject, timelineCheckpoint, restoreTimeline };
   root.UTStudio = Object.assign(root.UTStudio || {}, { Model: api });
   if (typeof module !== "undefined") module.exports = api;
 })(globalThis);
@@ -2524,7 +2572,7 @@ dialog::backdrop {
           if (!(descriptor.width && descriptor.height)) throw new Error("This file has no readable video frames.");
           descriptor.thumbnail = poster(element, descriptor.width, descriptor.height);
         }
-        Object.assign(descriptor, await waveform(file));
+        if (kind === "audio" || descriptor.hasAudio) Object.assign(descriptor, await waveform(file));
       }
       return descriptor;
     }
@@ -2533,6 +2581,15 @@ dialog::backdrop {
       if (existing) return existing;
       const entry = { file, url: URL.createObjectURL(file) };
       try {
+        if (descriptor.kind === "video") {
+          const C = root.UTVideoCodecs;
+          const input = new C.Input({ formats: C.ALL_FORMATS, source: new C.BlobSource(file) });
+          try {
+            const tracks = await input.getAudioTracks();
+            const metadata = await Promise.all(tracks.map(async track => ({ channels: await track.getNumberOfChannels(), sampleRate: await track.getSampleRate() })));
+            descriptor.hasAudio = metadata.some(track => track.channels > 0 && track.sampleRate > 0);
+          } finally { input.dispose(); }
+        }
         if (descriptor.kind === "image") {
           const image = new Image(); image.src = entry.url; await image.decode(); entry.image = image;
           if (/\.(gif|webp)$/i.test(descriptor.name)) {
@@ -2649,16 +2706,23 @@ dialog::backdrop {
       if (descriptor.size !== file.size || descriptor.name !== file.name || descriptor.contentHash !== await hashFile(file)) throw new Error("This file does not match the saved name, size and content. Choose the original file.");
       await this.attach(descriptor, file); return descriptor;
     }
-    async analyze(descriptor, progress = () => {}) {
+    async analyze(descriptor, progress = () => {}, signal) {
+      signal?.throwIfAborted();
       if (descriptor.analysis) return descriptor.analysis;
       if (descriptor.kind !== "video") return { cuts: [], peaks: [] };
       const entry = this.assets.get(descriptor.id);
       if (!entry) throw new Error("Relink " + descriptor.name + " before making a movie.");
-      const video = entry.probe, c = makeCanvas(48, 27), ctx = c.getContext("2d", { willReadFrequently: true });
+      // A dedicated decoder can be closed immediately without disturbing preview.
+      const video = document.createElement("video"), c = makeCanvas(48, 27), ctx = c.getContext("2d", { willReadFrequently: true });
+      video.preload = "auto"; video.muted = true; video.playsInline = true; video.src = entry.url;
+      const close = () => { video.pause(); video.removeAttribute("src"); video.load(); };
+      signal?.addEventListener("abort", close, { once: true });
+      try {
       const count = Math.max(2, Math.min(60, Math.ceil(descriptor.duration))), cuts = []; let previous = null;
       for (let i = 0; i < count; i++) {
         const time = Math.min(descriptor.duration - .001, i * descriptor.duration / count);
-        await seek(video, time); ctx.drawImage(video, 0, 0, c.width, c.height);
+        signal?.throwIfAborted();
+        await seek(video, time, signal); ctx.drawImage(video, 0, 0, c.width, c.height);
         const pixels = ctx.getImageData(0, 0, c.width, c.height).data;
         if (previous) {
           let difference = 0;
@@ -2669,8 +2733,10 @@ dialog::backdrop {
       }
       const wave = descriptor.waveform || [], threshold = Math.max(.005, Math.max(0, ...wave) * .8);
       const peaks = wave.map((level, index, list) => ({ time: index / list.length * descriptor.duration, level, index })).filter((p) => p.level >= threshold && p.level >= (wave[p.index - 1] || 0) && p.level >= (wave[p.index + 1] || 0));
+      signal?.throwIfAborted();
       descriptor.analysis = { cuts: cuts.sort((a,b) => b.change - a.change), peaks };
-      await seek(video, 0); return descriptor.analysis;
+      return descriptor.analysis;
+      } finally { signal?.removeEventListener("abort", close); close(); }
     }
     pause() { for (const element of this.elements.values()) element.pause(); }
     dispose() {
@@ -2758,13 +2824,15 @@ dialog::backdrop {
       return missing;
     }
     async clear() {
-      clearTimeout(this.timer); this.latest = null; await this.queue.catch(() => {});
-      await this.transact("projects", "readwrite", (store) => store.delete(this.key));
+      clearTimeout(this.timer); await this.queue.catch(() => {});
       const db = await this.open();
       await new Promise((resolve, reject) => {
-        const tx = db.transaction("files", "readwrite"), range = IDBKeyRange.bound(this.key + ":", this.key + ":\uffff");
-        tx.objectStore("files").delete(range); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
+        const tx = db.transaction(["projects", "files"], "readwrite"), range = IDBKeyRange.bound(this.key + ":", this.key + ":\uffff");
+        tx.objectStore("projects").delete(this.key);
+        tx.objectStore("files").delete(range); tx.oncomplete = resolve;
+        tx.onerror = tx.onabort = () => reject(tx.error || new Error("Could not clear this session. Your current project is still available."));
       });
+      this.latest = null;
     }
   }
   root.UTStudio.SessionStore = SessionStore;
@@ -6481,26 +6549,48 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
     },
   };
   async function generate(original, library, options, onProgress = () => {}) {
+    const signal = options.signal;
+    signal?.throwIfAborted();
     const style = styles[options.template] || styles.family;
     const assets = options.assetIds
       .map((key) => M.asset(original, key))
-      .filter((a) => a && a.kind !== "audio");
+      .filter((a) => a && a.kind !== "audio")
+      .map((a) => M.copy(a));
     if (!assets.length) throw new Error("Choose at least one video or image.");
-    for (let i = 0; i < assets.length; i++)
-      if (assets[i].kind === "video")
-        await library.analyze(assets[i], (fraction) =>
+    const analysisAssets =
+      options.length === "full" && !["fast", "calm"].includes(options.template)
+        ? []
+        : assets.filter((a) => a.kind === "video" && !a.analysis);
+    for (let i = 0; i < analysisAssets.length; i++) {
+      signal?.throwIfAborted();
+      await library.analyze(
+        analysisAssets[i],
+        (fraction) =>
           onProgress({
-            name: assets[i].name,
-            percent: (i + fraction) / assets.length,
+            name: analysisAssets[i].name,
+            percent: (i + fraction) / analysisAssets.length,
           }),
-        );
+        signal,
+      );
+    }
+    signal?.throwIfAborted();
     const p = M.createProject();
     p.id = original.id;
     p.name = original.name;
     p.createdAt = original.createdAt;
     p.canvas = M.copy(original.canvas);
     p.assets = M.copy(original.assets);
+    // Keep completed analysis for subsequent drafts without touching the input
+    // project when generation is cancelled or fails.
+    for (const source of analysisAssets)
+      if (source.analysis)
+        M.asset(p, source.id).analysis = M.copy(source.analysis);
     p.exportSettings = M.copy(original.exportSettings);
+    if (original.linkRepair) p.linkRepair = M.copy(original.linkRepair);
+    if (original.items.length)
+      p.previousTimeline = M.timelineCheckpoint(original);
+    else if (original.previousTimeline)
+      p.previousTimeline = M.copy(original.previousTimeline);
     const score = (a) => a.analysis?.cuts[0]?.change || 0;
     if (options.template === "fast") assets.sort((a, b) => score(b) - score(a));
     if (options.template === "calm") assets.sort((a, b) => score(a) - score(b));
@@ -6515,6 +6605,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
     let remaining = target,
       index = 0;
     while (remaining >= M.MIN && index < assets.length * 10) {
+      signal?.throwIfAborted();
       const source = assets[index % assets.length];
       if (index >= assets.length && options.length === "full") break;
       const length =
@@ -6531,6 +6622,9 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
             );
       if (length < M.MIN) break;
       const value = M.addMedia(p, source.id, { duration: length });
+      // addMedia fits the first clip's canvas; drafts retain project settings.
+      p.canvas = M.copy(original.canvas);
+      M.fitTransform(p, value, "fit");
       if (source.kind === "video" && options.length !== "full") {
         const candidate = source.analysis?.cuts.find(
           (c) => c.time + length <= source.duration,
@@ -6549,8 +6643,10 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
         const sound = p.items.find(
           (i) => i.kind === "audio" && i.linkedGroupId === value.linkedGroupId,
         );
-        sound.sourceIn = value.sourceIn;
-        sound.sourceOut = value.sourceOut;
+        if (sound) {
+          sound.sourceIn = value.sourceIn;
+          sound.sourceOut = value.sourceOut;
+        }
       }
       M.setLink(p, value.id, true);
       if (index > 0 && M.transitionMaximum(p, value.id) >= 0.1)
@@ -6579,6 +6675,8 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
     p.workflow = "arrange";
     p.playhead = 0;
     M.normalize(p);
+    signal?.throwIfAborted();
+    onProgress({ name: "Draft ready", percent: 1 });
     return p;
   }
   root.UTStudio.AutoMovie = { styles, generate };
@@ -6855,6 +6953,17 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
     const before = M.copy(project);
     try {
       fn(project);
+      for (const value of project.items.filter((i) => i.credits)) {
+        const old = M.item(before, value.id);
+        if (
+          !old ||
+          old.transform.height !== value.transform.height ||
+          old.start !== value.start ||
+          old.end !== value.end ||
+          JSON.stringify(old.credits) !== JSON.stringify(value.credits)
+        )
+          M.updateCreditsDuration(project, value);
+      }
       M.normalize(project);
       project.selectedItemId = M.item(project, selectedId) ? selectedId : null;
       if (options.commit !== false) history.push(project);
@@ -6864,6 +6973,13 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
       clearResults();
       if (options.timeline !== false) renderTimeline();
       if (options.context) renderContext();
+      if (selected()?.credits) {
+        const speed = document.querySelector('[data-control="creditsSpeed"]');
+        const end = document.querySelector('[data-control="endsAt"]');
+        if (speed && speed !== document.activeElement)
+          speed.value = Math.round(selected().credits.speed);
+        if (end && end !== document.activeElement) end.value = selected().end;
+      }
       updateAudioWarning();
       updateHistory();
       updateSelectionBox();
@@ -7099,11 +7215,11 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
     announce(copy ? "Project copy downloaded" : "Project downloaded");
   }
   function closeDialog() {
-    H.close();
     if (dialogCleanup) {
-      dialogCleanup();
+      if (dialogCleanup() === false) return;
       dialogCleanup = null;
     }
+    H.close();
     $("studioDialog").close();
     dialogReturn?.focus?.();
   }
@@ -7163,6 +7279,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
           await store.putFile(a, files.get(a.id));
         }
       await store.restore(project, library);
+      M.migrateProject(M.normalize(project));
       history = new M.History(project);
       pendingFieldEdit = false;
       clearResults();
@@ -7172,12 +7289,114 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
       projectLoading = false;
       renderAll();
     }
+    offerLinkRepair();
+  }
+  function offerLinkRepair() {
+    if (project.linkRepair?.status !== "pending") return;
+    const candidates = M.legacyLinkCandidates(project).filter((i) =>
+      project.linkRepair.candidateIds.includes(i.id),
+    );
+    const resolve = (ids = []) => {
+      project.linkRepair.status = "resolved";
+      // Undo may reverse a repair, but must not revive the migration prompt.
+      history = new M.History(project);
+      if (ids.length)
+        edit(
+          () => {
+            for (const id of ids) M.setLink(project, id, true);
+          },
+          "Picture and sound links repaired",
+          { context: true },
+        );
+      store.schedule(project);
+    };
+    if (!candidates.length) {
+      resolve();
+      return;
+    }
+    dialog("Repair picture and sound links", (body, foot) => {
+      body.append(
+        el(
+          "p",
+          "",
+          "This older project has matching picture and original-sound pairs saved as unlinked. Select only the pairs you want to repair. Leave intentionally unlinked pairs unchecked. This choice is saved and will not be asked again.",
+        ),
+      );
+      for (const value of candidates) {
+        const label = el("label", "check-field"),
+          input = el("input");
+        input.type = "checkbox";
+        input.value = value.id;
+        input.dataset.repairLink = "";
+        label.append(
+          input,
+          el(
+            "span",
+            "",
+            value.name + " · " + time(value.start) + " – " + time(value.end),
+          ),
+        );
+        body.append(label);
+      }
+      dialogCleanup = () => resolve();
+      foot.append(
+        B("cancel", "Keep current links", closeDialog),
+        B(
+          "linkAudio",
+          "Repair selected links",
+          () => {
+            const ids = [...body.querySelectorAll("input:checked")].map(
+              (i) => i.value,
+            );
+            dialogCleanup = null;
+            resolve(ids);
+            closeDialog();
+          },
+          { primary: true },
+        ),
+      );
+    });
+  }
+  async function restorePreviousTimeline() {
+    const next = M.copy(project);
+    if (!M.restoreTimeline(next)) return;
+    closeDialog();
+    engine.stop();
+    edit(() => {
+      project = next;
+      selectedId = next.selectedItemId || next.items[0]?.id;
+    }, "Previous timeline restored");
+    renderAll();
+    await store.flush();
+    await seekTo(project.playhead);
   }
   async function startNew() {
+    if (projectLoading || importing || exporting) return;
+    engine.stop();
+    projectLoading = true;
+    renderAll();
+    try {
+      await store.clear();
+    } catch (error) {
+      projectLoading = false;
+      renderAll();
+      store.schedule(project);
+      const body = $("studioDialog").querySelector(".dialog-body");
+      if ($("studioDialog").open && body)
+        body.append(
+          el(
+            "p",
+            "notice error",
+            "Could not clear this session. Your current project is still available. " +
+              error.message,
+          ),
+        );
+      report(error);
+      return;
+    }
     closeDialog();
     await engine.dispose();
     library.dispose();
-    await store.clear();
     project = M.createProject();
     history = new M.History(project);
     pendingFieldEdit = false;
@@ -7189,10 +7408,18 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
     importStatus = "";
     setupEngine();
     clearResults();
+    projectLoading = false;
     renderAll();
   }
   function newProject() {
-    if (!project.items.length) {
+    if (
+      !project.items.length &&
+      !project.assets.length &&
+      !pendingFieldEdit &&
+      !history.canUndo &&
+      !history.canRedo &&
+      !store.latest
+    ) {
       startNew().catch(report);
       return;
     }
@@ -7201,7 +7428,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
         el(
           "p",
           "muted",
-          "Save an editable project file if you want to return to this movie later.",
+          "Starting a new project clears this timeline and media library. Save an editable project file to return later. The .utvproj file does not contain media files. Keep the original videos, images and music: you will need to Relink them when reopening the project.",
         ),
       );
       foot.append(
@@ -7221,6 +7448,15 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
   }
   function projectMenu() {
     dialog("Project", (body, foot) => {
+      if (project.previousTimeline)
+        body.append(
+          B(
+            "openProject",
+            "Restore previous timeline",
+            restorePreviousTimeline,
+            { id: "restorePreviousTimelineButton", wrapperClass: "full-width" },
+          ),
+        );
       body.append(
         B("newProject", "New project", newProject, {
           wrapperClass: "full-width",
@@ -7340,14 +7576,28 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
     input.type = "text";
     input.value = project.name;
     input.id = "projectName";
+    input.disabled = projectLoading;
     input.maxLength = 180;
     input.setAttribute("aria-label", "Project name");
     H.attach(input, "projectName");
     input.addEventListener("input", () => {
       project.name = input.value || "Untitled movie";
+      project.updatedAt = Date.now();
+      pendingFieldEdit = true;
       store.schedule(project);
     });
-    input.addEventListener("change", () => history.push(project));
+    const commitName = () => {
+      commitFieldEdit();
+      input.value = project.name;
+    };
+    input.addEventListener("change", commitName);
+    input.addEventListener("blur", commitName);
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        commitName();
+      }
+    });
     title.append(input);
     const saved = el("span", "save-status", saveStatus);
     saved.id = "saveStatus";
@@ -7760,7 +8010,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
     );
   }
   async function importFiles(files, kind) {
-    if (importing || exporting) return;
+    if (importing || exporting || projectLoading) return;
     const previousPlayhead = project.playhead;
     const firstMovieImport = M.mainItems(project).length === 0;
     importing = true;
@@ -7873,6 +8123,8 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
         if (input.files[0]) {
           await library.relink(source, input.files[0]);
           await store.putFile(source, input.files[0]);
+          M.normalize(project);
+          store.schedule(project);
           renderAll();
           await seekTo(project.playhead);
         }
@@ -8200,7 +8452,8 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
         );
         if (
           source?.waveform?.length &&
-          (entry.kind === "audio" || entry.kind === "video")
+          (entry.kind === "audio" ||
+            (entry.kind === "video" && source.hasAudio !== false))
         ) {
           const wave = el("canvas", "clip-waveform");
           wave.style.width = Math.max(20, M.span(entry) * zoom - 4) + "px";
@@ -8461,6 +8714,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
           );
       }
       value.transform = tr;
+      if (value.credits) M.updateCreditsDuration(project, value);
       updateSelectionBox();
       requestPaint();
       showDragReadout(
@@ -9115,7 +9369,9 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
           content.append(speedControls(value, locked));
           const linked = project.items.find(
             (i) =>
-              i.kind === "audio" && i.linkedGroupId === value.linkedGroupId,
+              value.linkedGroupId &&
+              i.kind === "audio" &&
+              i.linkedGroupId === value.linkedGroupId,
           );
           if (linked)
             content.append(
@@ -10956,7 +11212,8 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
     let template = "family",
       length = "30",
       musicId = "",
-      cancelled = false;
+      committing = false;
+    const controller = new AbortController();
     dialog("Make a movie for me", (body, foot) => {
       const styles = el("div", "choice-grid");
       for (const [key, style] of Object.entries(AutoMovie.styles)) {
@@ -11023,71 +11280,119 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
       const progress = el("p", "notice");
       progress.hidden = true;
       body.append(progress);
+      const wizardBody = [...body.childNodes];
+      let wizardButtons;
       dialogCleanup = () => {
-        cancelled = true;
+        if (committing) return false;
+        controller.abort();
+      };
+      const generate = async (options) => {
+        body.replaceChildren(progress);
+        foot.replaceChildren(B("cancel", "Cancel", closeDialog));
+        progress.hidden = false;
+        progress.textContent = "Preparing draft · 0%";
+        engine.stop();
+        try {
+          const next = await AutoMovie.generate(
+            project,
+            library,
+            { ...options, signal: controller.signal },
+            (status) => {
+              progress.textContent =
+                "Analysing " +
+                status.name +
+                " · " +
+                Math.round(status.percent * 100) +
+                "%";
+            },
+          );
+          controller.signal.throwIfAborted();
+          next.selectedItemId = M.mainItems(next)[0]?.id;
+          committing = true;
+          // Closing the old engine must not autosave over the new checkpoint.
+          projectLoading = true;
+          progress.textContent =
+            "Draft ready · 100% · Saving timeline checkpoint";
+          for (const button of $("studioDialog").querySelectorAll("button"))
+            H.setDisabled(
+              button,
+              true,
+              "Saving the draft and previous timeline.",
+            );
+          // Persist both timelines before releasing any current media resources.
+          store.schedule(next);
+          await store.flush();
+          await engine.dispose();
+          library.pause();
+          for (const element of library.elements.values()) {
+            element.utvDisposed = true;
+            element.dispatchEvent(new Event("utv-disposed"));
+            element.removeAttribute("src");
+            element.load();
+          }
+          library.elements.clear();
+          project = next;
+          selectedId = project.selectedItemId;
+          history.push(project);
+          setupEngine();
+          projectLoading = false;
+          committing = false;
+          closeDialog();
+          renderAll();
+          await seekTo(0);
+          toast("Your editable movie draft is ready");
+        } catch (error) {
+          if (!controller.signal.aborted) {
+            if (committing) {
+              projectLoading = false;
+              store.schedule(project);
+            }
+            committing = false;
+            progress.textContent = error.message;
+            for (const button of $("studioDialog").querySelectorAll("button"))
+              H.setDisabled(button, false, "");
+            $("dialogTitle").textContent = "Make a movie for me";
+            body.replaceChildren(...wizardBody);
+            foot.replaceChildren(...wizardButtons);
+          }
+        }
       };
       foot.append(
         B("cancel", "Cancel", closeDialog),
         B(
           "generateMovie",
           "Make the draft",
-          async (event) => {
-            const generateButton = event.currentTarget;
+          () => {
             const ids = [
               ...body.querySelectorAll(".media-choice input:checked"),
             ].map((i) => i.value);
-            H.setDisabled(
-              generateButton,
-              true,
-              "Wait for the draft to finish, or choose Cancel.",
-            );
-            progress.hidden = false;
-            engine.stop();
-            try {
-              const next = await AutoMovie.generate(
-                project,
-                library,
-                { template, length, musicId, assetIds: ids },
-                (status) => {
-                  if (cancelled) throw new Error("Draft cancelled.");
-                  progress.textContent =
-                    "Analysing " +
-                    status.name +
-                    " · " +
-                    Math.round(status.percent * 100) +
-                    "%";
-                },
+            const options = { template, length, musicId, assetIds: ids };
+            if (project.items.length) {
+              $("dialogTitle").textContent = "Replace current timeline";
+              body.replaceChildren(
+                el(
+                  "p",
+                  "",
+                  "Making this draft will replace every item on your current timeline. A previous timeline checkpoint will be saved so you can choose Restore previous timeline from Project, even after reopening. Your media library, project name, canvas and export settings are kept.",
+                ),
               );
-              if (cancelled) return;
-              await engine.dispose();
-              library.pause();
-              for (const element of library.elements.values()) {
-                element.utvDisposed = true;
-                element.dispatchEvent(new Event("utv-disposed"));
-                element.removeAttribute("src");
-                element.load();
-              }
-              library.elements.clear();
-              project = next;
-              selectedId = M.mainItems(project)[0]?.id;
-              project.selectedItemId = selectedId;
-              history.push(project);
-              setupEngine();
-              closeDialog();
-              store.schedule(project);
-              renderAll();
-              await seekTo(0);
-              toast("Your editable movie draft is ready");
-            } catch (error) {
-              if (!cancelled) {
-                progress.textContent = error.message;
-                H.setDisabled(generateButton, false, "");
-              }
+              foot.replaceChildren(
+                B("cancel", "Cancel", closeDialog),
+                B(
+                  "generateMovie",
+                  "Replace current timeline",
+                  () => generate(options),
+                  { primary: true, id: "replaceTimelineButton" },
+                ),
+              );
+            } else {
+              return generate(options);
             }
           },
           { primary: true },
         ),
       );
+      wizardButtons = [...foot.childNodes];
     });
   }
   let exportMessage = "",
@@ -11404,9 +11709,12 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
   }
   function setupGlobalEvents() {
     const dialogNode = $("studioDialog");
-    dialogNode.addEventListener("cancel", () => {
+    dialogNode.addEventListener("cancel", (event) => {
       if (dialogCleanup) {
-        dialogCleanup();
+        if (dialogCleanup() === false) {
+          event.preventDefault();
+          return;
+        }
         dialogCleanup = null;
       }
       H.close();

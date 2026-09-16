@@ -204,6 +204,7 @@
         d.querySelector('[data-control="targetLength"]').options.length === 3,
     );
     click('#studioDialog button[data-help-id="generateMovie"]');
+    click('#replaceTimelineButton');
     await wait(() => !d.querySelector("dialog").open);
     check(
       "AutoMovie enters Arrange with a playable draft",

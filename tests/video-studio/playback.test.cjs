@@ -17,6 +17,7 @@ function harness(delayFor = () => 0) {
   M.addAsset(project, {
     id: "source",
     kind: "video",
+    hasAudio: true,
     name: "long.mp4",
     duration: 90,
     width: 1280,

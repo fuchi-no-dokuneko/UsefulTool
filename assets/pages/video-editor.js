@@ -267,6 +267,17 @@
     const before = M.copy(project);
     try {
       fn(project);
+      for (const value of project.items.filter((i) => i.credits)) {
+        const old = M.item(before, value.id);
+        if (
+          !old ||
+          old.transform.height !== value.transform.height ||
+          old.start !== value.start ||
+          old.end !== value.end ||
+          JSON.stringify(old.credits) !== JSON.stringify(value.credits)
+        )
+          M.updateCreditsDuration(project, value);
+      }
       M.normalize(project);
       project.selectedItemId = M.item(project, selectedId) ? selectedId : null;
       if (options.commit !== false) history.push(project);
@@ -276,6 +287,13 @@
       clearResults();
       if (options.timeline !== false) renderTimeline();
       if (options.context) renderContext();
+      if (selected()?.credits) {
+        const speed = document.querySelector('[data-control="creditsSpeed"]');
+        const end = document.querySelector('[data-control="endsAt"]');
+        if (speed && speed !== document.activeElement)
+          speed.value = Math.round(selected().credits.speed);
+        if (end && end !== document.activeElement) end.value = selected().end;
+      }
       updateAudioWarning();
       updateHistory();
       updateSelectionBox();
@@ -511,11 +529,11 @@
     announce(copy ? "Project copy downloaded" : "Project downloaded");
   }
   function closeDialog() {
-    H.close();
     if (dialogCleanup) {
-      dialogCleanup();
+      if (dialogCleanup() === false) return;
       dialogCleanup = null;
     }
+    H.close();
     $("studioDialog").close();
     dialogReturn?.focus?.();
   }
@@ -575,6 +593,7 @@
           await store.putFile(a, files.get(a.id));
         }
       await store.restore(project, library);
+      M.migrateProject(M.normalize(project));
       history = new M.History(project);
       pendingFieldEdit = false;
       clearResults();
@@ -584,12 +603,114 @@
       projectLoading = false;
       renderAll();
     }
+    offerLinkRepair();
+  }
+  function offerLinkRepair() {
+    if (project.linkRepair?.status !== "pending") return;
+    const candidates = M.legacyLinkCandidates(project).filter((i) =>
+      project.linkRepair.candidateIds.includes(i.id),
+    );
+    const resolve = (ids = []) => {
+      project.linkRepair.status = "resolved";
+      // Undo may reverse a repair, but must not revive the migration prompt.
+      history = new M.History(project);
+      if (ids.length)
+        edit(
+          () => {
+            for (const id of ids) M.setLink(project, id, true);
+          },
+          "Picture and sound links repaired",
+          { context: true },
+        );
+      store.schedule(project);
+    };
+    if (!candidates.length) {
+      resolve();
+      return;
+    }
+    dialog("Repair picture and sound links", (body, foot) => {
+      body.append(
+        el(
+          "p",
+          "",
+          "This older project has matching picture and original-sound pairs saved as unlinked. Select only the pairs you want to repair. Leave intentionally unlinked pairs unchecked. This choice is saved and will not be asked again.",
+        ),
+      );
+      for (const value of candidates) {
+        const label = el("label", "check-field"),
+          input = el("input");
+        input.type = "checkbox";
+        input.value = value.id;
+        input.dataset.repairLink = "";
+        label.append(
+          input,
+          el(
+            "span",
+            "",
+            value.name + " · " + time(value.start) + " – " + time(value.end),
+          ),
+        );
+        body.append(label);
+      }
+      dialogCleanup = () => resolve();
+      foot.append(
+        B("cancel", "Keep current links", closeDialog),
+        B(
+          "linkAudio",
+          "Repair selected links",
+          () => {
+            const ids = [...body.querySelectorAll("input:checked")].map(
+              (i) => i.value,
+            );
+            dialogCleanup = null;
+            resolve(ids);
+            closeDialog();
+          },
+          { primary: true },
+        ),
+      );
+    });
+  }
+  async function restorePreviousTimeline() {
+    const next = M.copy(project);
+    if (!M.restoreTimeline(next)) return;
+    closeDialog();
+    engine.stop();
+    edit(() => {
+      project = next;
+      selectedId = next.selectedItemId || next.items[0]?.id;
+    }, "Previous timeline restored");
+    renderAll();
+    await store.flush();
+    await seekTo(project.playhead);
   }
   async function startNew() {
+    if (projectLoading || importing || exporting) return;
+    engine.stop();
+    projectLoading = true;
+    renderAll();
+    try {
+      await store.clear();
+    } catch (error) {
+      projectLoading = false;
+      renderAll();
+      store.schedule(project);
+      const body = $("studioDialog").querySelector(".dialog-body");
+      if ($("studioDialog").open && body)
+        body.append(
+          el(
+            "p",
+            "notice error",
+            "Could not clear this session. Your current project is still available. " +
+              error.message,
+          ),
+        );
+      report(error);
+      return;
+    }
     closeDialog();
     await engine.dispose();
     library.dispose();
-    await store.clear();
     project = M.createProject();
     history = new M.History(project);
     pendingFieldEdit = false;
@@ -601,10 +722,18 @@
     importStatus = "";
     setupEngine();
     clearResults();
+    projectLoading = false;
     renderAll();
   }
   function newProject() {
-    if (!project.items.length) {
+    if (
+      !project.items.length &&
+      !project.assets.length &&
+      !pendingFieldEdit &&
+      !history.canUndo &&
+      !history.canRedo &&
+      !store.latest
+    ) {
       startNew().catch(report);
       return;
     }
@@ -613,7 +742,7 @@
         el(
           "p",
           "muted",
-          "Save an editable project file if you want to return to this movie later.",
+          "Starting a new project clears this timeline and media library. Save an editable project file to return later. The .utvproj file does not contain media files. Keep the original videos, images and music: you will need to Relink them when reopening the project.",
         ),
       );
       foot.append(
@@ -633,6 +762,15 @@
   }
   function projectMenu() {
     dialog("Project", (body, foot) => {
+      if (project.previousTimeline)
+        body.append(
+          B(
+            "openProject",
+            "Restore previous timeline",
+            restorePreviousTimeline,
+            { id: "restorePreviousTimelineButton", wrapperClass: "full-width" },
+          ),
+        );
       body.append(
         B("newProject", "New project", newProject, {
           wrapperClass: "full-width",
@@ -752,14 +890,28 @@
     input.type = "text";
     input.value = project.name;
     input.id = "projectName";
+    input.disabled = projectLoading;
     input.maxLength = 180;
     input.setAttribute("aria-label", "Project name");
     H.attach(input, "projectName");
     input.addEventListener("input", () => {
       project.name = input.value || "Untitled movie";
+      project.updatedAt = Date.now();
+      pendingFieldEdit = true;
       store.schedule(project);
     });
-    input.addEventListener("change", () => history.push(project));
+    const commitName = () => {
+      commitFieldEdit();
+      input.value = project.name;
+    };
+    input.addEventListener("change", commitName);
+    input.addEventListener("blur", commitName);
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        commitName();
+      }
+    });
     title.append(input);
     const saved = el("span", "save-status", saveStatus);
     saved.id = "saveStatus";
@@ -1172,7 +1324,7 @@
     );
   }
   async function importFiles(files, kind) {
-    if (importing || exporting) return;
+    if (importing || exporting || projectLoading) return;
     const previousPlayhead = project.playhead;
     const firstMovieImport = M.mainItems(project).length === 0;
     importing = true;
@@ -1285,6 +1437,8 @@
         if (input.files[0]) {
           await library.relink(source, input.files[0]);
           await store.putFile(source, input.files[0]);
+          M.normalize(project);
+          store.schedule(project);
           renderAll();
           await seekTo(project.playhead);
         }
@@ -1612,7 +1766,8 @@
         );
         if (
           source?.waveform?.length &&
-          (entry.kind === "audio" || entry.kind === "video")
+          (entry.kind === "audio" ||
+            (entry.kind === "video" && source.hasAudio !== false))
         ) {
           const wave = el("canvas", "clip-waveform");
           wave.style.width = Math.max(20, M.span(entry) * zoom - 4) + "px";
@@ -1873,6 +2028,7 @@
           );
       }
       value.transform = tr;
+      if (value.credits) M.updateCreditsDuration(project, value);
       updateSelectionBox();
       requestPaint();
       showDragReadout(
@@ -2527,7 +2683,9 @@
           content.append(speedControls(value, locked));
           const linked = project.items.find(
             (i) =>
-              i.kind === "audio" && i.linkedGroupId === value.linkedGroupId,
+              value.linkedGroupId &&
+              i.kind === "audio" &&
+              i.linkedGroupId === value.linkedGroupId,
           );
           if (linked)
             content.append(
@@ -4368,7 +4526,8 @@
     let template = "family",
       length = "30",
       musicId = "",
-      cancelled = false;
+      committing = false;
+    const controller = new AbortController();
     dialog("Make a movie for me", (body, foot) => {
       const styles = el("div", "choice-grid");
       for (const [key, style] of Object.entries(AutoMovie.styles)) {
@@ -4435,71 +4594,119 @@
       const progress = el("p", "notice");
       progress.hidden = true;
       body.append(progress);
+      const wizardBody = [...body.childNodes];
+      let wizardButtons;
       dialogCleanup = () => {
-        cancelled = true;
+        if (committing) return false;
+        controller.abort();
+      };
+      const generate = async (options) => {
+        body.replaceChildren(progress);
+        foot.replaceChildren(B("cancel", "Cancel", closeDialog));
+        progress.hidden = false;
+        progress.textContent = "Preparing draft · 0%";
+        engine.stop();
+        try {
+          const next = await AutoMovie.generate(
+            project,
+            library,
+            { ...options, signal: controller.signal },
+            (status) => {
+              progress.textContent =
+                "Analysing " +
+                status.name +
+                " · " +
+                Math.round(status.percent * 100) +
+                "%";
+            },
+          );
+          controller.signal.throwIfAborted();
+          next.selectedItemId = M.mainItems(next)[0]?.id;
+          committing = true;
+          // Closing the old engine must not autosave over the new checkpoint.
+          projectLoading = true;
+          progress.textContent =
+            "Draft ready · 100% · Saving timeline checkpoint";
+          for (const button of $("studioDialog").querySelectorAll("button"))
+            H.setDisabled(
+              button,
+              true,
+              "Saving the draft and previous timeline.",
+            );
+          // Persist both timelines before releasing any current media resources.
+          store.schedule(next);
+          await store.flush();
+          await engine.dispose();
+          library.pause();
+          for (const element of library.elements.values()) {
+            element.utvDisposed = true;
+            element.dispatchEvent(new Event("utv-disposed"));
+            element.removeAttribute("src");
+            element.load();
+          }
+          library.elements.clear();
+          project = next;
+          selectedId = project.selectedItemId;
+          history.push(project);
+          setupEngine();
+          projectLoading = false;
+          committing = false;
+          closeDialog();
+          renderAll();
+          await seekTo(0);
+          toast("Your editable movie draft is ready");
+        } catch (error) {
+          if (!controller.signal.aborted) {
+            if (committing) {
+              projectLoading = false;
+              store.schedule(project);
+            }
+            committing = false;
+            progress.textContent = error.message;
+            for (const button of $("studioDialog").querySelectorAll("button"))
+              H.setDisabled(button, false, "");
+            $("dialogTitle").textContent = "Make a movie for me";
+            body.replaceChildren(...wizardBody);
+            foot.replaceChildren(...wizardButtons);
+          }
+        }
       };
       foot.append(
         B("cancel", "Cancel", closeDialog),
         B(
           "generateMovie",
           "Make the draft",
-          async (event) => {
-            const generateButton = event.currentTarget;
+          () => {
             const ids = [
               ...body.querySelectorAll(".media-choice input:checked"),
             ].map((i) => i.value);
-            H.setDisabled(
-              generateButton,
-              true,
-              "Wait for the draft to finish, or choose Cancel.",
-            );
-            progress.hidden = false;
-            engine.stop();
-            try {
-              const next = await AutoMovie.generate(
-                project,
-                library,
-                { template, length, musicId, assetIds: ids },
-                (status) => {
-                  if (cancelled) throw new Error("Draft cancelled.");
-                  progress.textContent =
-                    "Analysing " +
-                    status.name +
-                    " · " +
-                    Math.round(status.percent * 100) +
-                    "%";
-                },
+            const options = { template, length, musicId, assetIds: ids };
+            if (project.items.length) {
+              $("dialogTitle").textContent = "Replace current timeline";
+              body.replaceChildren(
+                el(
+                  "p",
+                  "",
+                  "Making this draft will replace every item on your current timeline. A previous timeline checkpoint will be saved so you can choose Restore previous timeline from Project, even after reopening. Your media library, project name, canvas and export settings are kept.",
+                ),
               );
-              if (cancelled) return;
-              await engine.dispose();
-              library.pause();
-              for (const element of library.elements.values()) {
-                element.utvDisposed = true;
-                element.dispatchEvent(new Event("utv-disposed"));
-                element.removeAttribute("src");
-                element.load();
-              }
-              library.elements.clear();
-              project = next;
-              selectedId = M.mainItems(project)[0]?.id;
-              project.selectedItemId = selectedId;
-              history.push(project);
-              setupEngine();
-              closeDialog();
-              store.schedule(project);
-              renderAll();
-              await seekTo(0);
-              toast("Your editable movie draft is ready");
-            } catch (error) {
-              if (!cancelled) {
-                progress.textContent = error.message;
-                H.setDisabled(generateButton, false, "");
-              }
+              foot.replaceChildren(
+                B("cancel", "Cancel", closeDialog),
+                B(
+                  "generateMovie",
+                  "Replace current timeline",
+                  () => generate(options),
+                  { primary: true, id: "replaceTimelineButton" },
+                ),
+              );
+            } else {
+              return generate(options);
             }
           },
           { primary: true },
         ),
       );
+      wizardButtons = [...foot.childNodes];
     });
   }
   let exportMessage = "",
@@ -4816,9 +5023,12 @@
   }
   function setupGlobalEvents() {
     const dialogNode = $("studioDialog");
-    dialogNode.addEventListener("cancel", () => {
+    dialogNode.addEventListener("cancel", (event) => {
       if (dialogCleanup) {
-        dialogCleanup();
+        if (dialogCleanup() === false) {
+          event.preventDefault();
+          return;
+        }
         dialogCleanup = null;
       }
       H.close();
