@@ -62,7 +62,7 @@
     await api.importFiles(
       [
         await file(
-          "../../build/reports/video-studio/fixtures/uat-silent-video.mp4",
+          "fixtures/silent.mp4",
           "uat-silent-video.mp4",
           "video/mp4",
         ),

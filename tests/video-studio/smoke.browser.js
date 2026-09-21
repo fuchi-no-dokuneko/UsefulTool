@@ -29,6 +29,7 @@ window.runVideoStudioSmoke = async function (frame, check, waitUntil) {
       api.project.items.filter((i) => i.kind === "audio").length === 3,
   );
   api.setStep("arrange");
+  await window.checkDesktopSound(frame, api, check);
   const second = M.mainItems(api.project)[1];
   api.selectItem(second.id, false);
   await api.seekTo(second.start + 0.3);
@@ -103,6 +104,8 @@ window.runVideoStudioSuites = async function (check, waitUntil) {
     "controls",
     "gestures",
     "regressions",
+    "review",
+    "tools",
   ]) {
     sessionStorage.removeItem("utvstudio-session");
     const frame = document.createElement("iframe");

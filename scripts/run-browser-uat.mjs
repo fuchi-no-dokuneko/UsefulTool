@@ -12,12 +12,15 @@ import {
   writeFile,
 } from "node:fs/promises";
 import http from "node:http";
+import https from "node:https";
+import testTls from "./test-tls.cjs";
+import saveArtifact from "./test-artifacts.cjs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 
 const root = process.cwd();
-const reportDirectory = path.join(root, "build", "reports", "browser-uat");
+const reportDirectory = process.env.UAT_REPORT_DIRECTORY ? path.resolve(root, process.env.UAT_REPORT_DIRECTORY) : path.join(root, "build", "reports", "browser-uat");
 const testPath = process.argv[3] || "/tests/browser-smoke.html";
 const timeoutMs = Number(process.env.UAT_TIMEOUT_MS || 60_000);
 
@@ -86,7 +89,8 @@ async function findBrowser() {
 }
 
 async function startStaticServer() {
-  const server = http.createServer(async (request, response) => {
+  const server = https.createServer(testTls(root), async (request, response) => {
+    if (saveArtifact(root, request, response)) return;
     try {
       const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
       let pathname = decodeURIComponent(requestUrl.pathname);
@@ -113,7 +117,7 @@ async function startStaticServer() {
 
   await new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
+    server.listen(0, "0.0.0.0", resolve);
   });
   return server;
 }
@@ -427,6 +431,8 @@ async function main() {
     "--no-sandbox",
     "--disable-dev-shm-usage",
     "--disable-gpu",
+    "--ignore-certificate-errors",
+    "--disable-popup-blocking",
     "--autoplay-policy=no-user-gesture-required",
     `--remote-debugging-port=${debugPort}`,
     `--user-data-dir=${profileDirectory}`,
@@ -443,12 +449,15 @@ async function main() {
     client.on("Debugger.scriptParsed", (script) => scripts.set(script.scriptId, script));
     await client.call("Page.enable");
     await client.call("Emulation.setFocusEmulationEnabled", { enabled: true });
+    const viewportWidth = Number(process.env.UAT_VIEWPORT_WIDTH || 0);
+    const viewportHeight = Number(process.env.UAT_VIEWPORT_HEIGHT || 0);
+    if (viewportWidth > 0 && viewportHeight > 0) await client.call("Emulation.setDeviceMetricsOverride", { width: viewportWidth, height: viewportHeight, deviceScaleFactor: 1, mobile: false });
     await client.call("Runtime.enable");
     await client.call("Debugger.enable");
     await client.call("Profiler.enable");
     await client.call("Profiler.startPreciseCoverage", { callCount: true, detailed: true });
 
-    const url = `http://127.0.0.1:${serverPort}${testPath}`;
+    const url = `https://127.0.0.1:${serverPort}${testPath}`;
     await client.call("Page.navigate", { url });
     let title = "RUNNING";
     let resultText = "RUNNING";

@@ -247,7 +247,7 @@
         JSON.stringify(api.project.items) === snapshot,
     );
     const batch = api.exportMovie(true);
-    await wait(() => api.results.length === 1 && api.exporting);
+    await wait(() => /Segment 2 of 2/.test(d.getElementById("exportPercent")?.textContent || "") && api.exporting);
     click("#cancelButton");
     await batch;
     check(
@@ -256,15 +256,21 @@
     );
     const segments = await api.exportMovie(true);
     check(
-      "segment export produces two independent local files",
-      segments.length === 2 &&
-        segments.every(
-          (r, i) =>
-            r.blob.size > 100 &&
-            r.name.includes("-segment-00" + (i + 1)) &&
-            Math.abs(r.duration - 0.6) < 0.01,
-        ),
+      "segment export produces one completed ZIP containing two numbered videos",
+      segments.length === 1 && segments[0].kind === "segments" &&
+        segments[0].count === 2 && segments[0].name.endsWith("-segments.zip"),
     );
+    const zipBytes = new Uint8Array(await segments[0].blob.arrayBuffer());
+    const zipView = new DataView(zipBytes.buffer);
+    let directory = zipView.getUint32(zipBytes.length - 6, true);
+    for (let index = 0; index < 2; index++) {
+      const length = zipView.getUint16(directory + 28, true);
+      const name = new TextDecoder().decode(zipBytes.subarray(directory + 46, directory + 46 + length));
+      const offset = zipView.getUint32(directory + 42, true);
+      const data = offset + 30 + zipView.getUint16(offset + 26, true) + zipView.getUint16(offset + 28, true);
+      check("ZIP entry " + (index + 1) + " is an ordered WebM video", name.endsWith("-segment-000" + (index + 1) + ".webm") && zipView.getUint32(data) === 0x1a45dfa3);
+      directory += 46 + length + zipView.getUint16(directory + 30, true) + zipView.getUint16(directory + 32, true);
+    }
     const audio = api.project.items.find((i) => i.kind === "audio");
     M.setSpeed(api.project, audio.id, 2);
     const output = await api.engine.recordRange(0.05, 0.45);

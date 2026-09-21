@@ -23,8 +23,8 @@
     check(
       "offline HTML embeds every script and stylesheet",
       !d.querySelector('script[src],link[rel="stylesheet"]') &&
-        d.querySelectorAll("script[data-inlined-from]").length === 11 &&
-        Boolean(w.UTStudio.Export && w.UTVideoCodecs),
+        d.querySelectorAll("script[data-inlined-from]").length === 12 &&
+        Boolean(w.UTStudio.Export && w.UTStudio.Archive && w.UTVideoCodecs),
     );
     const file = new w.File(
       [await (await fetch("fixtures/source.mp4")).blob()],

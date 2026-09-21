@@ -68,10 +68,13 @@ jobs:
           done
       - name: Run browser unit and UAT coverage
         env:
-          UAT_TIMEOUT_MS: "90000"
+          UAT_TIMEOUT_MS: "180000"
         run: node scripts/run-browser-uat.mjs
       - name: Enforce complete maintained-source coverage
-        run: node scripts/verify-coverage.mjs
+        run: |
+          NODE_V8_COVERAGE=build/reports/browser-uat/node node --test tests/video-studio/*.test.cjs
+          node scripts/merge-node-coverage.mjs
+          node scripts/verify-coverage.mjs
       - name: Verify SonarQube input reports
         run: |
           test -s build/reports/browser-uat/lcov.info

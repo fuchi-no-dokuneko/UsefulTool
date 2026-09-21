@@ -191,9 +191,102 @@ test('credits speed and duration modes, frame times and segmented output boundar
   M.updateCreditsDuration(p, credits); assert.ok(M.span(credits) > duration);
   assert.equal(M.formatTime(3661.5), '01:01:01:15');
   assert.deepEqual(M.segmentRanges(4.05, 2), [{start:0,end:2},{start:2,end:4.05}]);
-  assert.throws(() => M.segmentRanges(100, 1), /60 segments/);
+  assert.equal(M.segmentRanges(100, 1).length, 100);
   assert.throws(() => M.segmentRanges(1, .01), /0.1 seconds/);
   assert.deepEqual(M.exportDimensions(p, 'standard'), {width:1920,height:1080});
+});
+
+test('legacy sound defaults and explicit routing survive portable history and every time edit', () => {
+  const p = movie(1), a = p.items.find(i => i.audio);
+  delete a.audio.channelMode; delete a.audio.leftGain; delete a.audio.rightGain;
+  for (const version of [1, 2]) {
+    const saved = M.copy(p); saved.schemaVersion = version;
+    const legacy = M.parseProject(M.serialize(saved)).items.find(i => i.audio).audio;
+    assert.equal(legacy.channelMode, 'stereo'); assert.equal(legacy.leftGain, 1); assert.equal(legacy.rightGain, 1);
+  }
+  M.normalize(p); M.setLink(p, a.id, false); M.setChannelMode(a, 'leftOnly');
+  assert.deepEqual(M.audioRouting(a.audio), { left: 1, right: 0, mono: true });
+  const h = new M.History(p);
+  M.setChannelMode(a, 'rightOnly'); a.audio.rightGain = .7; h.push(p);
+  assert.equal(h.undo().items.find(i => i.id === a.id).audio.channelMode, 'leftOnly');
+  assert.equal(h.redo().items.find(i => i.id === a.id).audio.rightGain, .7);
+  const expected = M.copy(a.audio);
+  const dupe = M.duplicateItem(p, a.id), cut = M.splitItem(p, dupe.id, dupe.start + 2);
+  M.trimItem(p, cut.id, 'end', cut.end - 1); M.setSpeed(p, cut.id, 2);
+  for (const entry of M.parseProject(M.serialize(p)).items.filter(i => i.audio)) assert.deepEqual(entry.audio, expected);
+  const invalid = M.copy(p); invalid.items.find(i => i.audio).audio.channelMode = 'random';
+  assert.throws(() => M.parseProject(M.serialize(invalid)), /audio settings/);
+  const boosted = M.copy(p); boosted.items.find(i => i.audio).audio.leftGain = 1.5;
+  assert.equal(M.parseProject(M.serialize(boosted)).items.find(i => i.audio).audio.leftGain, 1.5);
+});
+
+test('independent songs can occupy different ears without bypassing the three-source cap', () => {
+  const p = M.createProject();
+  const a = M.addMedia(p, media(p, 'audio', 4, '440Hz.mp3').id, { start: 0 });
+  const b = M.addMedia(p, media(p, 'audio', 4, '880Hz.mp3').id, { start: 0 });
+  M.setChannelMode(a, 'leftOnly'); M.setChannelMode(b, 'rightOnly');
+  const plan = M.evaluateAudio(p, 1);
+  assert.deepEqual([a, b].map(i => { const e = plan.find(e => e.item.id === i.id); return [e.left, e.right, e.mono]; }), [[1, 0, true], [0, 1, true]]);
+  a.audio.channelMode = 'custom'; a.audio.leftGain = .4;
+  assert.deepEqual(M.audioRouting(a.audio), { left: .4, right: 0, mono: true });
+  a.audio.rightGain = .6;
+  assert.deepEqual(M.audioRouting(a.audio), { left: .4, right: .6, mono: false });
+  M.addMedia(p, a.assetId, { start: 0 }); assert.equal(M.audioConflicts(p).length, 0);
+  M.addMedia(p, b.assetId, { start: 0 }); assert.equal(M.audioConflicts(p)[0].items.length, 4);
+  assert.equal(M.evaluateAudio(p, 1).length, 3);
+});
+
+function connectedPair() {
+  const p = M.createProject();
+  const a = M.addMedia(p, media(p, 'video', 4, 'A.mp4').id);
+  const b = M.addMedia(p, media(p, 'video', 4, 'B.mp4').id);
+  a.fadeOut = 1; b.fadeIn = 1; b.blendMode = 'alpha';
+  return { p, a, b, sound: p.items.find(i => i.audio && i.linkId === b.linkId) };
+}
+test('connected Main-to-Overlay move preserves every property and shifts linked sound atomically', () => {
+  const { p, a, b, sound } = connectedPair();
+  M.addEffect(b, 'grayscale'); M.addEffect(b, 'hue'); b.effects[0].enabled = false;
+  b.effects[1].start = .4; b.effects[1].end = 2; b.opacity = .8;
+  b.transform.cropX = 20; b.transform.cropWidth = 900; b.transform.x = 17;
+  M.setChannelMode(sound, 'rightOnly'); sound.audio.rightGain = .63;
+  const old = M.copy(b), oldSound = M.copy(sound), h = new M.History(p);
+  M.moveItem(p, b.id, b.start, 'overlay-1'); h.push(p);
+  assert.deepEqual(b, { ...old, start: 3, end: 7, layerId: 'overlay-1' });
+  assert.deepEqual(sound, { ...oldSound, start: 3, end: 7 });
+  assert.deepEqual(M.evaluateFrame(p, 3.5).items.map(e => e.item.id), [a.id, b.id]);
+  assert.equal(M.evaluateFrame(p, 3.5).items[1].opacity, .4);
+  assert.equal(M.evaluateFrame(p, 4).items[0].opacity, .8);
+  assert.deepEqual(M.item(h.undo(), b.id), old); assert.equal(h.canUndo, false);
+  assert.deepEqual(M.item(h.redo(), b.id), b);
+});
+test('unlinked sound stays in place, unequal fades use their minimum, unrelated moves keep requested time', () => {
+  for (const linked of [true, false]) {
+    const { p, a, b, sound } = connectedPair();
+    M.setLink(p, b.id, linked); a.fadeOut = .75; b.fadeIn = 1.5;
+    M.moveItem(p, b.id, 4, 'overlay-2');
+    assert.equal(b.start, 3.25); assert.equal(sound.start, linked ? 3.25 : 4);
+  }
+  for (const kind of ['no-out', 'no-in', 'not-adjacent']) {
+    const { p, a, b } = connectedPair();
+    if (kind === 'no-out') a.fadeOut = 0;
+    if (kind === 'no-in') b.fadeIn = 0;
+    if (kind === 'not-adjacent') { b.start = 5; b.end = 9; }
+    M.moveItem(p, b.id, 6, 'overlay-1'); assert.equal(b.start, 6);
+  }
+  const { p, b, sound } = connectedPair(); sound.locked = true;
+  const before = M.serialize(p);
+  assert.throws(() => M.moveItem(p, b.id, 4, 'overlay-1'), /Unlock/);
+  assert.equal(M.serialize(p), before);
+});
+test('layer alpha multiplies overlapping fade curves and intervals have no count cap or drift', () => {
+  const { p, b } = connectedPair(); b.fadeIn = 3; b.fadeOut = 3;
+  assert.equal(M.fadeAt(b, 6), 4 / 9);
+  const ranges = M.segmentRanges(106, .1);
+  assert.equal(ranges.length, 1060); assert.deepEqual(ranges.at(-1), { start: 105.9, end: 106 });
+  assert.ok(ranges.every((r, i) => !i || ranges[i - 1].end === r.start));
+  assert.equal(M.segmentRanges(7000, .1).length, 70000);
+  for (const duration of [Infinity, NaN, -1]) assert.throws(() => M.segmentRanges(duration, .1), /duration/);
+  assert.throws(() => M.segmentRanges(106, .1, 1), /one frame/);
 });
 test('incremental SHA-256 matches independent Node crypto, including block and chunk boundaries', async () => {
   for (const length of [0,3,55,56,63,64,65,127,128,65537,1000000]) {

@@ -162,10 +162,11 @@
     set("repeat", false);
     click("wholeMovie");
     check(
-      "sound controls preserve independent pan fades rate and repeat",
+      "sound controls clamp output to 100% and preserve custom routing fades rate and repeat",
       api.selectedItem.audio.volume === 1.2 &&
         api.selectedItem.audio.leftGain === 0.5 &&
-        api.selectedItem.audio.rightGain === 1.5 &&
+        api.selectedItem.audio.rightGain === 1 &&
+        api.selectedItem.audio.channelMode === "custom" &&
         api.selectedItem.audio.loop &&
         !api.selectedItem.linkEnabled &&
         M.item(api.project, videoId).playbackRate === 2,

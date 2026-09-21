@@ -35,7 +35,11 @@ jobs:
         run: npm run --prefix tests/video-studio test:browser
       - name: Check long-video preview timing, frames and repeating sound
         run: npm run --prefix tests/video-studio test:long-playback
-      - name: Verify the thirteen-asset UAT and all 3399 Standard export frames
+      - name: Verify stereo routing, connected fades and 1060 encoded ZIP entries
+        run: npm run --prefix tests/video-studio test:stereo-segments
+      - name: Verify edited MP4 video and audio frames independently
+        run: node tests/tool-bugs/verify-media.cjs
+      - name: Verify the thirteen-asset UAT and all Standard export frames
         run: npm run --prefix tests/video-studio test:release
       - name: Keep video acceptance evidence
         if: always()

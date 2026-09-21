@@ -45,6 +45,8 @@ function harness({ snapshots = true, bitmaps = true } = {}) {
     VideoFrame: snapshots
       ? class {
           constructor(element) {
+            if (element.invalidSnapshot)
+              throw new DOMException("Decoder handoff", "InvalidStateError");
             this.timestamp = element.presented * 1e6;
             this.closed = false;
             frames.push(this);
@@ -110,6 +112,38 @@ test("prepared preview pixels retain the decoded frame time, independent of the 
   h.library.dispose();
   assert.equal(bitmap.closed, true);
   assert.equal(h.callbacks.size, 0);
+});
+
+test("a transient VideoFrame handoff cannot break project recovery or disable future snapshots", async () => {
+  const h = harness();
+  h.element.invalidSnapshot = true;
+  const preparing = h.library.captureFrame(h.item);
+  await h.drain();
+  assert.equal(h.pending[0].source, h.element);
+  const bitmap = h.complete();
+  await preparing;
+  assert.equal(h.library.frameFor(h.item), bitmap);
+  h.element.invalidSnapshot = false;
+  const next = h.library.captureFrame(h.item);
+  await h.drain();
+  assert.notEqual(h.pending[1].source, h.element);
+  h.complete(1);
+  await next;
+  h.library.dispose();
+});
+
+test("an unavailable bitmap falls back to native preview and recovers on the next decoded frame", async () => {
+  const h = harness(),
+    preparing = h.library.captureFrame(h.item);
+  await h.drain();
+  h.pending[0].reject(new DOMException("No frame yet", "InvalidStateError"));
+  await preparing;
+  assert.equal(h.library.frameFor(h.item), h.element);
+  await h.drain();
+  const bitmap = h.complete(1);
+  await h.drain();
+  assert.equal(h.library.frameFor(h.item), bitmap);
+  h.library.dispose();
 });
 
 test("a newer seek wins when an old bitmap finishes after its replacement", async () => {
