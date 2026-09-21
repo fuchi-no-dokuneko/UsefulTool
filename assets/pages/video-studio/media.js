@@ -100,19 +100,27 @@
     const Offline = root.OfflineAudioContext || root.webkitOfflineAudioContext;
     if (!Offline) return { waveform: [], waveformStatus: "Waveform unavailable in this browser" };
     try {
-      const context = new Offline(1, 1, 22050);
-      const buffer = await context.decodeAudioData(await file.arrayBuffer());
-      const bins = 512, peaks = Array(bins).fill(0);
-      for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
-        const data = buffer.getChannelData(channel), size = Math.ceil(data.length / bins);
-        for (let bin = 0; bin < bins; bin++) {
-          const stop = Math.min(data.length, (bin + 1) * size);
-          let peak = 0;
-          for (let j = bin * size; j < stop; j++) peak = Math.max(peak, Math.abs(data[j]));
-          peaks[bin] = Math.max(peaks[bin], Math.round(peak * 1000) / 1000);
-        }
+      const context = new Offline(2, 1, 22050);
+      let buffer = await context.decodeAudioData(await file.arrayBuffer());
+      if (buffer.numberOfChannels > 2) {
+        const downmix = new Offline(2, buffer.length, buffer.sampleRate), source = downmix.createBufferSource();
+        source.buffer = buffer; source.connect(downmix.destination); source.start();
+        buffer = await downmix.startRendering();
       }
-      return { waveform: peaks, waveformStatus: "Ready", audioDuration: buffer.duration };
+      const bins = 512, size = Math.ceil(buffer.length / bins),
+        left = buffer.getChannelData(0), right = buffer.getChannelData(Math.min(1, buffer.numberOfChannels - 1)),
+        waveformLeft = [], waveformRight = [], waveformMono = [];
+      for (let bin = 0; bin < bins; bin++) {
+        let l = 0, r = 0, mono = 0;
+        for (let j = bin * size; j < Math.min(buffer.length, (bin + 1) * size); j++) {
+          l = Math.max(l, Math.abs(left[j])); r = Math.max(r, Math.abs(right[j]));
+          mono = Math.max(mono, Math.abs((left[j] + right[j]) / 2));
+        }
+        const peak = n => Math.min(1, Math.round(n * 1000) / 1000);
+        waveformLeft.push(peak(l)); waveformRight.push(peak(r)); waveformMono.push(peak(mono));
+      }
+      return { waveform: waveformLeft.map((n, i) => Math.max(n, waveformRight[i])),
+        waveformLeft, waveformRight, waveformMono, waveformStatus: "Ready", audioDuration: buffer.duration };
     } catch { return { waveform: [], waveformStatus: "No decodable waveform; playback may still be available" }; }
   }
   class MediaLibrary {
@@ -145,7 +153,6 @@
           if (!(descriptor.width && descriptor.height)) throw new Error("This file has no readable video frames.");
           descriptor.thumbnail = poster(element, descriptor.width, descriptor.height);
         }
-        if (kind === "audio" || descriptor.hasAudio) Object.assign(descriptor, await waveform(file));
       }
       return descriptor;
     }
@@ -172,6 +179,9 @@
           const element = document.createElement(descriptor.kind === "video" ? "video" : "audio");
           element.preload = "auto"; element.muted = true; element.playsInline = true; element.src = entry.url;
           await waitMedia(element); entry.probe = element;
+          if ((descriptor.kind === "audio" || descriptor.hasAudio) &&
+              (!descriptor.waveformLeft || !descriptor.waveformRight || !descriptor.waveformMono))
+            Object.assign(descriptor, await waveform(file));
         }
         this.assets.set(descriptor.id, entry); return entry;
       } catch (error) { URL.revokeObjectURL(entry.url); throw error; }
@@ -207,7 +217,15 @@
       // A callback may arrive late for an offscreen media element. Snapshot the
       // decoder's actual frame and retain its presentation timestamp, rather
       // than labelling old pixels with the advancing media clock.
-      const frame = root.VideoFrame ? new root.VideoFrame(element) : element;
+      let frame = element;
+      if (root.VideoFrame) {
+        try { frame = new root.VideoFrame(element); }
+        catch (error) {
+          // During decoder handoff Chrome can report readyState >= 2 before
+          // a VideoFrame can be copied. The native bitmap path is still usable.
+          if (!["InvalidStateError", "NotSupportedError", "TypeError"].includes(error.name)) throw error;
+        }
+      }
       const at = frame === element ? timestamp ?? element.currentTime : frame.timestamp / 1e6;
       const transform = value.transform;
       const fullWidth = element.videoWidth, fullHeight = element.videoHeight;
@@ -225,10 +243,12 @@
       // completed bitmaps and never waits inside drawImage(video) during playback.
       const operation = Promise.resolve().then(() => root.createImageBitmap(frame, bitmapOptions)).then(bitmap => {
         if (state.disposed || serial !== state.serial) { bitmap.close(); return; }
-        state.bitmap?.close(); state.bitmap = bitmap; state.timestamp = at;
+        state.bitmap?.close(); state.bitmap = bitmap; state.timestamp = at; state.nativeFallback = false;
       }).catch(error => {
         if (state.disposed || serial !== state.serial) return;
-        if (["NotSupportedError", "TypeError"].includes(error.name)) state.fallback = true;
+        if (error.name === "InvalidStateError") {
+          state.bitmap?.close(); state.bitmap = null; state.nativeFallback = true;
+        } else if (["NotSupportedError", "TypeError"].includes(error.name)) state.fallback = true;
         else throw error;
       }).finally(() => { if (frame !== element) frame.close(); });
       state.pending = operation;
@@ -256,18 +276,23 @@
         state.drawnAt = null;
         return element;
       }
-      if (!state.pending && (!element.requestVideoFrameCallback ||
+      if (!state.pending && (state.nativeFallback || !element.requestVideoFrameCallback ||
           (!element.paused && !element.seeking && Math.abs(element.currentTime - state.timestamp) > 1 / 60)))
         this.captureFrame(value, null, undefined, false).catch(() => {});
+      if (state.nativeFallback) { state.drawnAt = null; return element; }
       // An asynchronous conversion can be delayed under load. Do not keep
       // displaying its older cached pixels after the decoder has moved on.
       if (state.bitmap && !element.paused && !element.seeking &&
           element.currentTime - state.timestamp > .075) {
         state.drawnAt = null;
         if (root.VideoFrame) {
-          const current = new root.VideoFrame(element);
-          state.drawnAt = current.timestamp / 1e6;
-          current.close();
+          try {
+            const current = new root.VideoFrame(element);
+            state.drawnAt = current.timestamp / 1e6;
+            current.close();
+          } catch (error) {
+            if (!["InvalidStateError", "NotSupportedError", "TypeError"].includes(error.name)) throw error;
+          }
         }
         return element;
       }

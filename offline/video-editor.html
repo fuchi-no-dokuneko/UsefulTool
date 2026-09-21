@@ -6,10 +6,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'none'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'none'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'"
     />
     <meta name="referrer" content="no-referrer" />
     <title>Timeline Video Studio | UsefulTool</title>
+    <link rel="icon" href="data:," />
     <style data-inlined-from="assets/pages/video-studio/studio.css">
 :root {
   --ink: #17201b;
@@ -1202,6 +1203,26 @@ small,
   background: #edf6f0;
   border-radius: 6px;
 }
+@media (min-width: 1100px) {
+  .audio-waveforms, .audio-routing {
+    display: grid;
+    gap: 8px;
+  }
+  .audio-waveform-lane strong {
+    display: block;
+    margin-bottom: 3px;
+    font-size: 11px;
+  }
+  .audio-waveform-lane .waveform-large {
+    display: block;
+    height: 40px;
+  }
+  .audio-routing .button-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+}
 dialog {
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -1840,8 +1861,26 @@ dialog::backdrop {
       fadeIn: 0, fadeOut: 0, effects: [], opacityKeys: [], blendMode: "equal", linkEnabled: false };
   }
   function audioProps(category = "music") {
-    return { category, volume: 1, leftGain: 1, rightGain: 1, muted: false, fadeIn: 0, fadeOut: 0,
+    return { category, volume: 1, channelMode: "stereo", leftGain: 1, rightGain: 1, muted: false, fadeIn: 0, fadeOut: 0,
       preservePitch: true, loop: false, wholeMovie: false, offset: 0 };
+  }
+  function audioRouting(audio) {
+    const mode = audio.channelMode ?? "stereo";
+    const left = mode === "rightOnly" ? 0 : audio.leftGain ?? 1;
+    const right = mode === "leftOnly" ? 0 : audio.rightGain ?? 1;
+    // A single output always carries both source channels, including custom
+    // one-ear gains. With both custom outputs enabled, preserve source stereo.
+    const mono = mode === "leftOnly" || mode === "rightOnly" ||
+      (mode === "custom" && (left === 0 || right === 0));
+    return { left, right, mono };
+  }
+  function setChannelMode(value, mode) {
+    if (!value?.audio || !["stereo", "leftOnly", "rightOnly", "custom"].includes(mode)) return;
+    value.audio.channelMode = mode;
+    if (mode !== "custom") {
+      value.audio.leftGain = mode === "rightOnly" ? 0 : 1;
+      value.audio.rightGain = mode === "leftOnly" ? 0 : 1;
+    }
   }
   function visualEnd(project) {
     return Math.max(0, ...project.items.filter((i) => i.kind !== "audio" && i.kind !== "filter").map((i) => i.end));
@@ -1860,6 +1899,11 @@ dialog::backdrop {
     });
     project.duration = rounded(Math.max(visualEnd(project), 0, ...project.items.filter((i) => i.kind === "audio" && !i.audio.wholeMovie).map((i) => i.end)));
     for (const value of project.items) {
+      if (value.audio) {
+        value.audio.channelMode ??= "stereo";
+        value.audio.leftGain ??= 1;
+        value.audio.rightGain ??= 1;
+      }
       if (value.linkId || value.linkedGroupId) {
         value.linkId = value.linkId || value.linkedGroupId;
         value.linkedGroupId = value.linkId;
@@ -1885,6 +1929,11 @@ dialog::backdrop {
     return Math.max(0, Math.min(5, span(a) - preceding - 1 / project.exportSettings.fps, span(b) - following - 1 / project.exportSettings.fps));
   }
   function reflow(project) {
+    project.mainOrder = project.mainOrder.filter(key => item(project, key)?.layerId === "main");
+    project.transitions = project.transitions.filter(tr => {
+      const index = project.mainOrder.indexOf(tr.toId);
+      return index > 0 && project.mainOrder[index - 1] === tr.fromId;
+    });
     let time = 0;
     for (const value of mainItems(project)) {
       const duration = span(value), previousStart = value.start;
@@ -2017,7 +2066,13 @@ dialog::backdrop {
     if (layer(project, nextLayer)?.locked) throw new Error("Unlock the destination layer first.");
     if (value.kind === "video" && !VIDEO_LAYERS.includes(nextLayer)) throw new Error("Choose one of the three video tracks.");
     if (value.kind === "audio" && layer(project, nextLayer)?.kind !== "sound") throw new Error("Place sound on a Sound track.");
-    const delta = Math.max(0, start) - value.start;
+    let nextStart = Math.max(0, start);
+    if (value.kind === "video" && value.layerId === "main" && nextLayer !== "main") {
+      const previous = mainItems(project)[project.mainOrder.indexOf(value.id) - 1];
+      if (previous && Math.abs(previous.end - value.start) < 1e-6 && previous.fadeOut > 0 && value.fadeIn > 0)
+        nextStart = Math.max(0, previous.end - Math.min(previous.fadeOut, value.fadeIn));
+    }
+    const delta = nextStart - value.start;
     if (value.kind === "video" && nextLayer !== "main" && project.items.some((i) => i.id !== value.id && i.kind === "video" && i.layerId === nextLayer && i.start < value.end + delta - 1e-7 && i.end > value.start + delta + 1e-7)) throw new Error("This overlay track is occupied. Shorten an overlay first.");
     for (const sibling of related(project, value)) {
       if (isLocked(project, sibling)) throw new Error("Unlock the linked item first.");
@@ -2066,7 +2121,7 @@ dialog::backdrop {
       sibling.start = value.start; sibling.end = value.end; sibling.sourceIn = value.sourceIn; sibling.sourceOut = value.sourceOut;
     }
     if (value.credits) updateCreditsDuration(project, value);
-    value.layerId === "main" ? reflow(project) : normalize(project); return true;
+    related(project, value).some(i => i.layerId === "main") ? reflow(project) : normalize(project); return true;
   }
   function setSpeed(project, itemId, speed) {
     const value = item(project, itemId);
@@ -2113,8 +2168,10 @@ dialog::backdrop {
   function duplicateItem(project, itemId) {
     const value = item(project, itemId);
     if (!value || isLocked(project, value)) return null;
+    const siblings = related(project, value);
+    if (siblings.some(i => isLocked(project, i))) throw new Error("Unlock the linked item first.");
     const group = id("link"); let result;
-    for (const sibling of related(project, value)) {
+    for (const sibling of siblings) {
       const dupe = copy(sibling); dupe.id = id(sibling.kind); dupe.start = sibling.end; dupe.end = dupe.start + span(sibling);
       if (!["video", "audio"].includes(dupe.kind) && dupe.layerId !== "main") {
         const track = copy(layer(project, dupe.layerId));
@@ -2126,7 +2183,7 @@ dialog::backdrop {
       if (dupe.layerId === "main") project.mainOrder.splice(project.mainOrder.indexOf(sibling.id) + 1, 0, dupe.id);
       if (sibling.id === value.id) result = dupe;
     }
-    value.layerId === "main" ? reflow(project) : normalize(project); return result;
+    siblings.some(i => i.layerId === "main") ? reflow(project) : normalize(project); return result;
   }
   function deleteItem(project, itemId) {
     const value = item(project, itemId);
@@ -2176,7 +2233,9 @@ dialog::backdrop {
   }
   function fadeAt(value, t, audio = false) {
     const properties = audio ? value.audio : value, local = t - value.start;
-    return clamp(Math.min(1, properties.fadeIn ? local / properties.fadeIn : 1, properties.fadeOut ? (value.end - t) / properties.fadeOut : 1), 0, 1);
+    const fadeIn = clamp(properties.fadeIn ? local / properties.fadeIn : 1, 0, 1);
+    const fadeOut = clamp(properties.fadeOut ? (value.end - t) / properties.fadeOut : 1, 0, 1);
+    return audio ? Math.min(fadeIn, fadeOut) : fadeIn * fadeOut;
   }
   function sourceTimeAt(value, time) {
     let offset = Math.max(0, time - value.start) * value.playbackRate;
@@ -2232,7 +2291,8 @@ dialog::backdrop {
   }
   function audioGains(project, value, time) {
     const gain = value.audio.volume * fadeAt(value, time, true) * (project.soundBalance[value.audio.category] ?? 1);
-    return { left: gain * value.audio.leftGain, right: gain * value.audio.rightGain };
+    const routing = audioRouting(value.audio);
+    return { left: gain * routing.left, right: gain * routing.right, mono: routing.mono };
   }
   const MAX_AUDIO_SOURCES = 3;
   function audioConflicts(project) {
@@ -2297,14 +2357,14 @@ dialog::backdrop {
       width: source.width * scale, height: source.height * scale, fit: mode });
   }
   function segmentRanges(duration, interval, fps = 30) {
-    if (!(duration > 0)) return [];
+    if (!Number.isFinite(duration) || duration < 0) throw new Error("Use a valid finite movie duration.");
+    if (duration === 0) return [];
+    if (!Number.isFinite(fps) || fps <= 0) throw new Error("Use a valid frame rate.");
     if (!Number.isFinite(interval) || interval < Math.max(.1, 1 / fps)) throw new Error("Use at least 0.1 seconds and one frame between cuts.");
-    const count = Math.ceil(duration / interval);
-    if (count > 61) throw new Error("Choose a longer interval; the maximum is 60 segments.");
+    const count = Math.ceil(duration / interval - 1e-7);
     const ranges = [];
-    for (let start = 0; start < duration - 1e-7; start += interval) ranges.push({ start: rounded(start), end: rounded(Math.min(duration, start + interval)) });
+    for (let index = 0; index < count; index++) ranges.push({ start: rounded(index * interval), end: rounded(Math.min(duration, (index + 1) * interval)) });
     if (ranges.length > 1 && ranges.at(-1).end - ranges.at(-1).start < Math.max(.1, 1 / fps) - 1e-7) ranges[ranges.length - 2].end = ranges.pop().end;
-    if (ranges.length > 60) throw new Error("Choose a longer interval; the maximum is 60 segments.");
     return ranges;
   }
   function formatTime(time, fps = 30) {
@@ -2344,7 +2404,8 @@ dialog::backdrop {
       if (a.kind !== "image") fail(numeric(a.duration, MIN), "Invalid source duration.");
       if (a.kind !== "audio") fail(numeric(a.width, 1) && numeric(a.height, 1), "Invalid source dimensions.");
       if (a.thumbnail !== undefined) fail(string(a.thumbnail, 2 * 1024 * 1024) && /^data:image\/(png|jpeg|webp|gif|bmp);base64,[a-z0-9+/=\s]+$/i.test(a.thumbnail), "Invalid embedded thumbnail.");
-      if (a.waveform !== undefined) fail(Array.isArray(a.waveform) && a.waveform.length <= 8192 && a.waveform.every(n => numeric(n, 0, 1)), "Invalid waveform data.");
+      for (const key of ["waveform", "waveformLeft", "waveformRight", "waveformMono"])
+        if (a[key] !== undefined) fail(Array.isArray(a[key]) && a[key].length <= 8192 && a[key].every(n => numeric(n, 0, 1)), "Invalid waveform data.");
     }
     for (const track of value.layers) fail(["main-video", "overlay", "text", "image", "filter", "sound"].includes(track.kind) && string(track.name, 180) && numeric(track.order) && ["visible", "locked", "muted", "solo"].every(k => typeof track[k] === "boolean"), "Invalid layer settings.");
     for (const required of createProject().layers) fail(layer(value, required.id)?.kind === required.kind, "A required timeline track is missing.");
@@ -2368,7 +2429,13 @@ dialog::backdrop {
       if (entry.kind !== "audio") fail(entry.transform && ["x", "y", "rotation", "cropX", "cropY"].every(k => numeric(entry.transform[k])) && ["width", "height", "cropWidth", "cropHeight"].every(k => numeric(entry.transform[k], .000001)), "Invalid item transform.");
       fail(entry.opacityKeys.every(k => k && numeric(k.time, 0) && numeric(k.value, 0, 1) && ["linear", "smooth", "ease-in", "ease-out", "hold"].includes(k.easing)), "Invalid visibility curve.");
       fail(entry.effects.every(f => f && EFFECTS.includes(f.type) && numeric(f.amount, f.type === "hue" ? -360 : 0, f.type === "hue" ? 360 : 3) && numeric(f.start, 0) && numeric(f.end, f.start) && typeof f.enabled === "boolean"), "Invalid effect data.");
-      if (entry.audio) fail(["leftGain", "rightGain"].every(k => numeric(entry.audio[k], 0, 2)) && ["fadeIn", "fadeOut"].every(k => numeric(entry.audio[k], 0)) && ["muted", "preservePitch", "loop", "wholeMovie"].every(k => typeof entry.audio[k] === "boolean"), "Invalid audio settings.");
+      if (entry.audio) {
+        if (entry.audio.channelMode === undefined) entry.audio.channelMode = "stereo";
+        for (const key of ["leftGain", "rightGain"]) if (entry.audio[key] === undefined) entry.audio[key] = 1;
+        // Old projects allowed up to 200% per channel. Keep those saved values;
+        // new output controls use 0–100% without rewriting historical mixes.
+        fail(["stereo", "leftOnly", "rightOnly", "custom"].includes(entry.audio.channelMode) && ["leftGain", "rightGain"].every(k => numeric(entry.audio[k], 0, 2)) && ["fadeIn", "fadeOut"].every(k => numeric(entry.audio[k], 0)) && ["muted", "preservePitch", "loop", "wholeMovie"].every(k => typeof entry.audio[k] === "boolean"), "Invalid audio settings.");
+      }
       if (entry.kind === "text") fail(entry.text && string(entry.text.content) && string(entry.text.font, 200) && numeric(entry.text.size, 1, 10000) && numeric(entry.text.weight, 100, 1000) && numeric(entry.text.lineHeight, .1, 10) && ["left", "center", "right"].includes(entry.text.align) && string(entry.text.color, 100) && string(entry.text.background, 100), "Invalid text settings.");
       if (entry.kind === "filter") {
         const f = entry.filter;
@@ -2418,7 +2485,7 @@ dialog::backdrop {
     related, setLink, moveItem, reorderMain, trimItem, setSpeed, splitItem, duplicateItem, deleteItem, transitionMaximum, setTransition, removeTransition,
     ease, curveAt, setKey, fadeAt, sourceTimeAt, setRepeat, snapTime, visibleItems, videoConflicts, MAX_AUDIO_SOURCES, audioConflicts, fixAudioConflicts, audioGains, evaluateFrame, evaluateAudio, applyOverlayPreset, addEffect,
     creditsHeight, updateCreditsDuration, fitTransform, segmentRanges, formatTime, exportDimensions, serialize, parseProject, History, visualEnd,
-    legacyLinkCandidates, migrateProject, timelineCheckpoint, restoreTimeline };
+    legacyLinkCandidates, migrateProject, timelineCheckpoint, restoreTimeline, audioRouting, setChannelMode };
   root.UTStudio = Object.assign(root.UTStudio || {}, { Model: api });
   if (typeof module !== "undefined") module.exports = api;
 })(globalThis);
@@ -2527,19 +2594,27 @@ dialog::backdrop {
     const Offline = root.OfflineAudioContext || root.webkitOfflineAudioContext;
     if (!Offline) return { waveform: [], waveformStatus: "Waveform unavailable in this browser" };
     try {
-      const context = new Offline(1, 1, 22050);
-      const buffer = await context.decodeAudioData(await file.arrayBuffer());
-      const bins = 512, peaks = Array(bins).fill(0);
-      for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
-        const data = buffer.getChannelData(channel), size = Math.ceil(data.length / bins);
-        for (let bin = 0; bin < bins; bin++) {
-          const stop = Math.min(data.length, (bin + 1) * size);
-          let peak = 0;
-          for (let j = bin * size; j < stop; j++) peak = Math.max(peak, Math.abs(data[j]));
-          peaks[bin] = Math.max(peaks[bin], Math.round(peak * 1000) / 1000);
-        }
+      const context = new Offline(2, 1, 22050);
+      let buffer = await context.decodeAudioData(await file.arrayBuffer());
+      if (buffer.numberOfChannels > 2) {
+        const downmix = new Offline(2, buffer.length, buffer.sampleRate), source = downmix.createBufferSource();
+        source.buffer = buffer; source.connect(downmix.destination); source.start();
+        buffer = await downmix.startRendering();
       }
-      return { waveform: peaks, waveformStatus: "Ready", audioDuration: buffer.duration };
+      const bins = 512, size = Math.ceil(buffer.length / bins),
+        left = buffer.getChannelData(0), right = buffer.getChannelData(Math.min(1, buffer.numberOfChannels - 1)),
+        waveformLeft = [], waveformRight = [], waveformMono = [];
+      for (let bin = 0; bin < bins; bin++) {
+        let l = 0, r = 0, mono = 0;
+        for (let j = bin * size; j < Math.min(buffer.length, (bin + 1) * size); j++) {
+          l = Math.max(l, Math.abs(left[j])); r = Math.max(r, Math.abs(right[j]));
+          mono = Math.max(mono, Math.abs((left[j] + right[j]) / 2));
+        }
+        const peak = n => Math.min(1, Math.round(n * 1000) / 1000);
+        waveformLeft.push(peak(l)); waveformRight.push(peak(r)); waveformMono.push(peak(mono));
+      }
+      return { waveform: waveformLeft.map((n, i) => Math.max(n, waveformRight[i])),
+        waveformLeft, waveformRight, waveformMono, waveformStatus: "Ready", audioDuration: buffer.duration };
     } catch { return { waveform: [], waveformStatus: "No decodable waveform; playback may still be available" }; }
   }
   class MediaLibrary {
@@ -2572,7 +2647,6 @@ dialog::backdrop {
           if (!(descriptor.width && descriptor.height)) throw new Error("This file has no readable video frames.");
           descriptor.thumbnail = poster(element, descriptor.width, descriptor.height);
         }
-        if (kind === "audio" || descriptor.hasAudio) Object.assign(descriptor, await waveform(file));
       }
       return descriptor;
     }
@@ -2599,6 +2673,9 @@ dialog::backdrop {
           const element = document.createElement(descriptor.kind === "video" ? "video" : "audio");
           element.preload = "auto"; element.muted = true; element.playsInline = true; element.src = entry.url;
           await waitMedia(element); entry.probe = element;
+          if ((descriptor.kind === "audio" || descriptor.hasAudio) &&
+              (!descriptor.waveformLeft || !descriptor.waveformRight || !descriptor.waveformMono))
+            Object.assign(descriptor, await waveform(file));
         }
         this.assets.set(descriptor.id, entry); return entry;
       } catch (error) { URL.revokeObjectURL(entry.url); throw error; }
@@ -2634,7 +2711,15 @@ dialog::backdrop {
       // A callback may arrive late for an offscreen media element. Snapshot the
       // decoder's actual frame and retain its presentation timestamp, rather
       // than labelling old pixels with the advancing media clock.
-      const frame = root.VideoFrame ? new root.VideoFrame(element) : element;
+      let frame = element;
+      if (root.VideoFrame) {
+        try { frame = new root.VideoFrame(element); }
+        catch (error) {
+          // During decoder handoff Chrome can report readyState >= 2 before
+          // a VideoFrame can be copied. The native bitmap path is still usable.
+          if (!["InvalidStateError", "NotSupportedError", "TypeError"].includes(error.name)) throw error;
+        }
+      }
       const at = frame === element ? timestamp ?? element.currentTime : frame.timestamp / 1e6;
       const transform = value.transform;
       const fullWidth = element.videoWidth, fullHeight = element.videoHeight;
@@ -2652,10 +2737,12 @@ dialog::backdrop {
       // completed bitmaps and never waits inside drawImage(video) during playback.
       const operation = Promise.resolve().then(() => root.createImageBitmap(frame, bitmapOptions)).then(bitmap => {
         if (state.disposed || serial !== state.serial) { bitmap.close(); return; }
-        state.bitmap?.close(); state.bitmap = bitmap; state.timestamp = at;
+        state.bitmap?.close(); state.bitmap = bitmap; state.timestamp = at; state.nativeFallback = false;
       }).catch(error => {
         if (state.disposed || serial !== state.serial) return;
-        if (["NotSupportedError", "TypeError"].includes(error.name)) state.fallback = true;
+        if (error.name === "InvalidStateError") {
+          state.bitmap?.close(); state.bitmap = null; state.nativeFallback = true;
+        } else if (["NotSupportedError", "TypeError"].includes(error.name)) state.fallback = true;
         else throw error;
       }).finally(() => { if (frame !== element) frame.close(); });
       state.pending = operation;
@@ -2683,18 +2770,23 @@ dialog::backdrop {
         state.drawnAt = null;
         return element;
       }
-      if (!state.pending && (!element.requestVideoFrameCallback ||
+      if (!state.pending && (state.nativeFallback || !element.requestVideoFrameCallback ||
           (!element.paused && !element.seeking && Math.abs(element.currentTime - state.timestamp) > 1 / 60)))
         this.captureFrame(value, null, undefined, false).catch(() => {});
+      if (state.nativeFallback) { state.drawnAt = null; return element; }
       // An asynchronous conversion can be delayed under load. Do not keep
       // displaying its older cached pixels after the decoder has moved on.
       if (state.bitmap && !element.paused && !element.seeking &&
           element.currentTime - state.timestamp > .075) {
         state.drawnAt = null;
         if (root.VideoFrame) {
-          const current = new root.VideoFrame(element);
-          state.drawnAt = current.timestamp / 1e6;
-          current.close();
+          try {
+            const current = new root.VideoFrame(element);
+            state.drawnAt = current.timestamp / 1e6;
+            current.close();
+          } catch (error) {
+            if (!["InvalidStateError", "NotSupportedError", "TypeError"].includes(error.name)) throw error;
+          }
         }
         return element;
       }
@@ -3396,6 +3488,58 @@ dialog::backdrop {
     node.oversample = "none";
     return node;
   }
+  // Shared routing graph, also usable with an OfflineAudioContext for exact
+  // regression comparison against the project-time export mixer.
+  function createRouting(c, source, destination) {
+    const upmix = c.createGain(),
+      mono = c.createGain(),
+      stereo = c.createGain(),
+      split = c.createChannelSplitter(2),
+      left = c.createGain(),
+      right = c.createGain(),
+      merge = c.createChannelMerger(2);
+    for (const [node, count] of [
+      [upmix, 2],
+      [mono, 1],
+      [stereo, 2],
+    ]) {
+      node.channelCount = count;
+      node.channelCountMode = "explicit";
+      node.channelInterpretation = "speakers";
+    }
+    // Web Audio's speaker downmix is exactly (L + R) / 2. Upmix mono
+    // back to two channels before the discrete splitter, including mono files.
+    source.connect(upmix);
+    mono.connect(stereo);
+    stereo.connect(split);
+    upmix.connect(split);
+    split.connect(left, 0);
+    split.connect(right, 1);
+    left.connect(merge, 0, 0);
+    right.connect(merge, 0, 1);
+    merge.connect(destination);
+    left.gain.value = right.gain.value = 0;
+    let downmixed = false;
+    return {
+      source,
+      upmix,
+      mono,
+      stereo,
+      split,
+      left,
+      right,
+      merge,
+      apply(routing, time = c.currentTime) {
+        if (routing.mono !== downmixed) {
+          upmix.disconnect();
+          upmix.connect(routing.mono ? mono : split);
+          downmixed = routing.mono;
+        }
+        left.gain.setValueAtTime(routing.left, time);
+        right.gain.setValueAtTime(routing.right, time);
+      },
+    };
+  }
   class AudioMixer {
     constructor(library) {
       this.library = library;
@@ -3431,26 +3575,11 @@ dialog::backdrop {
       if (this.chains.has(value.id)) return this.chains.get(value.id);
       const element = this.library.element(value);
       if (!element) return null;
-      const c = this.context,
-        source = c.createMediaElementSource(element),
-        upmix = c.createGain(),
-        split = c.createChannelSplitter(2),
-        left = c.createGain(),
-        right = c.createGain(),
-        merge = c.createChannelMerger(2);
-      upmix.channelCount = 2;
-      upmix.channelCountMode = "explicit";
-      upmix.channelInterpretation = "speakers";
-      source.connect(upmix);
-      upmix.connect(split);
-      split.connect(left, 0);
-      split.connect(right, 1);
-      left.connect(merge, 0, 0);
-      right.connect(merge, 0, 1);
-      merge.connect(this.bus);
-      left.gain.value = 0;
-      right.gain.value = 0;
-      const chain = { element, source, left, right, merge, upmix, split };
+      const source = this.context.createMediaElementSource(element);
+      const chain = {
+        element,
+        ...createRouting(this.context, source, this.bus),
+      };
       this.chains.set(value.id, chain);
       return chain;
     }
@@ -3462,8 +3591,7 @@ dialog::backdrop {
       for (const entry of plan) {
         const chain = this.chain(entry.item);
         if (!chain) continue;
-        chain.left.gain.setValueAtTime(entry.left, now);
-        chain.right.gain.setValueAtTime(entry.right, now);
+        chain.apply(entry, now);
       }
       for (const [key, chain] of this.chains)
         if (!live.has(key)) {
@@ -3495,7 +3623,7 @@ dialog::backdrop {
       this.context = null;
     }
   }
-  root.UTStudio.Audio = { AudioMixer, createLimiter, CEILING };
+  root.UTStudio.Audio = { AudioMixer, createLimiter, createRouting, CEILING };
 })(globalThis);
 
 </script>
@@ -4736,6 +4864,269 @@ ${t.notes??""}`,u=this.createInternalChunk(c,t.timestamp,t.duration,"key",l.trim
 Mediabunny was loaded twice. This will likely cause Mediabunny not to work correctly. Check if multiple dependencies are importing different versions of Mediabunny, or if something is being bundled incorrectly.`);globalThis[sd]=!0;var Lr=class{constructor(){this._vector=new Float32Array,this._position=0,this._frameCount=0}get vector(){return this._vector}get position(){return this._position}get startIndex(){return this._position*2}get frameCount(){return this._frameCount}get endIndex(){return(this._position+this._frameCount)*2}clear(){this._vector.fill(0),this._position=0,this._frameCount=0}put(e){this._frameCount+=e}putSamples(e,t,i=0){t=t||0;let n=t*2;i>=0||(i=(e.length-n)/2);let s=i*2;this.ensureCapacity(i+this._frameCount);let a=this.endIndex;this.vector.set(e.subarray(n,n+s),a),this._frameCount+=i}putBuffer(e,t,i=0){t=t||0,i>=0||(i=e.frameCount-t),this.putSamples(e.vector,e.position+t,i)}receive(e){(!(e>=0)||e>this._frameCount)&&(e=this.frameCount),this._frameCount-=e,this._position+=e}receiveSamples(e,t=0){let i=t*2,n=this.startIndex;e.set(this._vector.subarray(n,n+i)),this.receive(t)}extract(e,t=0,i=0){let n=this.startIndex+t*2,s=i*2;e.set(this._vector.subarray(n,n+s))}ensureCapacity(e=0){let t=parseInt(e*2);if(this._vector.length<t){let i=new Float32Array(t);i.set(this._vector.subarray(this.startIndex,this.endIndex)),this._vector=i,this._position=0}else this.rewind()}ensureAdditionalCapacity(e=0){this.ensureCapacity(this._frameCount+e)}rewind(){this._position>0&&(this._vector.set(this._vector.subarray(this.startIndex,this.endIndex)),this._position=0)}},Aa=class{constructor(e){e?(this._inputBuffer=new Lr,this._outputBuffer=new Lr):this._inputBuffer=this._outputBuffer=null}get inputBuffer(){return this._inputBuffer}set inputBuffer(e){this._inputBuffer=e}get outputBuffer(){return this._outputBuffer}set outputBuffer(e){this._outputBuffer=e}clear(){this._inputBuffer.clear(),this._outputBuffer.clear()}},sc=class r extends Aa{constructor(e){super(e),this.reset(),this._rate=1}set rate(e){this._rate=e}reset(){this.slopeCount=0,this.prevSampleL=0,this.prevSampleR=0}clear(){super.clear(),this.reset()}clone(){let e=new r;return e.rate=this._rate,e}process(){let e=this._inputBuffer.frameCount;this._outputBuffer.ensureAdditionalCapacity(e/this._rate+1);let t=this.transpose(e);this._inputBuffer.receive(),this._outputBuffer.put(t)}transpose(e=0){if(e===0)return 0;let t=this._inputBuffer.vector,i=this._inputBuffer.startIndex,n=this._outputBuffer.vector,s=this._outputBuffer.endIndex,a=0,o=0;for(;this.slopeCount<1;)n[s+2*o]=(1-this.slopeCount)*this.prevSampleL+this.slopeCount*t[i],n[s+2*o+1]=(1-this.slopeCount)*this.prevSampleR+this.slopeCount*t[i+1],o=o+1,this.slopeCount+=this._rate;if(this.slopeCount-=1,e!==1)e:for(;;){for(;this.slopeCount>1;)if(this.slopeCount-=1,a=a+1,a>=e-1)break e;let c=i+2*a;n[s+2*o]=(1-this.slopeCount)*t[c]+this.slopeCount*t[c+2],n[s+2*o+1]=(1-this.slopeCount)*t[c+1]+this.slopeCount*t[c+3],o=o+1,this.slopeCount+=this._rate}return this.prevSampleL=t[i+2*e-2],this.prevSampleR=t[i+2*e-1],o}},ac=class{constructor(e){this._pipe=e}get pipe(){return this._pipe}get inputBuffer(){return this._pipe.inputBuffer}get outputBuffer(){return this._pipe.outputBuffer}fillInputBuffer(){throw new Error("fillInputBuffer() not overridden")}fillOutputBuffer(e=0){for(;this.outputBuffer.frameCount<e;){let t=16384-this.inputBuffer.frameCount;if(this.fillInputBuffer(t),this.inputBuffer.frameCount<8192*2)break;this._pipe.process()}}clear(){this._pipe.clear()}},Gh=function(){},xa=class extends ac{constructor(e,t,i=Gh){super(t),this.callback=i,this.sourceSound=e,this.historyBufferSize=22050,this._sourcePosition=0,this.outputBufferPosition=0,this._position=0}get position(){return this._position}set position(e){if(e>this._position)throw new RangeError("New position may not be greater than current position");let t=this.outputBufferPosition-(this._position-e);if(t<0)throw new RangeError("New position falls outside of history buffer");this.outputBufferPosition=t,this._position=e}get sourcePosition(){return this._sourcePosition}set sourcePosition(e){this.clear(),this._sourcePosition=e}onEnd(){this.callback()}fillInputBuffer(e=0){let t=new Float32Array(e*2),i=this.sourceSound.extract(t,e,this._sourcePosition);this._sourcePosition+=i,this.inputBuffer.putSamples(t,0,i)}extract(e,t=0){this.fillOutputBuffer(this.outputBufferPosition+t);let i=Math.min(t,this.outputBuffer.frameCount-this.outputBufferPosition);this.outputBuffer.extract(e,this.outputBufferPosition,i);let n=this.outputBufferPosition+i;return this.outputBufferPosition=Math.min(this.historyBufferSize,n),this.outputBuffer.receive(Math.max(n-this.historyBufferSize,0)),this._position+=i,i}handleSampleData(e){this.extract(e.data,4096)}clear(){super.clear(),this.outputBufferPosition=0}},Qh=0,Xh=Qh,$h=0,Zh=$h,Yh=8,ad=[[124,186,248,310,372,434,496,558,620,682,744,806,868,930,992,1054,1116,1178,1240,1302,1364,1426,1488,0],[-100,-75,-50,-25,25,50,75,100,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[-20,-15,-10,-5,5,10,15,20,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[-4,-3,-2,-1,1,2,3,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],_a=.25,cd=4,cc=125,ld=50,ud=(ld-cc)/(cd-_a),Jh=cc-ud*_a,lc=25,dd=15,fd=(dd-lc)/(cd-_a),em=lc-fd*_a,oc=class r extends Aa{constructor(e){super(e),this._quickSeek=!0,this.midBufferDirty=!1,this.midBuffer=null,this.overlapLength=0,this.autoSeqSetting=!0,this.autoSeekSetting=!0,this._tempo=1,this.setParameters(44100,Xh,Zh,Yh)}clear(){super.clear(),this.clearMidBuffer()}clearMidBuffer(){this.midBufferDirty=!1,this.midBuffer=null,this.refMidBuffer&&this.refMidBuffer.fill(0),this.skipFract=0}setParameters(e,t,i,n){e>0&&(this.sampleRate=e),n>0&&(this.overlapMs=n),t>0?(this.sequenceMs=t,this.autoSeqSetting=!1):this.autoSeqSetting=!0,i>0?(this.seekWindowMs=i,this.autoSeekSetting=!1):this.autoSeekSetting=!0,this.calculateSequenceParameters(),this.calculateOverlapLength(this.overlapMs),this.tempo=this._tempo}set tempo(e){let t;this._tempo=e,this.calculateSequenceParameters(),this.nominalSkip=this._tempo*(this.seekWindowLength-this.overlapLength),this.skipFract=0,t=Math.floor(this.nominalSkip+.5),this.sampleReq=Math.max(t+this.overlapLength,this.seekWindowLength)+this.seekLength}get tempo(){return this._tempo}get inputChunkSize(){return this.sampleReq}get outputChunkSize(){return this.overlapLength+Math.max(0,this.seekWindowLength-2*this.overlapLength)}calculateOverlapLength(e=0){let t;t=this.sampleRate*e/1e3,t=t<16?16:t,t-=t%8,this.overlapLength=t,this.refMidBuffer=new Float32Array(this.overlapLength*2),this.midBuffer=new Float32Array(this.overlapLength*2)}checkLimits(e,t,i){return e<t?t:e>i?i:e}calculateSequenceParameters(){let e,t;this.autoSeqSetting&&(e=Jh+ud*this._tempo,e=this.checkLimits(e,ld,cc),this.sequenceMs=Math.floor(e+.5)),this.autoSeekSetting&&(t=em+fd*this._tempo,t=this.checkLimits(t,dd,lc),this.seekWindowMs=Math.floor(t+.5)),this.seekWindowLength=Math.floor(this.sampleRate*this.sequenceMs/1e3),this.seekLength=Math.floor(this.sampleRate*this.seekWindowMs/1e3)}set quickSeek(e){this._quickSeek=e}clone(){let e=new r;return e.tempo=this._tempo,e.setParameters(this.sampleRate,this.sequenceMs,this.seekWindowMs,this.overlapMs),e}seekBestOverlapPosition(){return this._quickSeek?this.seekBestOverlapPositionStereoQuick():this.seekBestOverlapPositionStereo()}seekBestOverlapPositionStereo(){let e,t,i,n=0;for(this.preCalculateCorrelationReferenceStereo(),e=0,t=Number.MIN_VALUE;n<this.seekLength;n=n+1)i=this.calculateCrossCorrelationStereo(2*n,this.refMidBuffer),i>t&&(t=i,e=n);return e}seekBestOverlapPositionStereoQuick(){let e,t,i,n=0,s,a;for(this.preCalculateCorrelationReferenceStereo(),t=Number.MIN_VALUE,e=0,s=0,a=0;n<4;n=n+1){let o=0;for(;ad[n][o]&&(a=s+ad[n][o],!(a>=this.seekLength));)i=this.calculateCrossCorrelationStereo(2*a,this.refMidBuffer),i>t&&(t=i,e=a),o=o+1;s=e}return e}preCalculateCorrelationReferenceStereo(){let e=0,t,i;for(;e<this.overlapLength;e=e+1)i=e*(this.overlapLength-e),t=e*2,this.refMidBuffer[t]=this.midBuffer[t]*i,this.refMidBuffer[t+1]=this.midBuffer[t+1]*i}calculateCrossCorrelationStereo(e,t){let i=this._inputBuffer.vector;e+=this._inputBuffer.startIndex;let n=0,s=2,a=2*this.overlapLength,o;for(;s<a;s=s+2)o=s+e,n+=i[o]*t[s]+i[o+1]*t[s+1];return n}overlap(e){this.overlapStereo(2*e)}overlapStereo(e){let t=this._inputBuffer.vector;e+=this._inputBuffer.startIndex;let i=this._outputBuffer.vector,n=this._outputBuffer.endIndex,s=0,a,o,c=1/this.overlapLength,l,u,d;for(;s<this.overlapLength;s=s+1)o=(this.overlapLength-s)*c,l=s*c,a=2*s,u=a+e,d=a+n,i[d+0]=t[u+0]*l+this.midBuffer[a+0]*o,i[d+1]=t[u+1]*l+this.midBuffer[a+1]*o}process(){let e,t,i;if(this.midBuffer===null){if(this._inputBuffer.frameCount<this.overlapLength)return;this.midBuffer=new Float32Array(this.overlapLength*2),this._inputBuffer.receiveSamples(this.midBuffer,this.overlapLength)}for(;this._inputBuffer.frameCount>=this.sampleReq;){e=this.seekBestOverlapPosition(),this._outputBuffer.ensureAdditionalCapacity(this.overlapLength),this.overlap(Math.floor(e)),this._outputBuffer.put(this.overlapLength),t=this.seekWindowLength-2*this.overlapLength,t>0&&this._outputBuffer.putBuffer(this._inputBuffer,e+this.overlapLength,t);let n=this._inputBuffer.startIndex+2*(e+this.seekWindowLength-this.overlapLength);this.midBuffer.set(this._inputBuffer.vector.subarray(n,n+2*this.overlapLength)),this.skipFract+=this.nominalSkip,i=Math.floor(this.skipFract),this.skipFract-=i,this._inputBuffer.receive(i)}}},od=function(r,e){return(r>e?r-e:e-r)>1e-10},Ca=class r{constructor(){this.transposer=new sc(!1),this.stretch=new oc(!1),this._inputBuffer=new Lr,this._intermediateBuffer=new Lr,this._outputBuffer=new Lr,this._rate=0,this._tempo=0,this.virtualPitch=1,this.virtualRate=1,this.virtualTempo=1,this.calculateEffectiveRateAndTempo()}clear(){this.transposer.clear(),this.stretch.clear()}clone(){let e=new r;return e.rate=this.rate,e.tempo=this.tempo,e}get rate(){return this._rate}set rate(e){this.virtualRate=e,this.calculateEffectiveRateAndTempo()}set rateChange(e){this._rate=1+.01*e}get tempo(){return this._tempo}set tempo(e){this.virtualTempo=e,this.calculateEffectiveRateAndTempo()}set tempoChange(e){this.tempo=1+.01*e}set pitch(e){this.virtualPitch=e,this.calculateEffectiveRateAndTempo()}set pitchOctaves(e){this.pitch=Math.exp(.69314718056*e),this.calculateEffectiveRateAndTempo()}set pitchSemitones(e){this.pitchOctaves=e/12}get inputBuffer(){return this._inputBuffer}get outputBuffer(){return this._outputBuffer}calculateEffectiveRateAndTempo(){let e=this._tempo,t=this._rate;this._tempo=this.virtualTempo/this.virtualPitch,this._rate=this.virtualRate*this.virtualPitch,od(this._tempo,e)&&(this.stretch.tempo=this._tempo),od(this._rate,t)&&(this.transposer.rate=this._rate),this._rate>1?this._outputBuffer!=this.transposer.outputBuffer&&(this.stretch.inputBuffer=this._inputBuffer,this.stretch.outputBuffer=this._intermediateBuffer,this.transposer.inputBuffer=this._intermediateBuffer,this.transposer.outputBuffer=this._outputBuffer):this._outputBuffer!=this.stretch.outputBuffer&&(this.transposer.inputBuffer=this._inputBuffer,this.transposer.outputBuffer=this._intermediateBuffer,this.stretch.inputBuffer=this._intermediateBuffer,this.stretch.outputBuffer=this._outputBuffer)}process(){this._rate>1?(this.stretch.process(),this.transposer.process()):(this.transposer.process(),this.stretch.process())}};return yd(tm);})();
 
 </script>
+    <script data-inlined-from="assets/pages/video-studio/archive.js">
+/* Streaming, uncompressed ZIP/ZIP64. Videos are already compressed.
+ * Format: https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT
+ * Keep only central-directory metadata and the current segment in memory.
+ */
+(function (root) {
+  "use strict";
+  const MAX32 = 0xffffffff,
+    MAX16 = 0xffff;
+  const crcTable = Uint32Array.from({ length: 256 }, (_, value) => {
+    for (let n = 0; n < 8; n++)
+      value = (value >>> 1) ^ (value & 1 ? 0xedb88320 : 0);
+    return value >>> 0;
+  });
+  function block(length) {
+    const bytes = new Uint8Array(length),
+      view = new DataView(bytes.buffer);
+    return {
+      bytes,
+      u16: (at, n) => view.setUint16(at, n, true),
+      u32: (at, n) => view.setUint32(at, n, true),
+      u64: (at, n) => view.setBigUint64(at, BigInt(n), true),
+    };
+  }
+  class ZipWriter {
+    constructor(sink, signal) {
+      this.sink = sink;
+      this.signal = signal;
+      this.offset = 0;
+      this.entries = [];
+      this.closed = false;
+    }
+    async write(bytes) {
+      this.signal?.throwIfAborted();
+      if (this.closed) throw new Error("This ZIP is already closed.");
+      await this.sink.write(bytes);
+      this.offset += bytes.length;
+      this.signal?.throwIfAborted();
+    }
+    async add(name, blob) {
+      const filename = new TextEncoder().encode(name),
+        offset = this.offset;
+      if (!filename.length || filename.length > MAX16 || /[\\/\0]/.test(name))
+        throw new Error("Use a simple ZIP entry filename.");
+      const large = blob.size >= MAX32,
+        extra = large ? 20 : 0;
+      const header = block(30 + filename.length + extra);
+      header.u32(0, 0x04034b50);
+      header.u16(4, large ? 45 : 20);
+      header.u16(6, 0x0808);
+      header.u16(12, 33); // UTF-8, data descriptor, 1980-01-01.
+      header.u32(18, large ? MAX32 : 0);
+      header.u32(22, large ? MAX32 : 0);
+      header.u16(26, filename.length);
+      header.u16(28, extra);
+      header.bytes.set(filename, 30);
+      if (large) {
+        const at = 30 + filename.length;
+        header.u16(at, 1);
+        header.u16(at + 2, 16);
+        header.u64(at + 4, blob.size);
+        header.u64(at + 12, blob.size);
+      }
+      await this.write(header.bytes);
+      const reader = blob.stream().getReader();
+      let crc = MAX32,
+        size = 0,
+        yieldedAt = 0;
+      try {
+        while (true) {
+          this.signal?.throwIfAborted();
+          const { done, value } = await reader.read();
+          if (done) break;
+          for (const byte of value)
+            crc = crcTable[(crc ^ byte) & 255] ^ (crc >>> 8);
+          size += value.length;
+          await this.write(value);
+          if (size - yieldedAt >= 4 * 1024 * 1024) {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            yieldedAt = size;
+          }
+        }
+      } finally {
+        await reader.cancel().catch(() => {});
+        reader.releaseLock();
+      }
+      if (size !== blob.size)
+        throw new Error(
+          "The segment stream ended before all bytes were written.",
+        );
+      crc = (crc ^ MAX32) >>> 0;
+      const descriptor = block(large ? 24 : 16);
+      descriptor.u32(0, 0x08074b50);
+      descriptor.u32(4, crc);
+      if (large) {
+        descriptor.u64(8, size);
+        descriptor.u64(16, size);
+      } else {
+        descriptor.u32(8, size);
+        descriptor.u32(12, size);
+      }
+      await this.write(descriptor.bytes);
+      this.entries.push({ filename, size, crc, offset });
+    }
+    async finish() {
+      const start = this.offset;
+      let written = 0;
+      for (const entry of this.entries) {
+        const { filename, size, crc, offset } = entry;
+        const large = size >= MAX32,
+          far = offset >= MAX32;
+        const extra = large || far ? 4 + (large ? 16 : 0) + (far ? 8 : 0) : 0;
+        const header = block(46 + filename.length + extra);
+        header.u32(0, 0x02014b50);
+        header.u16(4, 0x032d); // Unix creator: no legacy DOS filename recoding.
+        header.u16(6, extra ? 45 : 20);
+        header.u16(8, 0x0808);
+        header.u16(14, 33);
+        header.u32(16, crc);
+        header.u32(20, large ? MAX32 : size);
+        header.u32(24, large ? MAX32 : size);
+        header.u16(28, filename.length);
+        header.u16(30, extra);
+        header.u32(38, 0x81a40000); // Regular file, owner writable, readable by everyone.
+        header.u32(42, far ? MAX32 : offset);
+        header.bytes.set(filename, 46);
+        if (extra) {
+          let at = 46 + filename.length;
+          header.u16(at, 1);
+          header.u16(at + 2, extra - 4);
+          at += 4;
+          if (large) {
+            header.u64(at, size);
+            header.u64(at + 8, size);
+            at += 16;
+          }
+          if (far) header.u64(at, offset);
+        }
+        await this.write(header.bytes);
+        if (++written % 256 === 0)
+          await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      const size = this.offset - start,
+        count = this.entries.length;
+      const zip64 =
+        count >= MAX16 ||
+        start >= MAX32 ||
+        size >= MAX32 ||
+        this.entries.some((e) => e.size >= MAX32);
+      if (zip64) {
+        const offset = this.offset,
+          end = block(56),
+          locator = block(20);
+        end.u32(0, 0x06064b50);
+        end.u64(4, 44);
+        end.u16(12, 45);
+        end.u16(14, 45);
+        end.u64(24, count);
+        end.u64(32, count);
+        end.u64(40, size);
+        end.u64(48, start);
+        await this.write(end.bytes);
+        locator.u32(0, 0x07064b50);
+        locator.u64(8, offset);
+        locator.u32(16, 1);
+        await this.write(locator.bytes);
+      }
+      const end = block(22);
+      end.u32(0, 0x06054b50);
+      end.u16(8, Math.min(count, MAX16));
+      end.u16(10, Math.min(count, MAX16));
+      end.u32(12, Math.min(size, MAX32));
+      end.u32(16, Math.min(start, MAX32));
+      await this.write(end.bytes);
+      await this.sink.close();
+      this.closed = true;
+      this.entries.length = 0;
+      return { size: this.offset, count };
+    }
+    async abort() {
+      this.closed = true;
+      this.entries.length = 0;
+      await this.sink.abort();
+    }
+  }
+  async function createTarget() {
+    let directory;
+    try {
+      if (root.navigator?.storage?.getDirectory) {
+        const storage = await root.navigator.storage.getDirectory();
+        directory = await storage.getDirectoryHandle("utv-segment-exports", {
+          create: true,
+        });
+      }
+    } catch (error) {
+      // file:// and restricted origins can still stream into browser-backed
+      // Blob parts. Do not mask disk/quota errors on a supported origin.
+      if (!["SecurityError", "NotSupportedError"].includes(error.name))
+        throw error;
+    }
+    if (directory) {
+      const key = "segments-" + root.crypto.randomUUID() + ".zip";
+      const file = await directory.getFileHandle(key, { create: true });
+      let writable,
+        closed = false,
+        removed = false;
+      const dispose = async () => {
+        if (!removed) {
+          await directory.removeEntry(key);
+          removed = true;
+        }
+      };
+      try {
+        writable = await file.createWritable();
+      } catch (error) {
+        await dispose();
+        throw error;
+      }
+      return {
+        storage: "disk",
+        write: (bytes) => writable.write(bytes),
+        close: async () => {
+          await writable.close();
+          closed = true;
+        },
+        abort: async () => {
+          if (!closed) await writable.abort().catch(() => {});
+          await dispose();
+        },
+        result: async () => ({ blob: await file.getFile(), dispose }),
+      };
+    }
+    // No network/service worker and no multi-download fallback, including the
+    // standalone editor. The browser may spool Blob parts to temporary disk.
+    const parts = [];
+    let blob;
+    return {
+      storage: "blob",
+      write: async (bytes) => {
+        parts.push(new Blob([bytes]));
+      },
+      close: async () => {
+        blob = new Blob(parts, { type: "application/zip" });
+        parts.length = 0;
+      },
+      abort: async () => {
+        parts.length = 0;
+        blob = null;
+      },
+      result: async () => ({
+        blob,
+        dispose: async () => {
+          blob = null;
+        },
+      }),
+    };
+  }
+  const api = { ZipWriter, createTarget };
+  root.UTStudio = Object.assign(root.UTStudio || {}, { Archive: api });
+  if (typeof module !== "undefined") module.exports = api;
+})(globalThis);
+
+</script>
     <script data-inlined-from="assets/pages/video-studio/export.js">
 /* Project-time export: every composed frame gets an explicit timestamp. */
 (function (root) {
@@ -4787,13 +5178,14 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
   }
 
   class Sources {
-    constructor(project, library, start, end, signal) {
+    constructor(project, library, start, end, signal, cache) {
       Object.assign(this, { project, library, start, end, signal });
       this.inputs = new Map();
       this.readers = new Map();
       this.frames = new Map();
-      this.pcm = new Map();
-      this.stretched = new Map();
+      this.sharedCache = cache;
+      this.pcm = cache?.pcm || new Map();
+      this.stretched = cache?.stretched || new Map();
       this.fallbacks = new Map();
       this.renderLibrary = {
         assets: library.assets,
@@ -4821,6 +5213,32 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
           const track = await this.input(value.assetId).getPrimaryVideoTrack();
           if (!track || !(await track.canDecode()))
             throw new Error("Use the browser decoder.");
+          const config = await track.getDecoderConfig();
+          if (
+            !["primaries", "matrix", "transfer", "fullRange"].every(
+              (key) => config.colorSpace?.[key] != null,
+            )
+          ) {
+            // Untagged SD footage is often rendered as BT.601 by the preview,
+            // while the codec library supplies BT.709 defaults. Use the native
+            // decoder's resolved metadata instead of guessing a color matrix.
+            const frame = new VideoFrame(
+              this.library.assets.get(value.assetId).probe,
+            );
+            let colorSpace;
+            try {
+              colorSpace = frame.colorSpace.toJSON();
+            } finally {
+              frame.close();
+            }
+            if (
+              !["primaries", "matrix", "transfer", "fullRange"].every(
+                (key) => colorSpace[key] != null,
+              )
+            )
+              throw new Error("Use the browser's color conversion.");
+            track.getDecoderConfig = async () => ({ ...config, colorSpace });
+          }
           const source = M.asset(this.project, value.assetId);
           const sink = new C.CanvasSink(track, {
             width: source.width,
@@ -5064,6 +5482,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
                 (pcm.right[index] || 0) * (1 - fraction) +
                 (pcm.right[index + 1] || 0) * fraction;
             }
+            if (gainStart.mono) a = b = (a + b) / 2;
             left[offset + j] +=
               a *
               (gainStart.left + ((gainEnd.left - gainStart.left) * j) / size);
@@ -5094,12 +5513,14 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
       this.inputs.clear();
       this.readers.clear();
       this.frames.clear();
-      this.pcm.clear();
-      this.stretched.clear();
+      if (!this.sharedCache) {
+        this.pcm.clear();
+        this.stretched.clear();
+      }
     }
   }
 
-  async function record(engine, start, end, onProgress, signal) {
+  async function record(engine, start, end, onProgress, signal, cache) {
     if (signal?.aborted) return null;
     engine.stop();
     const project = engine.getProject(),
@@ -5128,7 +5549,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
       duration = end - start,
       count = Math.ceil(duration * fps - 1e-7),
       canvas = Media.makeCanvas(size.width, size.height),
-      sources = new Sources(project, engine.library, start, end, signal),
+      sources = new Sources(project, engine.library, start, end, signal, cache),
       renderer = new Renderer(sources.renderLibrary);
     const target = new C.BufferTarget(),
       output = new C.Output({
@@ -5670,8 +6091,8 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
       initialize().catch(session.fail);
       return completion;
     }
-    async recordRange(start, end, onProgress = () => {}, signal) {
-      return root.UTStudio.Export.record(this, start, end, onProgress, signal);
+    async recordRange(start, end, onProgress = () => {}, signal, cache) {
+      return root.UTStudio.Export.record(this, start, end, onProgress, signal, cache);
     }
     async dispose() {
       this.stop();
@@ -6203,13 +6624,16 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
       "Adjust other independent sounds from 0 to 200 percent.",
     ],
     leftGain: [
-      "Left channel",
-      "Adjust this sound's left stereo channel from 0 to 200 percent.",
+      "Left output",
+      "Set the left output from 0 to 100 percent. A custom mix with only one output enabled includes both source channels in that ear.",
     ],
     rightGain: [
-      "Right channel",
-      "Adjust this sound's right stereo channel from 0 to 200 percent.",
+      "Right output",
+      "Set the right output from 0 to 100 percent. With both custom outputs enabled, the source's stereo channels remain separate.",
     ],
+    channelStereo: ["Stereo", "Send the source's left and right channels to their matching ears at 100 percent."],
+    channelLeft: ["Left only", "Mix both source channels to mono, then send the whole song to the left ear only."],
+    channelRight: ["Right only", "Mix both source channels to mono, then send the whole song to the right ear only."],
     repeat: [
       "Repeat sound",
       "Repeat the selected source range until this sound item's end. Turn it off to leave silence after the source ends.",
@@ -6285,7 +6709,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
     ],
     segmentInterval: [
       "Interval cuts",
-      "Place cuts at this interval and export up to 60 separate video segments.",
+      "Place cuts at this interval. All segments are exported in order into one ZIP, with no segment-count limit.",
     ],
     segmentCuts: [
       "Show interval cuts",
@@ -6293,8 +6717,9 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
     ],
     exportSegments: [
       "Export segments",
-      "Create a separate downloadable video for each marked interval.",
+      "Stream every interval into one ZIP containing numbered video files. Cancel discards the incomplete archive; errors identify the affected segment.",
     ],
+    downloadSegments: ["Download ZIP", "Download the single archive containing all numbered interval segments."],
     relink: [
       "Relink file",
       "Choose the original file matching the saved name, size and content fingerprint.",
@@ -7006,7 +7431,10 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
   }
   function clearResults() {
     if (!results.length) return;
-    for (const result of results) URL.revokeObjectURL(result.url);
+    for (const result of results) {
+      if (result.url) URL.revokeObjectURL(result.url);
+      result.dispose?.().catch(() => {});
+    }
     results = [];
     $("outputVideo").pause();
     $("outputVideo").removeAttribute("src");
@@ -7785,7 +8213,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
       ),
     );
   }
-  function drawWaveform(c, source, value = null, gain = 1) {
+  function drawWaveform(c, source, value = null, gain = 1, channel = null) {
     c.width = Math.min(
       1600,
       Math.max(80, Math.round(parseFloat(c.style.width) || 320)),
@@ -7795,7 +8223,18 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
     ctx.clearRect(0, 0, c.width, c.height);
     ctx.strokeStyle = "#0d6b4f";
     ctx.lineWidth = 1;
-    const peaks = source?.waveform || [];
+    const routing = value?.audio && M.audioRouting(value.audio);
+    const peaks = channel
+      ? source?.[
+          routing?.mono
+            ? "waveformMono"
+            : channel === "left"
+              ? "waveformLeft"
+              : "waveformRight"
+        ] || []
+      : source?.waveform || [];
+    if (channel && routing)
+      gain *= routing[channel] * (value.audio.muted ? 0 : value.audio.volume);
     ctx.beginPath();
     for (let x = 0; x < c.width; x++) {
       let fraction = x / c.width;
@@ -9694,11 +10133,112 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
   function audioControls(value, locked) {
     const a = value.audio,
       source = M.asset(project, value.assetId),
-      wave = el("canvas", "waveform-large");
-    drawWaveform(wave, source, value, waveZoom);
+      desktop = root.matchMedia("(min-width: 1100px)").matches,
+      waves = el("div", "audio-waveforms"),
+      canvases = [];
+    for (const [channel, label] of desktop
+      ? [
+          ["left", "L — Left"],
+          ["right", "R — Right"],
+        ]
+      : [[null, "Sound waveform"]]) {
+      const lane = el("div", "audio-waveform-lane"),
+        wave = el("canvas", "waveform-large");
+      wave.setAttribute("aria-label", label + " output waveform");
+      if (channel) {
+        lane.dataset.channel = channel;
+        lane.append(el("strong", "", label));
+      }
+      lane.append(wave);
+      waves.append(lane);
+      canvases.push([wave, channel]);
+    }
+    const drawWaves = () =>
+      canvases.forEach(([wave, channel]) =>
+        drawWaveform(wave, source, value, waveZoom, channel),
+      );
+    drawWaves();
+    if (desktop && !source?.waveformLeft?.length)
+      waves.append(
+        el(
+          "small",
+          "muted",
+          source?.waveformStatus ||
+            "Relink the original media to display L/R waveforms.",
+        ),
+      );
+    const routing = el("div", "audio-routing"),
+      presets = el("div", "button-row");
+    if (desktop) {
+      for (const [mode, help, label] of [
+        ["stereo", "channelStereo", "Stereo"],
+        ["leftOnly", "channelLeft", "Left only"],
+        ["rightOnly", "channelRight", "Right only"],
+      ]) {
+        const control = B(
+          help,
+          label,
+          () =>
+            edit(() => M.setChannelMode(value, mode), "Sound routing changed", {
+              context: true,
+            }),
+          {
+            disabled: locked,
+            className: a.channelMode === mode ? "is-active" : "",
+          },
+        );
+        control
+          .querySelector("button")
+          .setAttribute("aria-pressed", String(a.channelMode === mode));
+        presets.append(control);
+      }
+      routing.append(presets);
+      const status = el(
+        "small",
+        "muted",
+        a.channelMode === "custom"
+          ? "Custom output levels"
+          : "Choose which ear hears this sound.",
+      );
+      for (const [key, label] of [
+        ["leftGain", "Left output (%)"],
+        ["rightGain", "Right output (%)"],
+      ])
+        routing.append(
+          range(
+            label,
+            key,
+            a[key] * 100,
+            0,
+            100,
+            1,
+            (v, commit) => {
+              edit(
+                () => {
+                  a[key] = v / 100;
+                  a.channelMode = "custom";
+                },
+                "Output level changed",
+                { commit },
+              );
+              for (const button of presets.querySelectorAll(
+                "button:not(.touch-help)",
+              )) {
+                button.classList.remove("is-active");
+                button.setAttribute("aria-pressed", "false");
+              }
+              status.textContent = "Custom output levels";
+              drawWaves();
+            },
+            { disabled: locked },
+          ),
+        );
+      routing.append(status);
+    }
     const basic = group(
       "Sound",
-      wave,
+      waves,
+      desktop ? routing : null,
       range(
         "Volume (%)",
         "volume",
@@ -9708,6 +10248,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
         1,
         setter((v) => {
           a.volume = v / 100;
+          drawWaves();
         }, "Volume changed"),
         { disabled: locked },
       ),
@@ -9718,6 +10259,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
         (v) =>
           edit(() => {
             a.muted = v;
+            drawWaves();
           }, "Sound muted"),
         locked,
       ),
@@ -9769,30 +10311,36 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
       details(
         "More sound settings",
         fades,
-        range(
-          "Left channel (%)",
-          "leftGain",
-          a.leftGain * 100,
-          0,
-          200,
-          1,
-          setter((v) => {
-            a.leftGain = v / 100;
-          }, "Left channel changed"),
-          { disabled: locked },
-        ),
-        range(
-          "Right channel (%)",
-          "rightGain",
-          a.rightGain * 100,
-          0,
-          200,
-          1,
-          setter((v) => {
-            a.rightGain = v / 100;
-          }, "Right channel changed"),
-          { disabled: locked },
-        ),
+        !desktop
+          ? range(
+              "Left channel (%)",
+              "leftGain",
+              a.leftGain * 100,
+              0,
+              200,
+              1,
+              setter((v) => {
+                a.leftGain = v / 100;
+                a.channelMode = "custom";
+              }, "Left channel changed"),
+              { disabled: locked },
+            )
+          : null,
+        !desktop
+          ? range(
+              "Right channel (%)",
+              "rightGain",
+              a.rightGain * 100,
+              0,
+              200,
+              1,
+              setter((v) => {
+                a.rightGain = v / 100;
+                a.channelMode = "custom";
+              }, "Right channel changed"),
+              { disabled: locked },
+            )
+          : null,
         check(
           "Preserve pitch",
           "preservePitch",
@@ -9809,7 +10357,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
           waveZoom,
           (v, commit) => {
             waveZoom = v;
-            drawWaveform(wave, source, value, waveZoom);
+            drawWaves();
           },
           { min: 1, max: 10, step: 0.5 },
         ),
@@ -11534,7 +12082,9 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
           el(
             "strong",
             "",
-            results.length === 1 ? "Your movie is ready" : "Segment " + (i + 1),
+            result.kind === "segments"
+              ? "Your segments ZIP is ready"
+              : "Your movie is ready",
           ),
           el(
             "p",
@@ -11543,13 +12093,13 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
               " · " +
               bytes(result.blob.size) +
               " · " +
-              result.width +
-              " × " +
-              result.height,
+              (result.kind === "segments"
+                ? result.count + " segments"
+                : result.width + " × " + result.height),
           ),
           B(
-            "downloadVideo",
-            "Download video",
+            result.kind === "segments" ? "downloadSegments" : "downloadVideo",
+            result.kind === "segments" ? "Download ZIP" : "Download video",
             () => download(result.blob, result.name),
             {
               id: i === 0 ? "downloadButton" : undefined,
@@ -11558,7 +12108,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
             },
           ),
         );
-        if (results.length > 1)
+        if (results.length > 1 && result.kind !== "segments")
           card.append(B("play", "Preview segment", () => showResult(result)));
         list.append(card);
       }
@@ -11592,7 +12142,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
     node.append(next);
     node.append(
       details(
-        "Interval cuts and separate files",
+        "Interval cuts and ZIP export",
         field(
           "Cut every (sec)",
           "segmentInterval",
@@ -11614,7 +12164,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
         el(
           "small",
           "",
-          "At least 0.1 seconds per segment. Up to 60 downloadable files. A short final remainder stays with the previous segment.",
+          "At least 0.1 seconds and one frame per segment. All numbered files stream into one ZIP. A short final remainder stays with the previous segment.",
         ),
       ),
     );
@@ -11639,69 +12189,145 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
       : [{ start: 0, end: project.duration }];
     clearResults();
     exportMessage = "";
+    errorMessage = "";
     exporting = true;
     exportAbort = new AbortController();
     document.body.classList.add("is-exporting");
     renderAll();
     const before = project.playhead;
+    const began = performance.now();
+    let archive = null,
+      target = null;
+    const cache = segmented
+      ? { pcm: new Map(), stretched: new Map() }
+      : undefined;
+    const basename = filename(project.name),
+      digits = Math.max(4, String(ranges.length).length);
     try {
       await store.flush();
+      if (segmented) {
+        target = await root.UTStudio.Archive.createTarget();
+        archive = new root.UTStudio.Archive.ZipWriter(
+          target,
+          exportAbort.signal,
+        );
+      }
       for (let index = 0; index < ranges.length; index++) {
         if (exportAbort.signal.aborted) break;
-        const range = ranges[index],
-          result = await engine.recordRange(
+        const range = ranges[index];
+        const progressLabel = segmented
+          ? "Segment " + (index + 1) + " of " + ranges.length
+          : "Movie";
+        if ($("exportPercent"))
+          $("exportPercent").textContent = progressLabel + " · Preparing…";
+        try {
+          const result = await engine.recordRange(
             range.start,
             range.end,
             (progress) => {
               const percent = $("exportPercent");
               if (percent)
                 percent.textContent =
-                  (ranges.length > 1
-                    ? "Segment " + (index + 1) + " of " + ranges.length + " · "
-                    : "") +
-                  Math.round(progress.percent * 100) +
-                  "%";
+                  (segmented ? progressLabel + " · " : "") +
+                  Math.round(
+                    ((range.start + progress.processed) / project.duration) *
+                      100,
+                  ) +
+                  "% total";
               if ($("exportProgress"))
-                $("exportProgress").value = progress.percent;
+                $("exportProgress").value =
+                  (range.start + progress.processed) / project.duration;
               if ($("exportProcessed"))
                 $("exportProcessed").textContent =
-                  "Processed " +
+                  (segmented ? "Current segment: " : "Processed ") +
                   time(progress.processed) +
                   " of " +
                   time(progress.total);
               if ($("exportRemaining"))
                 $("exportRemaining").textContent =
-                  progress.remaining === null
+                  range.start + progress.processed === 0
                     ? "Estimating time remaining…"
                     : "About " +
-                      Math.ceil(progress.remaining) +
-                      " sec remaining";
+                      Math.ceil(
+                        ((performance.now() - began) /
+                          1000 /
+                          (range.start + progress.processed)) *
+                          (project.duration - range.start - progress.processed),
+                      ) +
+                      " sec remaining in total";
             },
             exportAbort.signal,
+            cache,
           );
-        if (!result) break;
-        result.name =
-          filename(project.name) +
-          (segmented ? "-segment-" + String(index + 1).padStart(3, "0") : "") +
-          "." +
-          result.extension;
-        result.url = URL.createObjectURL(result.blob);
-        results.push(result);
+          if (!result) {
+            if (exportAbort.signal.aborted) break;
+            throw new Error("The encoder returned no video.");
+          }
+          result.name =
+            basename +
+            (segmented
+              ? "-segment-" + String(index + 1).padStart(digits, "0")
+              : "") +
+            "." +
+            result.extension;
+          if (archive) await archive.add(result.name, result.blob);
+          else {
+            result.url = URL.createObjectURL(result.blob);
+            results.push(result);
+          }
+        } catch (error) {
+          if (exportAbort.signal.aborted) break;
+          throw new Error(
+            progressLabel +
+              " (" +
+              time(range.start) +
+              "–" +
+              time(range.end) +
+              "): " +
+              error.message,
+          );
+        }
       }
-      if (results.length === ranges.length)
-        exportMessage =
-          "Export complete. Preview your movie and download it below.";
+      if (archive && !exportAbort.signal.aborted) {
+        if ($("exportPercent"))
+          $("exportPercent").textContent = "Finalizing ZIP…";
+        const summary = await archive.finish();
+        exportAbort.signal.throwIfAborted();
+        results.push({
+          ...(await target.result()),
+          ...summary,
+          name: basename + "-segments.zip",
+          kind: "segments",
+        });
+      }
+      if (results.length)
+        exportMessage = segmented
+          ? "Export complete. All " +
+            ranges.length +
+            " segments are in one ZIP. Download it below."
+          : "Export complete. Preview your movie and download it below.";
     } catch (error) {
-      exportMessage = error.message;
-      report(error);
+      if (!exportAbort.signal.aborted) {
+        exportMessage = error.message;
+        report(error);
+      }
     } finally {
-      if (exportAbort.signal.aborted) clearResults();
+      if (exportAbort.signal.aborted) {
+        clearResults();
+        exportMessage = segmented
+          ? "Export cancelled. No incomplete ZIP is offered; your project is ready to edit."
+          : "Export cancelled. Your project is ready to edit.";
+      }
+      if (archive && !results.length) await archive.abort().catch(() => {});
+      cache?.pcm.clear();
+      cache?.stretched.clear();
       exportAbort = null;
       exporting = false;
       document.body.classList.remove("is-exporting");
       project.playhead = before;
       renderAll();
-      if (results.length) showResult(results[0]);
+      if (results.length && results[0].kind !== "segments")
+        showResult(results[0]);
       else await seekTo(before);
       store.schedule(project);
     }

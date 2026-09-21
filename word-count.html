@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <title>Text Editor - UsefulTool</title>
   <link rel="stylesheet" href="toolkit.css">
@@ -132,6 +132,10 @@
     </aside>
   </main>
   <script src="toolkit.js"></script>
+  <script src="vendor/prettier-standalone.js"></script>
+  <script src="vendor/prettier-babel.js"></script>
+  <script src="vendor/prettier-estree.js"></script>
+  <script src="assets/pages/draft-store.js"></script>
   <script src="assets/pages/word-count.js"></script>
 </body>
 </html>

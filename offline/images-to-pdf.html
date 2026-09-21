@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-inline' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'none'; img-src 'self' data: blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'none'; img-src 'self' data: blob:; object-src 'none'; base-uri 'self'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <title>Images to PDF | UsefulTool</title>
   <style data-inlined-from="toolkit.css">
@@ -125,7 +125,10 @@ footer { padding: 18px clamp(16px, 4vw, 48px); color: var(--muted); border-top: 
 }
 
 </style>
-  <style>.image-row{display:grid;grid-template-columns:72px minmax(140px,1fr) auto;gap:12px;align-items:center}.image-row img{width:72px;height:58px;object-fit:contain;background:#eef2ef}@media(max-width:620px){.image-row{grid-template-columns:58px 1fr}.image-row .row{grid-column:1/-1}}</style>
+  <style data-inlined-from="assets/pages/images-to-pdf.css">
+.image-row{display:grid;grid-template-columns:72px minmax(140px,1fr) auto;gap:12px;align-items:center}.image-row img{width:72px;height:58px;object-fit:contain;background:#eef2ef}@media(max-width:620px){.image-row{grid-template-columns:58px 1fr}.image-row .row{grid-column:1/-1}}
+
+</style>
 </head>
 <body>
   <header class="topbar"><a class="brand" href="index.html"><span class="mark">UT</span><span>Images to PDF</span></a><nav><a href="index.html">Home</a><a href="pdf-merge.html">PDF Merge</a><a href="image-editor.html">Image Editor</a><a href="images-to-pdf.html" download>Download HTML</a></nav></header>
@@ -261,6 +264,33 @@ window.UsefulTool = {
 //# sourceMappingURL=pdf-lib.min.js.map
 
 </script>
+  <script data-inlined-from="assets/pages/pdf-caption.js">
+/* Browser font fallback supports Unicode captions without a network font. */
+async function drawPdfCaption(pdf, page, filename, font, margin) {
+  const text = Array.from(filename).slice(0, 120).join("");
+  const maxWidth = Math.max(1, page.getWidth() - margin * 2);
+  try {
+    const width = font.widthOfTextAtSize(text, 10);
+    page.drawText(text, { x: margin, y: margin, size: 10 * Math.min(1, maxWidth / width), font, color: PDFLib.rgb(0.18, 0.22, 0.2) });
+  } catch {
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    context.font = "30px sans-serif";
+    canvas.width = Math.ceil(context.measureText(text).width) + 4;
+    canvas.height = 42;
+    context.font = "30px sans-serif";
+    context.fillStyle = "#2e3833";
+    context.textBaseline = "middle";
+    context.fillText(text, 2, 21);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("Could not render the filename caption.");
+    const caption = await pdf.embedPng(await blob.arrayBuffer());
+    const scale = Math.min(1 / 3, maxWidth / canvas.width);
+    page.drawImage(caption, { x: margin, y: margin, width: canvas.width * scale, height: canvas.height * scale });
+  }
+}
+
+</script>
   <script data-inlined-from="assets/pages/images-to-pdf.js">
 const records = [];
 const list = document.getElementById("imageList");
@@ -344,7 +374,7 @@ document.getElementById("buildButton").addEventListener("click", async () => {
       const scale = Math.min((pageWidth - margin * 2) / record.width, (pageHeight - margin * 2 - captionSpace) / record.height);
       const width = record.width * scale; const height = record.height * scale;
       page.drawImage(embedded, { x: (pageWidth - width) / 2, y: margin + captionSpace + (pageHeight - margin * 2 - captionSpace - height) / 2, width, height });
-      if (caption) page.drawText(record.file.name.slice(0, 120), { x: margin, y: margin, size: 10, font, color: PDFLib.rgb(0.18, 0.22, 0.2) });
+      if (caption) await drawPdfCaption(pdf, page, record.file.name, font, margin);
     }
     pdf.setCreator("UsefulTool Images to PDF"); pdf.setProducer("pdf-lib");
     const bytes = await pdf.save(); UsefulTool.download(new Blob([bytes], { type: "application/pdf" }), "usefultool-images.pdf");

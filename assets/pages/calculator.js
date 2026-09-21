@@ -28,7 +28,7 @@ const ops = {
   "*": { p: 3, a: "left", n: 2, fn: (a, b) => a * b },
   "/": { p: 3, a: "left", n: 2, fn: (a, b) => a / b },
   "^": { p: 4, a: "right", n: 2, fn: (a, b) => Math.pow(a, b) },
-  "neg": { p: 5, a: "right", n: 1, fn: (a) => -a }
+  "neg": { p: 4, a: "right", n: 1, fn: (a) => -a }
 };
 
 function toRad(value) {

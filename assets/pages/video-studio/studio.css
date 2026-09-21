@@ -1189,6 +1189,26 @@ small,
   background: #edf6f0;
   border-radius: 6px;
 }
+@media (min-width: 1100px) {
+  .audio-waveforms, .audio-routing {
+    display: grid;
+    gap: 8px;
+  }
+  .audio-waveform-lane strong {
+    display: block;
+    margin-bottom: 3px;
+    font-size: 11px;
+  }
+  .audio-waveform-lane .waveform-large {
+    display: block;
+    height: 40px;
+  }
+  .audio-routing .button-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+}
 dialog {
   border: 1px solid var(--line);
   border-radius: 12px;

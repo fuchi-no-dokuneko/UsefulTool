@@ -17,12 +17,14 @@
   <iframe id="rot" src="../rot-cipher.html" hidden></iframe>
   <iframe id="pdf" src="../pdf-merge.html" hidden></iframe>
   <iframe id="imagesPdf" src="../images-to-pdf.html" hidden></iframe>
+  <iframe id="pdfText" src="../pdf-to-text.html" hidden></iframe>
   <iframe id="videoEditor" src="../video-editor.html" hidden></iframe>
   <iframe id="editor" src="../image-editor.html" hidden></iframe>
   <iframe id="chat" src="../lan-chat.html" hidden></iframe>
   <iframe id="home" src="../index.html" hidden></iframe>
   <pre id="result">RUNNING</pre>
   <script src="video-studio/smoke.browser.js"></script>
+  <script src="video-studio/routing-smoke.browser.js"></script>
   <script>
     const TIFF_BASE64 = "SUkqAAgAAAADAA8BAgAJAAAAMgAAAGmHBAABAAAAPAAAACWIBAABAAAAYgAAAAAAAABDYW1lcmFDbwAAAQADkAIAFAAAAE4AAAAAAAAAMjAyNjowNjozMCAxMjozNDo1NgAEAAEAAgACAAAATgAAAAIABQADAAAAmAAAAAMAAgACAAAARQAAAAQABQADAAAAsAAAAAAAAAAjAAAAAQAAACkAAAABAAAAHgAAAAEAAACLAAAAAQAAACkAAAABAAAADwAAAAEAAAA=";
 
@@ -117,6 +119,10 @@
       try { fn(); return false; } catch (_) { return true; }
     }
 
+    async function rejects(promise) {
+      try { await promise; return false; } catch (_) { return true; }
+    }
+
     async function deflateBytes(bytes) {
       const writerInput = new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate"));
       return new Uint8Array(await new Response(writerInput).arrayBuffer());
@@ -135,7 +141,7 @@
       const checks = [];
       const check = (name, pass, detail) => checks.push({ name, pass: Boolean(pass), detail });
 
-      const expectedHomeLinks = ["image-converter.html", "calculator.html", "unit-converter.html", "metadata-lab.html", "base64-converter.html", "file-diff.html", "word-count.html", "text-transfer.html", "rot-cipher.html", "lan-chat.html", "image-editor.html", "pdf-merge.html", "images-to-pdf.html"];
+      const expectedHomeLinks = ["image-converter.html", "calculator.html", "unit-converter.html", "metadata-lab.html", "base64-converter.html", "file-diff.html", "word-count.html", "text-transfer.html", "rot-cipher.html", "lan-chat.html", "image-editor.html", "pdf-merge.html", "images-to-pdf.html", "pdf-to-text.html", "video-editor.html"];
       const homeLinks = [...document.getElementById("home").contentDocument.querySelectorAll(".hero .actions a")].map((link) => link.getAttribute("href"));
       check("home shortcuts cover every tool", expectedHomeLinks.every((page) => homeLinks.includes(page)), homeLinks.join(", "));
       check("home has theme toggle", Boolean(document.getElementById("home").contentDocument.querySelector("[data-theme-toggle]")));
@@ -311,7 +317,7 @@
       check("regex replace all", textEditor.replaceAllMatches() === 2 && wordWindow.document.getElementById("text").value === "cat cat cow");
       wordWindow.document.getElementById("mode").value = "json";
       wordWindow.document.getElementById("text").value = "{\"b\":1,\"a\":[2,3]";
-      check("best-effort JSON formatting", textEditor.formatCurrent().includes("\n  \"b\": 1,\n"));
+      check("best-effort JSON formatting", (await textEditor.formatCurrent()).includes("\n  \"b\": 1,\n"));
       const lineFrame = wordWindow.document.getElementById("editorFrame");
       const hadLines = !lineFrame.classList.contains("no-lines");
       wordWindow.document.getElementById("toggleLines").click();
@@ -330,17 +336,17 @@
       for (const [mode, source] of formattingCases) {
         wordWindow.document.getElementById("mode").value = mode;
         wordWindow.document.getElementById("text").value = source;
-        check("format " + mode, textEditor.formatCurrent().includes("\n") || mode === "json");
+        check("format " + mode, (await textEditor.formatCurrent()).includes("\n") || mode === "json");
       }
       for (const [name, source] of [["auto.json", "{\"x\":1}"], ["auto.java", "class X{}"], ["auto.kt", "fun x(){}"], ["auto.js", "function x(){}"], ["auto.html", "<p>x</p>"], ["auto.css", "p{color:red;}"], ["auto.xml", "<x />"]]) {
         wordWindow.document.getElementById("mode").value = "auto";
         wordWindow.document.getElementById("draftName").value = name;
         wordWindow.document.getElementById("text").value = source;
-        textEditor.formatCurrent();
+        await textEditor.formatCurrent();
       }
       check("brace formatter strings and comments", textEditor.formatBraceCode("class X{String s=\"}\\\"\";// comment\nvoid y(){}}\n").includes("// comment"));
       wordWindow.document.getElementById("mode").value = "text";
-      check("unsupported format is explicit", textEditor.formatCurrent() === wordWindow.document.getElementById("text").value);
+      check("unsupported format is explicit", (await textEditor.formatCurrent()) === wordWindow.document.getElementById("text").value);
       wordWindow.document.getElementById("text").value = "Alpha beta alpha";
       wordWindow.document.getElementById("findPattern").value = "alpha";
       wordWindow.document.getElementById("replaceValue").value = "X";
@@ -490,6 +496,48 @@
       imagesPdfWindow.document.getElementById("caption").checked = false;
       imagesPdfWindow.document.getElementById("buildButton").click();
       await waitUntil(() => /Created 2 page/.test(imagesPdfWindow.document.getElementById("status").textContent), "matched image PDF build");
+
+      const pdfTextWindow = document.getElementById("pdfText").contentWindow;
+      const pdfText = pdfTextWindow.UsefulToolPdfToText;
+      check("PDF-to-text worker is local", pdfTextWindow.pdfjsLib.version === "6.3.289" && pdfTextWindow.pdfjsLib.GlobalWorkerOptions.workerSrc === "vendor/pdf.worker.min.mjs");
+      check("PDF-to-text page ranges", pdfText.parsePageRange("", 3).join(",") === "1,2,3" && pdfText.parsePageRange("all", 2).join(",") === "1,2" && pdfText.parsePageRange("3-1, 2", 3).join(",") === "3,2,1" && throws(() => pdfText.parsePageRange("bad", 2)) && throws(() => pdfText.parsePageRange("3", 2)));
+      const textItems = [
+        { str: "Hello", transform: [1, 0, 0, 1, 10, 20], height: 10 },
+        { str: ",", transform: [1, 0, 0, 1, 40, 20], height: 10 },
+        { str: "world", transform: [1, 0, 0, 1, 50, 20], height: 10, hasEOL: true },
+        { str: "Second", transform: [1, 0, 0, 1, 10, 8], height: 10 },
+        { str: "line", transform: [1, 0, 0, 1, 55, 8], height: 10 },
+        { markedContent: true }, { str: "" }
+      ];
+      check("PDF-to-text ordering helpers", pdfText.textFromItems(textItems, "flow") === "Hello, world\nSecond line" && pdfText.textFromItems(textItems, "layout").includes("Second line"));
+      check("PDF-to-text safe names and errors", pdfText.txtName("../bad:name.PDF") === "..-bad-name.txt" && pdfText.friendlyError({ name: "PasswordException" }).includes("password") && pdfText.friendlyError({ name: "InvalidPDFException" }).includes("valid PDF") && pdfText.friendlyError("plain error") === "plain error");
+      const textPdfDocument = await pdfWindow.PDFLib.PDFDocument.create();
+      textPdfDocument.addPage().drawText("UsefulTool embedded page one", { x: 20, y: 100, size: 14 });
+      textPdfDocument.addPage().drawText("Embedded page two", { x: 20, y: 100, size: 14 });
+      const textPdfBytes = await textPdfDocument.save();
+      setFiles(pdfTextWindow.document.getElementById("pdfFile"), [new File([textPdfBytes], "sample-text.pdf", { type: "application/pdf" })]);
+      await waitUntil(() => Boolean(pdfText.selectedFile), "PDF-to-text input");
+      pdfTextWindow.document.getElementById("pageRange").value = "2-1";
+      pdfTextWindow.document.getElementById("textOrder").value = "layout";
+      const extractedPdfText = await pdfText.extractSelected();
+      check("real embedded PDF text extraction", extractedPdfText.pages.join(",") === "2,1" && extractedPdfText.pagesWithText === 2 && pdfTextWindow.document.getElementById("textOutput").value.includes("Embedded page two") && pdfTextWindow.document.getElementById("textOutput").value.includes("Page 1"));
+      const noHeaders = await pdfText.extractBytes(textPdfBytes, { range: "1", order: "flow", pageHeaders: false });
+      check("PDF text extraction options", noHeaders.text.includes("UsefulTool embedded page one") && !noHeaders.text.includes("--- Page") && noHeaders.totalPages === 2);
+      pdfTextWindow.document.getElementById("textOutput").dispatchEvent(new Event("input", { bubbles: true }));
+      pdfTextWindow.document.getElementById("copyButton").click();
+      pdfTextWindow.document.getElementById("downloadButton").click();
+      check("PDF-to-text rejects empty bytes", await rejects(pdfText.extractBytes(new Uint8Array())));
+      const blankPdfDocument = await pdfWindow.PDFLib.PDFDocument.create();
+      blankPdfDocument.addPage();
+      setFiles(pdfTextWindow.document.getElementById("pdfFile"), [new File([await blankPdfDocument.save()], "scan-like.pdf", { type: "application/pdf" })]);
+      pdfTextWindow.document.getElementById("pageRange").value = "";
+      const blankResult = await pdfText.extractSelected();
+      check("no-OCR result is explicit", blankResult.pagesWithText === 0 && /No embedded text/.test(pdfTextWindow.document.getElementById("status").textContent));
+      const hugePdf = new File(["x"], "huge.pdf", { type: "application/pdf" });
+      Object.defineProperty(hugePdf, "size", { value: 151 * 1024 * 1024 });
+      setFiles(pdfTextWindow.document.getElementById("pdfFile"), [hugePdf]);
+      check("PDF-to-text size guard", /150 MiB/.test(pdfTextWindow.document.getElementById("status").textContent));
+      setFiles(pdfTextWindow.document.getElementById("pdfFile"), []);
 
       const videoFrame = document.getElementById("videoEditor");
       videoFrame.hidden = false;

@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-inline'; style-src 'self' 'unsafe-inline' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <title>Text Upload and Download - UsefulTool</title>
   <style data-inlined-from="toolkit.css">
@@ -338,6 +338,7 @@ function sendToEditor() {
     updatedAt: Date.now()
   };
   drafts.unshift(draft);
+  writeStorage(storageKeys.editorDrafts + ":" + draft.id, JSON.stringify(draft));
   writeStorage(storageKeys.editorDrafts, JSON.stringify(drafts));
   writeStorage(storageKeys.editorActive, draft.id);
   writeStorage(storageKeys.editorLegacy, textInput.value);

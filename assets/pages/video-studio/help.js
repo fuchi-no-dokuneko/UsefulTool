@@ -516,13 +516,16 @@
       "Adjust other independent sounds from 0 to 200 percent.",
     ],
     leftGain: [
-      "Left channel",
-      "Adjust this sound's left stereo channel from 0 to 200 percent.",
+      "Left output",
+      "Set the left output from 0 to 100 percent. A custom mix with only one output enabled includes both source channels in that ear.",
     ],
     rightGain: [
-      "Right channel",
-      "Adjust this sound's right stereo channel from 0 to 200 percent.",
+      "Right output",
+      "Set the right output from 0 to 100 percent. With both custom outputs enabled, the source's stereo channels remain separate.",
     ],
+    channelStereo: ["Stereo", "Send the source's left and right channels to their matching ears at 100 percent."],
+    channelLeft: ["Left only", "Mix both source channels to mono, then send the whole song to the left ear only."],
+    channelRight: ["Right only", "Mix both source channels to mono, then send the whole song to the right ear only."],
     repeat: [
       "Repeat sound",
       "Repeat the selected source range until this sound item's end. Turn it off to leave silence after the source ends.",
@@ -598,7 +601,7 @@
     ],
     segmentInterval: [
       "Interval cuts",
-      "Place cuts at this interval and export up to 60 separate video segments.",
+      "Place cuts at this interval. All segments are exported in order into one ZIP, with no segment-count limit.",
     ],
     segmentCuts: [
       "Show interval cuts",
@@ -606,8 +609,9 @@
     ],
     exportSegments: [
       "Export segments",
-      "Create a separate downloadable video for each marked interval.",
+      "Stream every interval into one ZIP containing numbered video files. Cancel discards the incomplete archive; errors identify the affected segment.",
     ],
+    downloadSegments: ["Download ZIP", "Download the single archive containing all numbered interval segments."],
     relink: [
       "Relink file",
       "Choose the original file matching the saved name, size and content fingerprint.",

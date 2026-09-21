@@ -15,6 +15,58 @@
     node.oversample = "none";
     return node;
   }
+  // Shared routing graph, also usable with an OfflineAudioContext for exact
+  // regression comparison against the project-time export mixer.
+  function createRouting(c, source, destination) {
+    const upmix = c.createGain(),
+      mono = c.createGain(),
+      stereo = c.createGain(),
+      split = c.createChannelSplitter(2),
+      left = c.createGain(),
+      right = c.createGain(),
+      merge = c.createChannelMerger(2);
+    for (const [node, count] of [
+      [upmix, 2],
+      [mono, 1],
+      [stereo, 2],
+    ]) {
+      node.channelCount = count;
+      node.channelCountMode = "explicit";
+      node.channelInterpretation = "speakers";
+    }
+    // Web Audio's speaker downmix is exactly (L + R) / 2. Upmix mono
+    // back to two channels before the discrete splitter, including mono files.
+    source.connect(upmix);
+    mono.connect(stereo);
+    stereo.connect(split);
+    upmix.connect(split);
+    split.connect(left, 0);
+    split.connect(right, 1);
+    left.connect(merge, 0, 0);
+    right.connect(merge, 0, 1);
+    merge.connect(destination);
+    left.gain.value = right.gain.value = 0;
+    let downmixed = false;
+    return {
+      source,
+      upmix,
+      mono,
+      stereo,
+      split,
+      left,
+      right,
+      merge,
+      apply(routing, time = c.currentTime) {
+        if (routing.mono !== downmixed) {
+          upmix.disconnect();
+          upmix.connect(routing.mono ? mono : split);
+          downmixed = routing.mono;
+        }
+        left.gain.setValueAtTime(routing.left, time);
+        right.gain.setValueAtTime(routing.right, time);
+      },
+    };
+  }
   class AudioMixer {
     constructor(library) {
       this.library = library;
@@ -50,26 +102,11 @@
       if (this.chains.has(value.id)) return this.chains.get(value.id);
       const element = this.library.element(value);
       if (!element) return null;
-      const c = this.context,
-        source = c.createMediaElementSource(element),
-        upmix = c.createGain(),
-        split = c.createChannelSplitter(2),
-        left = c.createGain(),
-        right = c.createGain(),
-        merge = c.createChannelMerger(2);
-      upmix.channelCount = 2;
-      upmix.channelCountMode = "explicit";
-      upmix.channelInterpretation = "speakers";
-      source.connect(upmix);
-      upmix.connect(split);
-      split.connect(left, 0);
-      split.connect(right, 1);
-      left.connect(merge, 0, 0);
-      right.connect(merge, 0, 1);
-      merge.connect(this.bus);
-      left.gain.value = 0;
-      right.gain.value = 0;
-      const chain = { element, source, left, right, merge, upmix, split };
+      const source = this.context.createMediaElementSource(element);
+      const chain = {
+        element,
+        ...createRouting(this.context, source, this.bus),
+      };
       this.chains.set(value.id, chain);
       return chain;
     }
@@ -81,8 +118,7 @@
       for (const entry of plan) {
         const chain = this.chain(entry.item);
         if (!chain) continue;
-        chain.left.gain.setValueAtTime(entry.left, now);
-        chain.right.gain.setValueAtTime(entry.right, now);
+        chain.apply(entry, now);
       }
       for (const [key, chain] of this.chains)
         if (!live.has(key)) {
@@ -114,5 +150,5 @@
       this.context = null;
     }
   }
-  root.UTStudio.Audio = { AudioMixer, createLimiter, CEILING };
+  root.UTStudio.Audio = { AudioMixer, createLimiter, createRouting, CEILING };
 })(globalThis);

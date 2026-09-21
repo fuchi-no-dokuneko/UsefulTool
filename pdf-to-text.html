@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'none'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>PDF to Text | UsefulTool</title>
+  <link rel="stylesheet" href="toolkit.css">
+  <style>
+    .result-area { min-height: 52svh; }
+    .progress { width: 100%; accent-color: var(--green); }
+    .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .fact { border: 1px solid var(--line); border-radius: 6px; padding: 10px; display: grid; gap: 3px; }
+    .fact span { color: var(--muted); font-size: 12px; font-weight: 750; }
+    @media (max-width: 620px) { .facts { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="mark">UT</span><span>PDF to Text</span></a>
+    <nav><a href="index.html">Home</a><a href="pdf-merge.html">PDF Merge</a><a href="offline/pdf-to-text.html" download>Download HTML</a></nav>
+  </header>
+  <section class="page-head">
+    <h1>Extract PDF Text</h1>
+    <p>Turn the embedded text layer of a local PDF into a TXT file. This version deliberately performs no OCR, so scanned image-only pages remain empty.</p>
+  </section>
+  <main class="tool-shell">
+    <section class="controls stack">
+      <label>PDF file<input id="pdfFile" type="file" accept="application/pdf,.pdf"></label>
+      <label>Pages<input id="pageRange" type="text" inputmode="numeric" placeholder="all, or 1-3, 5, 8-6"></label>
+      <label>Text ordering
+        <select id="textOrder">
+          <option value="flow">PDF content order</option>
+          <option value="layout">Approximate visual lines</option>
+        </select>
+      </label>
+      <label>PDF password, if required<input id="password" type="password" autocomplete="off"></label>
+      <label class="check"><input id="pageHeaders" type="checkbox" checked> Add page separators</label>
+      <button class="primary" id="extractButton" type="button" disabled>Extract embedded text</button>
+      <div class="row">
+        <button id="copyButton" type="button" disabled>Copy text</button>
+        <button id="downloadButton" type="button" disabled>Download TXT</button>
+        <button class="danger" id="clearButton" type="button">Clear</button>
+      </div>
+      <progress class="progress" id="progress" max="1" value="0"></progress>
+      <div class="status" id="status">Choose one PDF file. Nothing is uploaded.</div>
+      <p class="small muted">No OCR is included. Text extraction works only when the PDF contains machine-readable text. Reading order can be imperfect in tables and multi-column layouts.</p>
+    </section>
+    <section class="workspace stack">
+      <div class="facts" aria-label="Extraction summary">
+        <div class="fact"><span>File</span><strong id="fileFact">None</strong></div>
+        <div class="fact"><span>Pages extracted</span><strong id="pagesFact">0</strong></div>
+        <div class="fact"><span>Characters</span><strong id="charactersFact">0</strong></div>
+      </div>
+      <label for="textOutput">Extracted plain text</label>
+      <textarea class="result-area" id="textOutput" spellcheck="false" placeholder="Embedded PDF text appears here."></textarea>
+    </section>
+  </main>
+  <footer>PDF parsing and text extraction stay in browser memory. No file content leaves this page.</footer>
+  <script src="toolkit.js"></script>
+  <script id="pdfWorkerSource" type="text/plain" data-inline-worker-src="vendor/pdf.worker.min.mjs"></script>
+  <script type="module" src="vendor/pdf.min.mjs"></script>
+  <script type="module" src="assets/pages/pdf-to-text.js"></script>
+</body>
+</html>

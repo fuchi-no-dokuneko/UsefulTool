@@ -49,8 +49,26 @@
       fadeIn: 0, fadeOut: 0, effects: [], opacityKeys: [], blendMode: "equal", linkEnabled: false };
   }
   function audioProps(category = "music") {
-    return { category, volume: 1, leftGain: 1, rightGain: 1, muted: false, fadeIn: 0, fadeOut: 0,
+    return { category, volume: 1, channelMode: "stereo", leftGain: 1, rightGain: 1, muted: false, fadeIn: 0, fadeOut: 0,
       preservePitch: true, loop: false, wholeMovie: false, offset: 0 };
+  }
+  function audioRouting(audio) {
+    const mode = audio.channelMode ?? "stereo";
+    const left = mode === "rightOnly" ? 0 : audio.leftGain ?? 1;
+    const right = mode === "leftOnly" ? 0 : audio.rightGain ?? 1;
+    // A single output always carries both source channels, including custom
+    // one-ear gains. With both custom outputs enabled, preserve source stereo.
+    const mono = mode === "leftOnly" || mode === "rightOnly" ||
+      (mode === "custom" && (left === 0 || right === 0));
+    return { left, right, mono };
+  }
+  function setChannelMode(value, mode) {
+    if (!value?.audio || !["stereo", "leftOnly", "rightOnly", "custom"].includes(mode)) return;
+    value.audio.channelMode = mode;
+    if (mode !== "custom") {
+      value.audio.leftGain = mode === "rightOnly" ? 0 : 1;
+      value.audio.rightGain = mode === "leftOnly" ? 0 : 1;
+    }
   }
   function visualEnd(project) {
     return Math.max(0, ...project.items.filter((i) => i.kind !== "audio" && i.kind !== "filter").map((i) => i.end));
@@ -69,6 +87,11 @@
     });
     project.duration = rounded(Math.max(visualEnd(project), 0, ...project.items.filter((i) => i.kind === "audio" && !i.audio.wholeMovie).map((i) => i.end)));
     for (const value of project.items) {
+      if (value.audio) {
+        value.audio.channelMode ??= "stereo";
+        value.audio.leftGain ??= 1;
+        value.audio.rightGain ??= 1;
+      }
       if (value.linkId || value.linkedGroupId) {
         value.linkId = value.linkId || value.linkedGroupId;
         value.linkedGroupId = value.linkId;
@@ -94,6 +117,11 @@
     return Math.max(0, Math.min(5, span(a) - preceding - 1 / project.exportSettings.fps, span(b) - following - 1 / project.exportSettings.fps));
   }
   function reflow(project) {
+    project.mainOrder = project.mainOrder.filter(key => item(project, key)?.layerId === "main");
+    project.transitions = project.transitions.filter(tr => {
+      const index = project.mainOrder.indexOf(tr.toId);
+      return index > 0 && project.mainOrder[index - 1] === tr.fromId;
+    });
     let time = 0;
     for (const value of mainItems(project)) {
       const duration = span(value), previousStart = value.start;
@@ -226,7 +254,13 @@
     if (layer(project, nextLayer)?.locked) throw new Error("Unlock the destination layer first.");
     if (value.kind === "video" && !VIDEO_LAYERS.includes(nextLayer)) throw new Error("Choose one of the three video tracks.");
     if (value.kind === "audio" && layer(project, nextLayer)?.kind !== "sound") throw new Error("Place sound on a Sound track.");
-    const delta = Math.max(0, start) - value.start;
+    let nextStart = Math.max(0, start);
+    if (value.kind === "video" && value.layerId === "main" && nextLayer !== "main") {
+      const previous = mainItems(project)[project.mainOrder.indexOf(value.id) - 1];
+      if (previous && Math.abs(previous.end - value.start) < 1e-6 && previous.fadeOut > 0 && value.fadeIn > 0)
+        nextStart = Math.max(0, previous.end - Math.min(previous.fadeOut, value.fadeIn));
+    }
+    const delta = nextStart - value.start;
     if (value.kind === "video" && nextLayer !== "main" && project.items.some((i) => i.id !== value.id && i.kind === "video" && i.layerId === nextLayer && i.start < value.end + delta - 1e-7 && i.end > value.start + delta + 1e-7)) throw new Error("This overlay track is occupied. Shorten an overlay first.");
     for (const sibling of related(project, value)) {
       if (isLocked(project, sibling)) throw new Error("Unlock the linked item first.");
@@ -275,7 +309,7 @@
       sibling.start = value.start; sibling.end = value.end; sibling.sourceIn = value.sourceIn; sibling.sourceOut = value.sourceOut;
     }
     if (value.credits) updateCreditsDuration(project, value);
-    value.layerId === "main" ? reflow(project) : normalize(project); return true;
+    related(project, value).some(i => i.layerId === "main") ? reflow(project) : normalize(project); return true;
   }
   function setSpeed(project, itemId, speed) {
     const value = item(project, itemId);
@@ -322,8 +356,10 @@
   function duplicateItem(project, itemId) {
     const value = item(project, itemId);
     if (!value || isLocked(project, value)) return null;
+    const siblings = related(project, value);
+    if (siblings.some(i => isLocked(project, i))) throw new Error("Unlock the linked item first.");
     const group = id("link"); let result;
-    for (const sibling of related(project, value)) {
+    for (const sibling of siblings) {
       const dupe = copy(sibling); dupe.id = id(sibling.kind); dupe.start = sibling.end; dupe.end = dupe.start + span(sibling);
       if (!["video", "audio"].includes(dupe.kind) && dupe.layerId !== "main") {
         const track = copy(layer(project, dupe.layerId));
@@ -335,7 +371,7 @@
       if (dupe.layerId === "main") project.mainOrder.splice(project.mainOrder.indexOf(sibling.id) + 1, 0, dupe.id);
       if (sibling.id === value.id) result = dupe;
     }
-    value.layerId === "main" ? reflow(project) : normalize(project); return result;
+    siblings.some(i => i.layerId === "main") ? reflow(project) : normalize(project); return result;
   }
   function deleteItem(project, itemId) {
     const value = item(project, itemId);
@@ -385,7 +421,9 @@
   }
   function fadeAt(value, t, audio = false) {
     const properties = audio ? value.audio : value, local = t - value.start;
-    return clamp(Math.min(1, properties.fadeIn ? local / properties.fadeIn : 1, properties.fadeOut ? (value.end - t) / properties.fadeOut : 1), 0, 1);
+    const fadeIn = clamp(properties.fadeIn ? local / properties.fadeIn : 1, 0, 1);
+    const fadeOut = clamp(properties.fadeOut ? (value.end - t) / properties.fadeOut : 1, 0, 1);
+    return audio ? Math.min(fadeIn, fadeOut) : fadeIn * fadeOut;
   }
   function sourceTimeAt(value, time) {
     let offset = Math.max(0, time - value.start) * value.playbackRate;
@@ -441,7 +479,8 @@
   }
   function audioGains(project, value, time) {
     const gain = value.audio.volume * fadeAt(value, time, true) * (project.soundBalance[value.audio.category] ?? 1);
-    return { left: gain * value.audio.leftGain, right: gain * value.audio.rightGain };
+    const routing = audioRouting(value.audio);
+    return { left: gain * routing.left, right: gain * routing.right, mono: routing.mono };
   }
   const MAX_AUDIO_SOURCES = 3;
   function audioConflicts(project) {
@@ -506,14 +545,14 @@
       width: source.width * scale, height: source.height * scale, fit: mode });
   }
   function segmentRanges(duration, interval, fps = 30) {
-    if (!(duration > 0)) return [];
+    if (!Number.isFinite(duration) || duration < 0) throw new Error("Use a valid finite movie duration.");
+    if (duration === 0) return [];
+    if (!Number.isFinite(fps) || fps <= 0) throw new Error("Use a valid frame rate.");
     if (!Number.isFinite(interval) || interval < Math.max(.1, 1 / fps)) throw new Error("Use at least 0.1 seconds and one frame between cuts.");
-    const count = Math.ceil(duration / interval);
-    if (count > 61) throw new Error("Choose a longer interval; the maximum is 60 segments.");
+    const count = Math.ceil(duration / interval - 1e-7);
     const ranges = [];
-    for (let start = 0; start < duration - 1e-7; start += interval) ranges.push({ start: rounded(start), end: rounded(Math.min(duration, start + interval)) });
+    for (let index = 0; index < count; index++) ranges.push({ start: rounded(index * interval), end: rounded(Math.min(duration, (index + 1) * interval)) });
     if (ranges.length > 1 && ranges.at(-1).end - ranges.at(-1).start < Math.max(.1, 1 / fps) - 1e-7) ranges[ranges.length - 2].end = ranges.pop().end;
-    if (ranges.length > 60) throw new Error("Choose a longer interval; the maximum is 60 segments.");
     return ranges;
   }
   function formatTime(time, fps = 30) {
@@ -553,7 +592,8 @@
       if (a.kind !== "image") fail(numeric(a.duration, MIN), "Invalid source duration.");
       if (a.kind !== "audio") fail(numeric(a.width, 1) && numeric(a.height, 1), "Invalid source dimensions.");
       if (a.thumbnail !== undefined) fail(string(a.thumbnail, 2 * 1024 * 1024) && /^data:image\/(png|jpeg|webp|gif|bmp);base64,[a-z0-9+/=\s]+$/i.test(a.thumbnail), "Invalid embedded thumbnail.");
-      if (a.waveform !== undefined) fail(Array.isArray(a.waveform) && a.waveform.length <= 8192 && a.waveform.every(n => numeric(n, 0, 1)), "Invalid waveform data.");
+      for (const key of ["waveform", "waveformLeft", "waveformRight", "waveformMono"])
+        if (a[key] !== undefined) fail(Array.isArray(a[key]) && a[key].length <= 8192 && a[key].every(n => numeric(n, 0, 1)), "Invalid waveform data.");
     }
     for (const track of value.layers) fail(["main-video", "overlay", "text", "image", "filter", "sound"].includes(track.kind) && string(track.name, 180) && numeric(track.order) && ["visible", "locked", "muted", "solo"].every(k => typeof track[k] === "boolean"), "Invalid layer settings.");
     for (const required of createProject().layers) fail(layer(value, required.id)?.kind === required.kind, "A required timeline track is missing.");
@@ -577,7 +617,13 @@
       if (entry.kind !== "audio") fail(entry.transform && ["x", "y", "rotation", "cropX", "cropY"].every(k => numeric(entry.transform[k])) && ["width", "height", "cropWidth", "cropHeight"].every(k => numeric(entry.transform[k], .000001)), "Invalid item transform.");
       fail(entry.opacityKeys.every(k => k && numeric(k.time, 0) && numeric(k.value, 0, 1) && ["linear", "smooth", "ease-in", "ease-out", "hold"].includes(k.easing)), "Invalid visibility curve.");
       fail(entry.effects.every(f => f && EFFECTS.includes(f.type) && numeric(f.amount, f.type === "hue" ? -360 : 0, f.type === "hue" ? 360 : 3) && numeric(f.start, 0) && numeric(f.end, f.start) && typeof f.enabled === "boolean"), "Invalid effect data.");
-      if (entry.audio) fail(["leftGain", "rightGain"].every(k => numeric(entry.audio[k], 0, 2)) && ["fadeIn", "fadeOut"].every(k => numeric(entry.audio[k], 0)) && ["muted", "preservePitch", "loop", "wholeMovie"].every(k => typeof entry.audio[k] === "boolean"), "Invalid audio settings.");
+      if (entry.audio) {
+        if (entry.audio.channelMode === undefined) entry.audio.channelMode = "stereo";
+        for (const key of ["leftGain", "rightGain"]) if (entry.audio[key] === undefined) entry.audio[key] = 1;
+        // Old projects allowed up to 200% per channel. Keep those saved values;
+        // new output controls use 0–100% without rewriting historical mixes.
+        fail(["stereo", "leftOnly", "rightOnly", "custom"].includes(entry.audio.channelMode) && ["leftGain", "rightGain"].every(k => numeric(entry.audio[k], 0, 2)) && ["fadeIn", "fadeOut"].every(k => numeric(entry.audio[k], 0)) && ["muted", "preservePitch", "loop", "wholeMovie"].every(k => typeof entry.audio[k] === "boolean"), "Invalid audio settings.");
+      }
       if (entry.kind === "text") fail(entry.text && string(entry.text.content) && string(entry.text.font, 200) && numeric(entry.text.size, 1, 10000) && numeric(entry.text.weight, 100, 1000) && numeric(entry.text.lineHeight, .1, 10) && ["left", "center", "right"].includes(entry.text.align) && string(entry.text.color, 100) && string(entry.text.background, 100), "Invalid text settings.");
       if (entry.kind === "filter") {
         const f = entry.filter;
@@ -627,7 +673,7 @@
     related, setLink, moveItem, reorderMain, trimItem, setSpeed, splitItem, duplicateItem, deleteItem, transitionMaximum, setTransition, removeTransition,
     ease, curveAt, setKey, fadeAt, sourceTimeAt, setRepeat, snapTime, visibleItems, videoConflicts, MAX_AUDIO_SOURCES, audioConflicts, fixAudioConflicts, audioGains, evaluateFrame, evaluateAudio, applyOverlayPreset, addEffect,
     creditsHeight, updateCreditsDuration, fitTransform, segmentRanges, formatTime, exportDimensions, serialize, parseProject, History, visualEnd,
-    legacyLinkCandidates, migrateProject, timelineCheckpoint, restoreTimeline };
+    legacyLinkCandidates, migrateProject, timelineCheckpoint, restoreTimeline, audioRouting, setChannelMode };
   root.UTStudio = Object.assign(root.UTStudio || {}, { Model: api });
   if (typeof module !== "undefined") module.exports = api;
 })(globalThis);

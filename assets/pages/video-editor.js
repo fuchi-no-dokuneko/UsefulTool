@@ -320,7 +320,10 @@
   }
   function clearResults() {
     if (!results.length) return;
-    for (const result of results) URL.revokeObjectURL(result.url);
+    for (const result of results) {
+      if (result.url) URL.revokeObjectURL(result.url);
+      result.dispose?.().catch(() => {});
+    }
     results = [];
     $("outputVideo").pause();
     $("outputVideo").removeAttribute("src");
@@ -1099,7 +1102,7 @@
       ),
     );
   }
-  function drawWaveform(c, source, value = null, gain = 1) {
+  function drawWaveform(c, source, value = null, gain = 1, channel = null) {
     c.width = Math.min(
       1600,
       Math.max(80, Math.round(parseFloat(c.style.width) || 320)),
@@ -1109,7 +1112,18 @@
     ctx.clearRect(0, 0, c.width, c.height);
     ctx.strokeStyle = "#0d6b4f";
     ctx.lineWidth = 1;
-    const peaks = source?.waveform || [];
+    const routing = value?.audio && M.audioRouting(value.audio);
+    const peaks = channel
+      ? source?.[
+          routing?.mono
+            ? "waveformMono"
+            : channel === "left"
+              ? "waveformLeft"
+              : "waveformRight"
+        ] || []
+      : source?.waveform || [];
+    if (channel && routing)
+      gain *= routing[channel] * (value.audio.muted ? 0 : value.audio.volume);
     ctx.beginPath();
     for (let x = 0; x < c.width; x++) {
       let fraction = x / c.width;
@@ -3008,11 +3022,112 @@
   function audioControls(value, locked) {
     const a = value.audio,
       source = M.asset(project, value.assetId),
-      wave = el("canvas", "waveform-large");
-    drawWaveform(wave, source, value, waveZoom);
+      desktop = root.matchMedia("(min-width: 1100px)").matches,
+      waves = el("div", "audio-waveforms"),
+      canvases = [];
+    for (const [channel, label] of desktop
+      ? [
+          ["left", "L — Left"],
+          ["right", "R — Right"],
+        ]
+      : [[null, "Sound waveform"]]) {
+      const lane = el("div", "audio-waveform-lane"),
+        wave = el("canvas", "waveform-large");
+      wave.setAttribute("aria-label", label + " output waveform");
+      if (channel) {
+        lane.dataset.channel = channel;
+        lane.append(el("strong", "", label));
+      }
+      lane.append(wave);
+      waves.append(lane);
+      canvases.push([wave, channel]);
+    }
+    const drawWaves = () =>
+      canvases.forEach(([wave, channel]) =>
+        drawWaveform(wave, source, value, waveZoom, channel),
+      );
+    drawWaves();
+    if (desktop && !source?.waveformLeft?.length)
+      waves.append(
+        el(
+          "small",
+          "muted",
+          source?.waveformStatus ||
+            "Relink the original media to display L/R waveforms.",
+        ),
+      );
+    const routing = el("div", "audio-routing"),
+      presets = el("div", "button-row");
+    if (desktop) {
+      for (const [mode, help, label] of [
+        ["stereo", "channelStereo", "Stereo"],
+        ["leftOnly", "channelLeft", "Left only"],
+        ["rightOnly", "channelRight", "Right only"],
+      ]) {
+        const control = B(
+          help,
+          label,
+          () =>
+            edit(() => M.setChannelMode(value, mode), "Sound routing changed", {
+              context: true,
+            }),
+          {
+            disabled: locked,
+            className: a.channelMode === mode ? "is-active" : "",
+          },
+        );
+        control
+          .querySelector("button")
+          .setAttribute("aria-pressed", String(a.channelMode === mode));
+        presets.append(control);
+      }
+      routing.append(presets);
+      const status = el(
+        "small",
+        "muted",
+        a.channelMode === "custom"
+          ? "Custom output levels"
+          : "Choose which ear hears this sound.",
+      );
+      for (const [key, label] of [
+        ["leftGain", "Left output (%)"],
+        ["rightGain", "Right output (%)"],
+      ])
+        routing.append(
+          range(
+            label,
+            key,
+            a[key] * 100,
+            0,
+            100,
+            1,
+            (v, commit) => {
+              edit(
+                () => {
+                  a[key] = v / 100;
+                  a.channelMode = "custom";
+                },
+                "Output level changed",
+                { commit },
+              );
+              for (const button of presets.querySelectorAll(
+                "button:not(.touch-help)",
+              )) {
+                button.classList.remove("is-active");
+                button.setAttribute("aria-pressed", "false");
+              }
+              status.textContent = "Custom output levels";
+              drawWaves();
+            },
+            { disabled: locked },
+          ),
+        );
+      routing.append(status);
+    }
     const basic = group(
       "Sound",
-      wave,
+      waves,
+      desktop ? routing : null,
       range(
         "Volume (%)",
         "volume",
@@ -3022,6 +3137,7 @@
         1,
         setter((v) => {
           a.volume = v / 100;
+          drawWaves();
         }, "Volume changed"),
         { disabled: locked },
       ),
@@ -3032,6 +3148,7 @@
         (v) =>
           edit(() => {
             a.muted = v;
+            drawWaves();
           }, "Sound muted"),
         locked,
       ),
@@ -3083,30 +3200,36 @@
       details(
         "More sound settings",
         fades,
-        range(
-          "Left channel (%)",
-          "leftGain",
-          a.leftGain * 100,
-          0,
-          200,
-          1,
-          setter((v) => {
-            a.leftGain = v / 100;
-          }, "Left channel changed"),
-          { disabled: locked },
-        ),
-        range(
-          "Right channel (%)",
-          "rightGain",
-          a.rightGain * 100,
-          0,
-          200,
-          1,
-          setter((v) => {
-            a.rightGain = v / 100;
-          }, "Right channel changed"),
-          { disabled: locked },
-        ),
+        !desktop
+          ? range(
+              "Left channel (%)",
+              "leftGain",
+              a.leftGain * 100,
+              0,
+              200,
+              1,
+              setter((v) => {
+                a.leftGain = v / 100;
+                a.channelMode = "custom";
+              }, "Left channel changed"),
+              { disabled: locked },
+            )
+          : null,
+        !desktop
+          ? range(
+              "Right channel (%)",
+              "rightGain",
+              a.rightGain * 100,
+              0,
+              200,
+              1,
+              setter((v) => {
+                a.rightGain = v / 100;
+                a.channelMode = "custom";
+              }, "Right channel changed"),
+              { disabled: locked },
+            )
+          : null,
         check(
           "Preserve pitch",
           "preservePitch",
@@ -3123,7 +3246,7 @@
           waveZoom,
           (v, commit) => {
             waveZoom = v;
-            drawWaveform(wave, source, value, waveZoom);
+            drawWaves();
           },
           { min: 1, max: 10, step: 0.5 },
         ),
@@ -4848,7 +4971,9 @@
           el(
             "strong",
             "",
-            results.length === 1 ? "Your movie is ready" : "Segment " + (i + 1),
+            result.kind === "segments"
+              ? "Your segments ZIP is ready"
+              : "Your movie is ready",
           ),
           el(
             "p",
@@ -4857,13 +4982,13 @@
               " · " +
               bytes(result.blob.size) +
               " · " +
-              result.width +
-              " × " +
-              result.height,
+              (result.kind === "segments"
+                ? result.count + " segments"
+                : result.width + " × " + result.height),
           ),
           B(
-            "downloadVideo",
-            "Download video",
+            result.kind === "segments" ? "downloadSegments" : "downloadVideo",
+            result.kind === "segments" ? "Download ZIP" : "Download video",
             () => download(result.blob, result.name),
             {
               id: i === 0 ? "downloadButton" : undefined,
@@ -4872,7 +4997,7 @@
             },
           ),
         );
-        if (results.length > 1)
+        if (results.length > 1 && result.kind !== "segments")
           card.append(B("play", "Preview segment", () => showResult(result)));
         list.append(card);
       }
@@ -4906,7 +5031,7 @@
     node.append(next);
     node.append(
       details(
-        "Interval cuts and separate files",
+        "Interval cuts and ZIP export",
         field(
           "Cut every (sec)",
           "segmentInterval",
@@ -4928,7 +5053,7 @@
         el(
           "small",
           "",
-          "At least 0.1 seconds per segment. Up to 60 downloadable files. A short final remainder stays with the previous segment.",
+          "At least 0.1 seconds and one frame per segment. All numbered files stream into one ZIP. A short final remainder stays with the previous segment.",
         ),
       ),
     );
@@ -4953,69 +5078,145 @@
       : [{ start: 0, end: project.duration }];
     clearResults();
     exportMessage = "";
+    errorMessage = "";
     exporting = true;
     exportAbort = new AbortController();
     document.body.classList.add("is-exporting");
     renderAll();
     const before = project.playhead;
+    const began = performance.now();
+    let archive = null,
+      target = null;
+    const cache = segmented
+      ? { pcm: new Map(), stretched: new Map() }
+      : undefined;
+    const basename = filename(project.name),
+      digits = Math.max(4, String(ranges.length).length);
     try {
       await store.flush();
+      if (segmented) {
+        target = await root.UTStudio.Archive.createTarget();
+        archive = new root.UTStudio.Archive.ZipWriter(
+          target,
+          exportAbort.signal,
+        );
+      }
       for (let index = 0; index < ranges.length; index++) {
         if (exportAbort.signal.aborted) break;
-        const range = ranges[index],
-          result = await engine.recordRange(
+        const range = ranges[index];
+        const progressLabel = segmented
+          ? "Segment " + (index + 1) + " of " + ranges.length
+          : "Movie";
+        if ($("exportPercent"))
+          $("exportPercent").textContent = progressLabel + " · Preparing…";
+        try {
+          const result = await engine.recordRange(
             range.start,
             range.end,
             (progress) => {
               const percent = $("exportPercent");
               if (percent)
                 percent.textContent =
-                  (ranges.length > 1
-                    ? "Segment " + (index + 1) + " of " + ranges.length + " · "
-                    : "") +
-                  Math.round(progress.percent * 100) +
-                  "%";
+                  (segmented ? progressLabel + " · " : "") +
+                  Math.round(
+                    ((range.start + progress.processed) / project.duration) *
+                      100,
+                  ) +
+                  "% total";
               if ($("exportProgress"))
-                $("exportProgress").value = progress.percent;
+                $("exportProgress").value =
+                  (range.start + progress.processed) / project.duration;
               if ($("exportProcessed"))
                 $("exportProcessed").textContent =
-                  "Processed " +
+                  (segmented ? "Current segment: " : "Processed ") +
                   time(progress.processed) +
                   " of " +
                   time(progress.total);
               if ($("exportRemaining"))
                 $("exportRemaining").textContent =
-                  progress.remaining === null
+                  range.start + progress.processed === 0
                     ? "Estimating time remaining…"
                     : "About " +
-                      Math.ceil(progress.remaining) +
-                      " sec remaining";
+                      Math.ceil(
+                        ((performance.now() - began) /
+                          1000 /
+                          (range.start + progress.processed)) *
+                          (project.duration - range.start - progress.processed),
+                      ) +
+                      " sec remaining in total";
             },
             exportAbort.signal,
+            cache,
           );
-        if (!result) break;
-        result.name =
-          filename(project.name) +
-          (segmented ? "-segment-" + String(index + 1).padStart(3, "0") : "") +
-          "." +
-          result.extension;
-        result.url = URL.createObjectURL(result.blob);
-        results.push(result);
+          if (!result) {
+            if (exportAbort.signal.aborted) break;
+            throw new Error("The encoder returned no video.");
+          }
+          result.name =
+            basename +
+            (segmented
+              ? "-segment-" + String(index + 1).padStart(digits, "0")
+              : "") +
+            "." +
+            result.extension;
+          if (archive) await archive.add(result.name, result.blob);
+          else {
+            result.url = URL.createObjectURL(result.blob);
+            results.push(result);
+          }
+        } catch (error) {
+          if (exportAbort.signal.aborted) break;
+          throw new Error(
+            progressLabel +
+              " (" +
+              time(range.start) +
+              "–" +
+              time(range.end) +
+              "): " +
+              error.message,
+          );
+        }
       }
-      if (results.length === ranges.length)
-        exportMessage =
-          "Export complete. Preview your movie and download it below.";
+      if (archive && !exportAbort.signal.aborted) {
+        if ($("exportPercent"))
+          $("exportPercent").textContent = "Finalizing ZIP…";
+        const summary = await archive.finish();
+        exportAbort.signal.throwIfAborted();
+        results.push({
+          ...(await target.result()),
+          ...summary,
+          name: basename + "-segments.zip",
+          kind: "segments",
+        });
+      }
+      if (results.length)
+        exportMessage = segmented
+          ? "Export complete. All " +
+            ranges.length +
+            " segments are in one ZIP. Download it below."
+          : "Export complete. Preview your movie and download it below.";
     } catch (error) {
-      exportMessage = error.message;
-      report(error);
+      if (!exportAbort.signal.aborted) {
+        exportMessage = error.message;
+        report(error);
+      }
     } finally {
-      if (exportAbort.signal.aborted) clearResults();
+      if (exportAbort.signal.aborted) {
+        clearResults();
+        exportMessage = segmented
+          ? "Export cancelled. No incomplete ZIP is offered; your project is ready to edit."
+          : "Export cancelled. Your project is ready to edit.";
+      }
+      if (archive && !results.length) await archive.abort().catch(() => {});
+      cache?.pcm.clear();
+      cache?.stretched.clear();
       exportAbort = null;
       exporting = false;
       document.body.classList.remove("is-exporting");
       project.playhead = before;
       renderAll();
-      if (results.length) showResult(results[0]);
+      if (results.length && results[0].kind !== "segments")
+        showResult(results[0]);
       else await seekTo(before);
       store.schedule(project);
     }

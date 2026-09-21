@@ -3,78 +3,83 @@
   "pages": [
     {
       "file": "base64-converter.html",
-      "bytes": 17254,
-      "sha256": "2ff15062a1698e9294563a33e0a696a24a337957e71b869f0f51014e49a5552f"
+      "bytes": 17238,
+      "sha256": "86ab4e00e25bbfd199c27ad947e0e107e4a8c952373de11b482fe05626766c15"
     },
     {
       "file": "calculator.html",
-      "bytes": 25933,
-      "sha256": "86402b191287d0271752c7be3b82d569913747721836196d65ec6d0019dabe15"
+      "bytes": 25893,
+      "sha256": "cf00a136587bb5de37ebf1289b98b2cef261ac9030d53e8d21f27798cc6f1e5d"
     },
     {
       "file": "file-diff.html",
-      "bytes": 58686,
-      "sha256": "b721d02e24efab3a8dc995eb72c58bf5f44b49c7e721cb098eaeb9f12066cdff"
+      "bytes": 58638,
+      "sha256": "222a62baa0299216309e4d06d6a0a5c740ca71fc08d1fcf9e4861287851f1c51"
     },
     {
       "file": "image-converter.html",
-      "bytes": 25159,
-      "sha256": "150f9c17fa44c388b28de78623098c4c1a95c76475d4d44dcec75d9c5ec840cd"
+      "bytes": 25152,
+      "sha256": "0f2c2d437dd432a7a53e250ababdb496379edb90c447521620cf7f94a4ac6f04"
     },
     {
       "file": "image-editor.html",
-      "bytes": 418947,
-      "sha256": "e9dc85ac18ff69c43c992203117bb2060ed4c2254e6dcf6ca2abda050885c277"
+      "bytes": 418931,
+      "sha256": "5fd1edf630d766bb8b66e09c8dcfb5c96066e7a3ae9bc7607adb1261094b8cb3"
     },
     {
       "file": "images-to-pdf.html",
-      "bytes": 543715,
-      "sha256": "72eb2dbc338e085a89159520228bfc3cbcc0783b3fd672ef4e24f7f78bd159d8"
+      "bytes": 544974,
+      "sha256": "2b683c9dda9b2a3275ce8108fca3f4838f35f34dfc5092625cbe1a41adbfb329"
     },
     {
       "file": "index.html",
-      "bytes": 20221,
-      "sha256": "cf2414bfc1544ad68f1a3e2c214f86af35e5a322eca895273f3f1c4945b10362"
+      "bytes": 21384,
+      "sha256": "8d6834f0aad56740dabe6f97321a1e5f2bb740ddf85e6683e4a1ff8520344e4b"
     },
     {
       "file": "lan-chat.html",
-      "bytes": 24477,
-      "sha256": "26f2534df9cfe5ae28389423fa384b468c98f5e08b05f00f2a5a8880c00ed8f3"
+      "bytes": 24461,
+      "sha256": "0664a48cff266cd7185b896434f6c16bdbc4a6c2ad5a05838ee219c61c1599dd"
     },
     {
       "file": "metadata-lab.html",
-      "bytes": 60266,
-      "sha256": "d469299b2a4766f3d20433db8c7e72a1ec9260548420bc19df204a9dd83a76cb"
+      "bytes": 60542,
+      "sha256": "858569647c880edd7370b911d0e1ccbe87b815ed85115c3037c1360b3500b7aa"
     },
     {
       "file": "pdf-merge.html",
-      "bytes": 541265,
-      "sha256": "01f10f260745d3dd4fff2dcb949eff98ddd3a2b8058dcf113209744dfddacfa7"
+      "bytes": 541233,
+      "sha256": "4a05f8a6000dae3831490fe91f8e0097b47a4f323211ba073a644e3e9a94b1f4"
+    },
+    {
+      "file": "pdf-to-text.html",
+      "bytes": 1748047,
+      "sha256": "7d8d458472e9004f729baff3117fc66b04294b9f228cafda46133b9eb24ce416"
     },
     {
       "file": "rot-cipher.html",
-      "bytes": 15186,
-      "sha256": "28a1041d91737d9385051de8c9ab3ba31021d73acfd04fd5892c3efe9587a3b4"
+      "bytes": 15170,
+      "sha256": "5a635bd22e597b81be693361ee0fda3ab923f45662f4639648d2225b383992fa"
     },
     {
       "file": "text-transfer.html",
-      "bytes": 17044,
-      "sha256": "dce44df354012c69ced15a36572d8f8c1948cdd13565f57b860dbcb89acfd979"
+      "bytes": 17094,
+      "sha256": "0f1940e36d08abe077c6312f709b1da75b0f6297ad281b4c3c19c0cf340a67b3"
     },
     {
       "file": "unit-converter.html",
-      "bytes": 24360,
-      "sha256": "db3dc0483b6a85e79292574fd2253a1f6e14b8a290b54cf5b004e1ac72dd2e53"
+      "bytes": 24344,
+      "sha256": "f97e3c6bac345ab52a73718d2993a676d22cf6fe1481d40807c334b502e1a996"
     },
     {
       "file": "video-editor.html",
-      "bytes": 960912,
-      "sha256": "8b4641777b369a9be5b16b718178024c0e7599630d8735d8cade123834a986eb"
+      "bytes": 983699,
+      "sha256": "2ae746ff639e145900465244b1dcb6e0408febde81693748188092f867068d30"
     },
     {
       "file": "word-count.html",
-      "bytes": 43527,
-      "sha256": "f7c518cf6707cc7cf275cfa9d76398dbce4452464232a32b1ee00e40052559e2"
+      "bytes": 652630,
+      "sha256": "0312fdcf7bad4461c3c19512ceb04ae37a81c9e6130d4c4a92531376369e14a1"
     }
   ]
 }

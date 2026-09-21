@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'none'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <title>UsefulTool Metadata Lab</title>
   <style>
@@ -1303,8 +1303,7 @@ function makeMp4Box(type, payload) {
   return out;
 }
 
-function stripMp4Ranges(bytes, start, end, containerType) {
-  const parts = [];
+function stripMp4Ranges(bytes, start, end, containerType, out = bytes.slice()) {
   let pos = start;
   while (pos + 8 <= end) {
     let size = readU32(bytes, pos);
@@ -1317,37 +1316,40 @@ function stripMp4Ranges(bytes, start, end, containerType) {
       size = end - pos;
     }
     if (!size || pos + size > end || size < header) {
-      parts.push(bytes.slice(pos, end));
       break;
     }
     const removeTop = !containerType && ["free", "skip", "uuid"].includes(type);
     const removeInMoov = containerType === "moov" && ["udta", "meta"].includes(type);
-    if (!removeTop && !removeInMoov) {
-      if (type === "moov") {
-        const body = stripMp4Ranges(bytes, pos + header, pos + size, "moov");
-        const box = new Uint8Array(header + body.length);
-        box.set(bytes.slice(pos, pos + header), 0);
-        writeU32(box, 0, box.length);
-        box.set(body, header);
-        parts.push(box);
-      } else {
-        parts.push(bytes.slice(pos, pos + size));
-      }
+    if (removeTop || removeInMoov) {
+      // Keep every media byte at its original offset, including stco/co64
+      // and fragmented MP4 references. Erase the payload in a padding box.
+      out.set(textEncoder.encode("free"), pos + 4);
+      out.fill(0, pos + header, pos + size);
+    } else if (type === "moov") {
+      stripMp4Ranges(bytes, pos + header, pos + size, "moov", out);
     }
     pos += size;
   }
-  return concatBytes(parts);
+  return out;
 }
 
 function injectMp4Free(bytes, text) {
   const payload = textEncoder.encode("UsefulTool metadata note\n" + text.slice(0, 60000));
   const box = makeMp4Box("free", payload);
-  const firstSize = readU32(bytes, 0);
-  const firstType = byteString(bytes, 4, 8);
-  if (firstType === "ftyp" && firstSize > 0 && firstSize < bytes.length) {
-    return concatBytes([bytes.slice(0, firstSize), box, bytes.slice(firstSize)]);
+  const source = bytes.slice();
+  for (let pos = 0; pos + 8 <= source.length;) {
+    let size = readU32(source, pos);
+    const header = size === 1 ? 16 : 8;
+    if (size === 0) {
+      // A last box may extend to EOF: close it before appending metadata.
+      size = source.length - pos;
+      if (size > 0xffffffff) throw new Error("MP4 box is too large to extend safely.");
+      writeU32(source, pos, size);
+    } else if (size === 1 && pos + 16 <= source.length) size = readU64(source, pos + 8);
+    if (size < header || pos + size > source.length) throw new Error("Invalid MP4 box size.");
+    pos += size;
   }
-  return concatBytes([box, bytes]);
+  return concatBytes([source, box]);
 }
 
 async function runAction() {
@@ -1368,7 +1370,7 @@ async function runAction() {
         const out = stripMp4Ranges(currentBytes, 0, currentBytes.length, "");
         resultBlob = new Blob([out], { type: "video/mp4" });
         resultName = "metadata-erased.mp4";
-        addMetadata("result", "MP4 metadata stripped", "Removed top-level free/skip/uuid and moov udta/meta boxes when found.");
+        addMetadata("result", "MP4 metadata stripped", "Erased top-level free/skip/uuid and moov udta/meta payloads without moving media bytes.");
       } else {
         addMetadata("unsupported", "Erase not available", "This browser-only tool does not safely rewrite this video container.");
         return;
@@ -1388,7 +1390,7 @@ async function runAction() {
         const out = injectMp4Free(currentBytes, note.value);
         resultBlob = new Blob([out], { type: "video/mp4" });
         resultName = "metadata-injected.mp4";
-        addMetadata("result", "MP4 free box injected", "Inserted a custom UsefulTool note after ftyp.");
+        addMetadata("result", "MP4 free box injected", "Appended a custom UsefulTool note without moving media bytes.");
       } else {
         addMetadata("unsupported", "Inject not available", "Use JPEG, PNG, or MP4 for injection.");
         return;

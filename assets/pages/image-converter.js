@@ -76,7 +76,7 @@ function imagePoint(evt) {
 function drawCurrent() {
   if (!original || !mask) return;
   const out = new ImageData(new Uint8ClampedArray(original.data), original.width, original.height);
-  for (let i = 0; i < mask.length; i += 1) out.data[i * 4 + 3] = mask[i];
+  for (let i = 0; i < mask.length; i += 1) out.data[i * 4 + 3] = original.data[i * 4 + 3] * mask[i] / 255;
   ctx.putImageData(out, 0, 0);
 }
 

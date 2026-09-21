@@ -48,13 +48,14 @@
   }
 
   class Sources {
-    constructor(project, library, start, end, signal) {
+    constructor(project, library, start, end, signal, cache) {
       Object.assign(this, { project, library, start, end, signal });
       this.inputs = new Map();
       this.readers = new Map();
       this.frames = new Map();
-      this.pcm = new Map();
-      this.stretched = new Map();
+      this.sharedCache = cache;
+      this.pcm = cache?.pcm || new Map();
+      this.stretched = cache?.stretched || new Map();
       this.fallbacks = new Map();
       this.renderLibrary = {
         assets: library.assets,
@@ -82,6 +83,32 @@
           const track = await this.input(value.assetId).getPrimaryVideoTrack();
           if (!track || !(await track.canDecode()))
             throw new Error("Use the browser decoder.");
+          const config = await track.getDecoderConfig();
+          if (
+            !["primaries", "matrix", "transfer", "fullRange"].every(
+              (key) => config.colorSpace?.[key] != null,
+            )
+          ) {
+            // Untagged SD footage is often rendered as BT.601 by the preview,
+            // while the codec library supplies BT.709 defaults. Use the native
+            // decoder's resolved metadata instead of guessing a color matrix.
+            const frame = new VideoFrame(
+              this.library.assets.get(value.assetId).probe,
+            );
+            let colorSpace;
+            try {
+              colorSpace = frame.colorSpace.toJSON();
+            } finally {
+              frame.close();
+            }
+            if (
+              !["primaries", "matrix", "transfer", "fullRange"].every(
+                (key) => colorSpace[key] != null,
+              )
+            )
+              throw new Error("Use the browser's color conversion.");
+            track.getDecoderConfig = async () => ({ ...config, colorSpace });
+          }
           const source = M.asset(this.project, value.assetId);
           const sink = new C.CanvasSink(track, {
             width: source.width,
@@ -325,6 +352,7 @@
                 (pcm.right[index] || 0) * (1 - fraction) +
                 (pcm.right[index + 1] || 0) * fraction;
             }
+            if (gainStart.mono) a = b = (a + b) / 2;
             left[offset + j] +=
               a *
               (gainStart.left + ((gainEnd.left - gainStart.left) * j) / size);
@@ -355,12 +383,14 @@
       this.inputs.clear();
       this.readers.clear();
       this.frames.clear();
-      this.pcm.clear();
-      this.stretched.clear();
+      if (!this.sharedCache) {
+        this.pcm.clear();
+        this.stretched.clear();
+      }
     }
   }
 
-  async function record(engine, start, end, onProgress, signal) {
+  async function record(engine, start, end, onProgress, signal, cache) {
     if (signal?.aborted) return null;
     engine.stop();
     const project = engine.getProject(),
@@ -389,7 +419,7 @@
       duration = end - start,
       count = Math.ceil(duration * fps - 1e-7),
       canvas = Media.makeCanvas(size.width, size.height),
-      sources = new Sources(project, engine.library, start, end, signal),
+      sources = new Sources(project, engine.library, start, end, signal, cache),
       renderer = new Renderer(sources.renderLibrary);
     const target = new C.BufferTarget(),
       output = new C.Output({

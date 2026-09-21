@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>RUNNING</title></head>
+<body>
+  <iframe id="pdfText" src="../offline/pdf-to-text.html" hidden></iframe>
+  <iframe id="videoEditor" src="../offline/video-editor.html" hidden></iframe>
+  <pre id="result">RUNNING</pre>
+  <script src="../vendor/pdf-lib.min.js"></script>
+  <script src="video-studio/smoke.browser.js"></script>
+  <script>
+    function loaded(frame) {
+      if (frame.contentDocument?.readyState === "complete") return Promise.resolve();
+      return new Promise((resolve) => frame.addEventListener("load", resolve, { once: true }));
+    }
+
+    function setFiles(input, files) {
+      const transfer = new DataTransfer();
+      files.forEach((file) => transfer.items.add(file));
+      input.files = transfer.files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
+    (async () => {
+      const pdfFrame = document.getElementById("pdfText");
+      const videoFrame = document.getElementById("videoEditor");
+      await Promise.all([loaded(pdfFrame), loaded(videoFrame)]);
+      const checks = [];
+      const check = (name, passed) => checks.push({ name, passed: Boolean(passed) });
+      const pdfDocument = await PDFLib.PDFDocument.create();
+      pdfDocument.addPage().drawText("Self-contained offline PDF text", { x: 20, y: 100, size: 14 });
+      const pdfFile = new File([await pdfDocument.save()], "offline.pdf", { type: "application/pdf" });
+      setFiles(pdfFrame.contentDocument.getElementById("pdfFile"), [pdfFile]);
+      const pdfApi = pdfFrame.contentWindow.UsefulToolPdfToText;
+      const extraction = await pdfApi.extractSelected();
+      check("offline PDF worker uses an embedded Blob", pdfApi.workerObjectUrl?.startsWith("blob:"));
+      check("offline PDF extracts real embedded text", extraction.text.includes("Self-contained offline PDF text"));
+      videoFrame.hidden = false;
+      videoFrame.width = 1363; videoFrame.height = 936;
+      await runVideoStudioSmoke(videoFrame, check, async (predicate) => {
+        const start = performance.now();
+        while (!predicate()) { if (performance.now() - start > 20000) throw new Error("Offline studio timed out"); await new Promise(resolve => setTimeout(resolve, 20)); }
+      });
+      videoFrame.hidden = true;
+      const passed = checks.every((item) => item.passed);
+      document.getElementById("result").textContent = (passed ? "PASS" : "FAIL") + "\n" + checks.map((item) => (item.passed ? "PASS " : "FAIL ") + item.name).join("\n");
+      document.title = passed ? "PASS" : "FAIL";
+    })().catch((error) => {
+      document.getElementById("result").textContent = "FAIL\n" + (error.stack || error);
+      document.title = "FAIL";
+    });
+  </script>
+</body>
+</html>

@@ -405,8 +405,8 @@
       initialize().catch(session.fail);
       return completion;
     }
-    async recordRange(start, end, onProgress = () => {}, signal) {
-      return root.UTStudio.Export.record(this, start, end, onProgress, signal);
+    async recordRange(start, end, onProgress = () => {}, signal, cache) {
+      return root.UTStudio.Export.record(this, start, end, onProgress, signal, cache);
     }
     async dispose() {
       this.stop();
