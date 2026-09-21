@@ -1,3 +1,6 @@
 繁中：八個剪貼簿步驟尚待真實瀏覽器重跑；TTS、錄影封裝及 MP4 尚未完成。
 
 English: Eight clipboard steps still need a real browser rerun; TTS, recorder wrappers, and MP4 output remain pending.
+
+Current desktop/tool task: all requested changes and local acceptance completed; no deployment.
+本次桌面及工具工作：全部要求及本機驗收已完成；未部署。
