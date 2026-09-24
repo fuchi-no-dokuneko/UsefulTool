@@ -76,9 +76,27 @@
       check(
         event + " Undo and Redo retain the independent Trim boundary",
         M.mainItems(api.project).length === 3 &&
-          M.mainItems(api.project)[0].end === 0.8,
+        M.mainItems(api.project)[0].end === 0.8,
       );
     }
+    await reset();
+    const subframeInput = d.querySelector('input[data-control="endsAt"]');
+    subframeInput.value = 0.01;
+    subframeInput.dispatchEvent(new w.Event("change", { bubbles: true }));
+    const shortest = M.minimumSpan(api.project),
+      shortestClip = M.mainItems(api.project)[0],
+      shortestCard = [...d.querySelectorAll(".timeline-item")].find(
+        (card) => card.dataset.itemId === shortestClip.id,
+      );
+    check(
+      "clip end enforces one frame and displays a nonzero timecode",
+      Math.abs(M.span(shortestClip) - shortest) < 0.000001 &&
+        M.formatTime(M.span(shortestClip), api.project.exportSettings.fps) ===
+          "00:00:00:01" &&
+        shortestCard?.querySelector(".clip-time")?.textContent.startsWith(
+          "00:00:00:01",
+        ),
+    );
     await reset();
     await api.importFiles(
       [

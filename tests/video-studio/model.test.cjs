@@ -195,6 +195,13 @@ test('credits speed and duration modes, frame times and segmented output boundar
   assert.throws(() => M.segmentRanges(1, .01), /0.1 seconds/);
   assert.deepEqual(M.exportDimensions(p, 'standard'), {width:1920,height:1080});
 });
+test('timeline trims keep at least one frame and sub-frame legacy values have nonzero timecodes', () => {
+  const p = movie(1), clip = M.mainItems(p)[0];
+  M.trimItem(p, clip.id, 'end', 0.01);
+  assert.ok(Math.abs(M.span(clip) - M.minimumSpan(p)) < 1e-6);
+  assert.equal(M.formatTime(M.span(clip), p.exportSettings.fps), '00:00:00:01');
+  assert.equal(M.formatTime(0.01, p.exportSettings.fps), '00:00:00:01');
+});
 
 test('legacy sound defaults and explicit routing survive portable history and every time edit', () => {
   const p = movie(1), a = p.items.find(i => i.audio);

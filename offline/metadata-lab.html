@@ -908,8 +908,9 @@ function inspectJpeg(bytes) {
       addMetadata("comment", "JPEG comment", comment.slice(0, 4000));
       scanSensitiveText("JPEG comment", comment);
     } else if ([192, 193, 194, 195, 197, 198, 199, 201, 202, 203, 205, 206, 207].includes(marker) && payloadEnd - payloadStart >= 5) {
-      addFact("Pixel size", ((bytes[payloadStart + 1] << 8) | bytes[payloadStart + 2]) + " x " +
-        ((bytes[payloadStart + 3] << 8) | bytes[payloadStart + 4]));
+      const height = (bytes[payloadStart + 1] << 8) | bytes[payloadStart + 2];
+      const width = (bytes[payloadStart + 3] << 8) | bytes[payloadStart + 4];
+      addFact("Pixel size", width + " x " + height);
     } else if (marker >= 224 && marker <= 239) {
       addMetadata("APP", "JPEG APP" + (marker - 224), (payloadEnd - payloadStart) + " bytes; header " + head.replace(/\0/g, " ").slice(0, 120));
     }

@@ -19,6 +19,7 @@
   const active = (item, t) => item.enabled && t >= item.start - 1e-7 && t < item.end - 1e-7;
   const span = (item) => Math.max(MIN, item.end - item.start);
   const sourceSpan = (item) => Math.max(MIN, item.sourceOut - item.sourceIn);
+  const minimumSpan = (project) => Math.max(MIN, rounded(1 / Math.max(1, finite(project?.exportSettings?.fps, 30))));
   const layer = (project, layerId) => project.layers.find((l) => l.id === layerId);
   const asset = (project, assetId) => project.assets.find((a) => a.id === assetId);
   const item = (project, itemId) => project.items.find((i) => i.id === itemId);
@@ -291,16 +292,17 @@
     const source = asset(project, value.assetId);
     const original = copy(value);
     const media = value.kind === "video" || value.kind === "audio";
+    const shortest = minimumSpan(project);
     if (edge === "start") {
-      const minimum = media && !value.audio?.loop ? Math.max(0, value.start - value.sourceIn / value.playbackRate) : 0;
-      const next = clamp(time, minimum, value.end - MIN);
+      const earliest = media && !value.audio?.loop ? Math.max(0, value.start - value.sourceIn / value.playbackRate) : 0;
+      const next = clamp(time, earliest, value.end - shortest);
       const change = next - value.start;
       value.start = rounded(next);
       if (value.audio?.loop) value.audio.offset = ((value.audio.offset || 0) + change * value.playbackRate + sourceSpan(value) * 100000) % sourceSpan(value);
       else if (media) value.sourceIn = rounded(Math.max(0, value.sourceIn + change * value.playbackRate));
     } else {
       const maximum = media && !value.audio?.loop ? value.start + (source.duration - value.sourceIn) / value.playbackRate : 86400;
-      value.end = rounded(clamp(time, value.start + MIN, maximum));
+      value.end = rounded(clamp(time, value.start + shortest, maximum));
       if (media && !value.audio?.loop) value.sourceOut = rounded(value.sourceIn + span(value) * value.playbackRate);
     }
     if (value.audio) value.audio.wholeMovie = false;
@@ -324,8 +326,9 @@
   }
   function splitItem(project, itemId, time) {
     const value = item(project, itemId);
-    if (!value || isLocked(project, value) || time < value.start + MIN || time > value.end - MIN) return null;
-    const siblings = related(project, value).filter((i) => time > i.start + MIN && time < i.end - MIN);
+    const shortest = minimumSpan(project);
+    if (!value || isLocked(project, value) || time < value.start + shortest || time > value.end - shortest) return null;
+    const siblings = related(project, value).filter((i) => time > i.start + shortest && time < i.end - shortest);
     if (siblings.some((i) => isLocked(project, i))) throw new Error("Unlock the linked item first.");
     const rightGroup = id("link"); let result;
     for (const sibling of siblings) {
@@ -556,8 +559,12 @@
     return ranges;
   }
   function formatTime(time, fps = 30) {
-    const frames = Math.floor(Math.max(0, finite(time)) * fps + 1e-6), seconds = Math.floor(frames / fps);
-    return [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60, frames % fps].map((v) => String(v).padStart(2, "0")).join(":");
+    const rate = Math.max(1, Math.round(finite(fps, 30)));
+    const value = Math.max(0, finite(time));
+    let frames = Math.floor(value * rate + 1e-6);
+    if (value > 0 && frames === 0) frames = 1;
+    const seconds = Math.floor(frames / rate);
+    return [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60, frames % rate].map((v) => String(v).padStart(2, "0")).join(":");
   }
   function exportDimensions(project, quality = project.exportSettings.quality) {
     const { width, height } = project.canvas;
@@ -668,7 +675,7 @@
     get canUndo() { return this.index > 0; }
     get canRedo() { return this.index < this.entries.length - 1; }
   }
-  const api = { MIN, SCHEMA_VERSION, MAX_PIXELS, VIDEO_LAYERS, KINDS, EFFECTS, BLURS, TRANSITIONS, id, copy, clamp, finite, rounded, active, span, sourceSpan,
+  const api = { MIN, SCHEMA_VERSION, MAX_PIXELS, VIDEO_LAYERS, KINDS, EFFECTS, BLURS, TRANSITIONS, id, copy, clamp, finite, rounded, active, span, sourceSpan, minimumSpan,
     layer, asset, item, isLocked, mainItems, createProject, transform, baseItem, audioProps, normalize, reflow, addAsset, addMedia, addLayerItem,
     related, setLink, moveItem, reorderMain, trimItem, setSpeed, splitItem, duplicateItem, deleteItem, transitionMaximum, setTransition, removeTransition,
     ease, curveAt, setKey, fadeAt, sourceTimeAt, setRepeat, snapTime, visibleItems, videoConflicts, MAX_AUDIO_SOURCES, audioConflicts, fixAudioConflicts, audioGains, evaluateFrame, evaluateAudio, applyOverlayPreset, addEffect,

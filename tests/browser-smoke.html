@@ -180,6 +180,12 @@
       calcExpression.value = "2+2";
       calcExpression.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
       check("calculator keyboard workflow", calculatorDocument.getElementById("result").textContent === "4");
+      calculatorDocument.getElementById("history").replaceChildren();
+      calcExpression.value = "12345+67890";
+      calcExpression.dispatchEvent(new Event("input", { bubbles: true }));
+      const historyAfterTyping = calculatorDocument.querySelectorAll("#history li").length;
+      calculatorDocument.querySelector('#keys button[data-action="calculate"]').click();
+      check("calculator records one history row per explicit calculation", historyAfterTyping === 0 && calculatorDocument.querySelectorAll("#history li").length === 1 && calculatorDocument.querySelector("#history button").textContent === "12345+67890 = 80235");
       calcExpression.value = "";
       calculator.runCalculation();
       calcExpression.value = "bad";
@@ -235,7 +241,7 @@
       converterWindow.document.getElementById("format").value = "image/jpeg";
       converter.exportImage();
       await converter.loadImage(new File(["text"], "bad.txt", { type: "text/plain" }));
-      check("image converter rejects non-images", /Only JPG/.test(converterWindow.document.getElementById("statusText").textContent));
+      check("image converter rejects non-images without a stale export", /Only JPG/.test(converterWindow.document.getElementById("statusText").textContent) && converterWindow.document.getElementById("canvas").hidden && converterWindow.document.getElementById("downloadButton").disabled);
       await converter.loadImage(new File([new Uint8Array(24 * 1024 * 1024 + 1)], "large.png", { type: "image/png" }));
       check("image converter rejects oversized files", /too large/.test(converterWindow.document.getElementById("statusText").textContent));
       converterWindow.document.getElementById("sampleMode").click();
@@ -280,6 +286,9 @@
       base64Input.value = base64Window.document.getElementById("output").value;
       base64.decode();
       check("Base64 DOM decoding", base64Window.document.getElementById("output").value === "hello Ω");
+      base64Input.value = "%%%INVALID%%%";
+      base64.decode();
+      check("Base64 invalid decode clears stale bytes", base64Window.document.getElementById("output").value === "" && base64Window.document.getElementById("byteView").textContent === "No decoded bytes." && base64Window.document.getElementById("downloadButton").disabled && base64Window.document.getElementById("copyButton").disabled);
       base64Input.value = "/wA=";
       base64.decode();
       check("Base64 binary view", /binary output/.test(base64Window.document.getElementById("output").value));
@@ -424,6 +433,21 @@
       check("word diff highlighting can be disabled", diffWindow.document.querySelectorAll(".inline-added,.inline-removed").length === 0);
       diffWindow.document.getElementById("inlineWordDiff").checked = true;
       diffWindow.UsefulToolDiff.compare();
+      diffWindow.document.getElementById("leftText").value = "a\n";
+      diffWindow.document.getElementById("rightText").value = "a";
+      diffWindow.document.getElementById("ignoreWhitespace").checked = false;
+      diffWindow.UsefulToolDiff.compare();
+      check("file diff marks a missing final newline", diffWindow.document.querySelectorAll(".eof-marker").length === 1 && /No newline at end of file/.test(diffWindow.document.getElementById("diffGrid").textContent));
+      diffWindow.document.getElementById("leftText").value = "a b\n\t";
+      diffWindow.document.getElementById("rightText").value = "a  b\n ";
+      diffWindow.document.getElementById("ignoreWhitespace").checked = true;
+      diffWindow.UsefulToolDiff.compare();
+      check("file diff ignores internal and tab whitespace-only changes", /^0 added line\(s\), 0 removed line\(s\)/.test(diffWindow.document.getElementById("status").textContent) && diffWindow.document.querySelectorAll(".added,.removed").length === 0);
+      diffWindow.document.getElementById("ignoreWhitespace").checked = false;
+      diffWindow.document.getElementById("leftText").value = "same\nremoved\n";
+      diffWindow.document.getElementById("rightText").value = "same\n";
+      diffWindow.UsefulToolDiff.compare();
+      check("file diff renders a removal without a paired addition", /^0 added line\(s\), 1 removed line\(s\)/.test(diffWindow.document.getElementById("status").textContent) && diffWindow.document.querySelector(".removed")?.textContent === "removed");
       const persistedLeft = "left draft\nkept after reload\n";
       const persistedRight = "right draft\nkept after reload\n";
       diffWindow.document.getElementById("leftText").value = persistedLeft;
@@ -458,7 +482,10 @@
       rotWindow.document.getElementById("shift").value = "99";
       rotWindow.document.getElementById("algorithm").value = "alpha";
       rot.transform();
-      check("ROT invalid shift visible", /integer/.test(rotWindow.document.getElementById("status").textContent));
+      check("ROT invalid shift clears stale output", /integer/.test(rotWindow.document.getElementById("status").textContent) && rotWindow.document.getElementById("output").value === "" && rotWindow.document.getElementById("copyButton").disabled);
+      rotWindow.document.getElementById("shift").value = "";
+      rot.transform();
+      check("ROT blank shift is rejected", /integer/.test(rotWindow.document.getElementById("status").textContent) && rotWindow.document.getElementById("output").value === "");
       rotWindow.document.getElementById("bruteButton").click();
       check("ROT all shifts rendered", rotWindow.document.getElementById("allShifts").textContent.split("\n").length === 26);
 
@@ -794,7 +821,7 @@
       metadata.inspectJpeg(advancedJpeg);
       metadata.finalizePrivacy();
       output = metadataWindow.document.getElementById("metadataList").textContent;
-      check("JPEG APP metadata branches", output.includes("JPEG APP1") && output.includes("JPEG APP2") && output.includes("JPEG APP13") && metadataWindow.document.getElementById("facts").textContent.includes("3 x 4"));
+      check("JPEG APP metadata branches", output.includes("JPEG APP1") && output.includes("JPEG APP2") && output.includes("JPEG APP13") && metadataWindow.document.getElementById("facts").textContent.includes("4 x 3"));
 
       metadata.resetView();
       metadata.inspectExif(new Uint8Array(), 0, "short");
@@ -846,6 +873,7 @@
       for (const file of metadataFiles) await loadMetadataFile(file);
 
       await loadMetadataFile(jpegFile);
+      check("JPEG pixel dimensions keep width-height orientation", metadataWindow.document.getElementById("facts").textContent.includes("9 x 5"));
       metadataWindow.document.getElementById("injectMode").click();
       metadataWindow.document.getElementById("runButton").click();
       await waitUntil(() => !metadataWindow.document.getElementById("downloadButton").disabled, "JPEG metadata injection");

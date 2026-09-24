@@ -16,6 +16,11 @@ window.runVideoStudioSmoke = async function (frame, check, waitUntil) {
       d.querySelector(".context-panel") &&
       d.querySelector("#timelineContent"),
   );
+  check(
+    "video studio has one page-level heading",
+    d.querySelectorAll("h1").length === 1 &&
+      d.querySelector("h1").textContent.trim() === "Video Studio",
+  );
   const source = await (await fetch("video-studio/fixtures/source.mp4")).blob();
   await api.importFiles(
     [1, 2, 3].map(

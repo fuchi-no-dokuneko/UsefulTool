@@ -412,8 +412,8 @@
           projectLoading ||
           !value ||
           M.isLocked(project, value) ||
-          t <= value.start + M.MIN ||
-          t >= value.end - M.MIN,
+          t <= value.start + M.minimumSpan(project) ||
+          t >= value.end - M.minimumSpan(project),
         exporting
           ? "Finish or cancel the export first."
           : "Select an unlocked item and move the playhead inside it.",
@@ -885,7 +885,7 @@
     brand.href = "index.html";
     brand.append(
       el("span", "brand-mark", "UT"),
-      el("span", "brand-name", "Video Studio"),
+      el("h1", "brand-name", "Video Studio"),
     );
     H.attach(brand, "home");
     const title = el("div", "project-title"),
@@ -1499,7 +1499,7 @@
         const right = M.splitItem(project, value.id, project.playhead);
         if (!right)
           throw new Error(
-            "Move the playhead inside the selected item, at least 0.01 seconds from each end.",
+            "Move the playhead inside the selected item, at least one frame from each end.",
           );
         selectedId = right.id;
       },
@@ -1536,8 +1536,8 @@
       locked = value && M.isLocked(project, value),
       canCut =
         value &&
-        project.playhead > value.start + M.MIN &&
-        project.playhead < value.end - M.MIN;
+        project.playhead > value.start + M.minimumSpan(project) &&
+        project.playhead < value.end - M.minimumSpan(project);
     const zoomLabel = el("label", "zoom-label");
     zoomLabel.append(H.label("zoom", "Zoom"));
     const zoomInput = el("input");
@@ -2641,7 +2641,7 @@
             true,
           ),
           {
-            min: value.start + M.MIN,
+            min: value.start + M.minimumSpan(project),
             step: 1 / project.exportSettings.fps,
             disabled: locked,
           },
@@ -4256,7 +4256,7 @@
     }
     const start = Math.max(
         main.start,
-        Math.min(project.playhead, main.end - M.MIN),
+        Math.min(project.playhead, main.end - M.minimumSpan(project)),
       ),
       duration = main.end - start,
       choices = project.assets.filter(

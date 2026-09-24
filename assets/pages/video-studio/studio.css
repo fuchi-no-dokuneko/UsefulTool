@@ -302,6 +302,10 @@ small,
   color: var(--ink);
   white-space: nowrap;
 }
+.brand-name {
+  font-size: inherit;
+  line-height: inherit;
+}
 .brand-mark {
   display: grid;
   place-items: center;

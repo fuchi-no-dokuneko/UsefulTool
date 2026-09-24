@@ -3,23 +3,23 @@
   "pages": [
     {
       "file": "base64-converter.html",
-      "bytes": 17238,
-      "sha256": "86ab4e00e25bbfd199c27ad947e0e107e4a8c952373de11b482fe05626766c15"
+      "bytes": 17492,
+      "sha256": "7f2d088ab7a390fa22d83c88ad4ddf5ae1925f510adcc8ca412d4d7537a800cb"
     },
     {
       "file": "calculator.html",
-      "bytes": 25893,
-      "sha256": "cf00a136587bb5de37ebf1289b98b2cef261ac9030d53e8d21f27798cc6f1e5d"
+      "bytes": 25947,
+      "sha256": "9894472996bc631e546ef93f6106bcdfc36751dea0474f833c84c863de005019"
     },
     {
       "file": "file-diff.html",
-      "bytes": 58638,
-      "sha256": "222a62baa0299216309e4d06d6a0a5c740ca71fc08d1fcf9e4861287851f1c51"
+      "bytes": 60646,
+      "sha256": "3305b6b7d585c33e130c2c727a814298405e6bfc6e35a37c0f344437c6ba48fc"
     },
     {
       "file": "image-converter.html",
-      "bytes": 25152,
-      "sha256": "0f2c2d437dd432a7a53e250ababdb496379edb90c447521620cf7f94a4ac6f04"
+      "bytes": 26113,
+      "sha256": "66a3cbf6b36b06bcfdea60eaa4d69765628a7f3afa394cbedd2b884412631916"
     },
     {
       "file": "image-editor.html",
@@ -43,8 +43,8 @@
     },
     {
       "file": "metadata-lab.html",
-      "bytes": 60542,
-      "sha256": "858569647c880edd7370b911d0e1ccbe87b815ed85115c3037c1360b3500b7aa"
+      "bytes": 60586,
+      "sha256": "b4162ece03702207f23d0fb9b0158738f8747b9b5ad9127bac7758cff08aac95"
     },
     {
       "file": "pdf-merge.html",
@@ -58,8 +58,8 @@
     },
     {
       "file": "rot-cipher.html",
-      "bytes": 15170,
-      "sha256": "5a635bd22e597b81be693361ee0fda3ab923f45662f4639648d2225b383992fa"
+      "bytes": 15530,
+      "sha256": "659dcf2ecad634dedc0356be2cace9dc386beb79ad792596c852b9564fcf393f"
     },
     {
       "file": "text-transfer.html",
@@ -73,8 +73,8 @@
     },
     {
       "file": "video-editor.html",
-      "bytes": 983699,
-      "sha256": "2ae746ff639e145900465244b1dcb6e0408febde81693748188092f867068d30"
+      "bytes": 984249,
+      "sha256": "628347ce00b05e5ee09f7b11aae750ca9c0067684060898846a0463d528827f8"
     },
     {
       "file": "word-count.html",

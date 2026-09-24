@@ -42,6 +42,7 @@ let mode = "erase";
 let sampling = false;
 let drawing = false;
 let lastPoint = null;
+let imageRequest = 0;
 
 function setStatus(text) {
   statusText.textContent = text;
@@ -66,10 +67,28 @@ function setMode(next) {
   restoreMode.setAttribute("aria-pressed", String(next === "restore"));
 }
 
+function clearLoadedImage() {
+  original = null;
+  mask = null;
+  sampling = false;
+  drawing = false;
+  lastPoint = null;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  canvas.hidden = true;
+  emptyState.hidden = false;
+  sizeText.textContent = "";
+  sampleMode.setAttribute("aria-pressed", "false");
+  downloadButton.disabled = true;
+  removeButton.disabled = true;
+  resetButton.disabled = true;
+}
+
 function imagePoint(evt) {
   const rect = canvas.getBoundingClientRect();
-  const x = Math.max(0, Math.min(canvas.width - 1, Math.floor((evt.clientX - rect.left) * canvas.width / rect.width)));
-  const y = Math.max(0, Math.min(canvas.height - 1, Math.floor((evt.clientY - rect.top) * canvas.height / rect.height)));
+  const displayWidth = rect.width || canvas.width || 1;
+  const displayHeight = rect.height || canvas.height || 1;
+  const x = Math.max(0, Math.min(Math.max(0, canvas.width - 1), Math.floor((evt.clientX - rect.left) * canvas.width / displayWidth)));
+  const y = Math.max(0, Math.min(Math.max(0, canvas.height - 1), Math.floor((evt.clientY - rect.top) * canvas.height / displayHeight)));
   return { x, y };
 }
 
@@ -170,6 +189,8 @@ function brushLine(from, to) {
 
 async function loadImage(file) {
   if (!file) return;
+  const request = ++imageRequest;
+  clearLoadedImage();
   if (!["image/jpeg", "image/png"].includes(file.type)) {
     setStatus("Only JPG and PNG files are accepted.");
     return;
@@ -181,6 +202,10 @@ async function loadImage(file) {
   const url = URL.createObjectURL(file);
   const img = new Image();
   img.onload = () => {
+    if (request !== imageRequest) {
+      URL.revokeObjectURL(url);
+      return;
+    }
     const scale = Math.min(1, MAX_DIMENSION / Math.max(img.naturalWidth, img.naturalHeight));
     canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
     canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
@@ -192,12 +217,18 @@ async function loadImage(file) {
     updateSample(chooseCornerSample(original.data, canvas.width, canvas.height));
     emptyState.hidden = true;
     canvas.hidden = false;
+    downloadButton.disabled = false;
+    removeButton.disabled = false;
+    resetButton.disabled = false;
     sizeText.textContent = canvas.width + " x " + canvas.height;
     setStatus(scale < 1 ? "Image loaded and downscaled for browser safety." : "Image loaded.");
     URL.revokeObjectURL(url);
   };
   img.onerror = () => {
-    setStatus("The image could not be decoded.");
+    if (request === imageRequest) {
+      clearLoadedImage();
+      setStatus("The image could not be decoded.");
+    }
     URL.revokeObjectURL(url);
   };
   img.src = url;
@@ -286,4 +317,5 @@ canvas.addEventListener("pointercancel", () => {
 });
 
 updateReadouts();
-window.UsefulToolImageConverter = { applyBrush, brushLine, chooseCornerSample, drawCurrent, exportImage, imagePoint, loadImage, removeBackground, resetMask, setMode, updateSample };
+clearLoadedImage();
+window.UsefulToolImageConverter = { applyBrush, brushLine, chooseCornerSample, clearLoadedImage, drawCurrent, exportImage, imagePoint, loadImage, removeBackground, resetMask, setMode, updateSample };

@@ -51,11 +51,23 @@ async function loadText(file, target) {
   saveDrafts();
 }
 
-function lines(value) {
-  if (!value) return [];
-  const result = value.split(/\r?\n/);
-  if (result[result.length - 1] === "") result.pop();
-  return result;
+function splitDocument(value) {
+  const normalized = String(value).replace(/\r\n?/g, "\n");
+  if (!normalized) return { lines: [], hasFinalNewline: false };
+  const hasFinalNewline = normalized.endsWith("\n");
+  const result = normalized.split("\n");
+  if (hasFinalNewline) result.pop();
+  return { lines: result, hasFinalNewline };
+}
+
+function normalizeWhitespace(value) {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function lineChanges(left, right, ignore) {
+  return Diff.diffArrays(left, right, ignore ? {
+    comparator: (a, b) => normalizeWhitespace(a) === normalizeWhitespace(b)
+  } : {});
 }
 
 function inlineChangeFor(left, right, enabled) {
@@ -122,46 +134,81 @@ function changeClass(kind, inlineChange) {
   return kind + " " + (inlineChange ? inlineChange.level : "diff-heavy");
 }
 
+function appendEofMarker(leftHasFinalNewline, rightHasFinalNewline) {
+  const marker = "\\ No newline at end of file";
+  appendRow(
+    leftHasFinalNewline ? null : marker,
+    rightHasFinalNewline ? null : marker,
+    leftHasFinalNewline ? "empty" : "eof-marker",
+    rightHasFinalNewline ? "empty" : "eof-marker",
+    null,
+    null,
+    null
+  );
+}
+
 function compare() {
   saveDrafts();
   const inlineEnabled = inlineWordDiff.checked;
-  const changes = Diff.diffLines(leftText.value, rightText.value, { ignoreWhitespace: ignoreWhitespace.checked });
+  const leftDocument = splitDocument(leftText.value);
+  const rightDocument = splitDocument(rightText.value);
+  const changes = lineChanges(leftDocument.lines, rightDocument.lines, ignoreWhitespace.checked);
   grid.replaceChildren();
   let leftNumber = 1;
   let rightNumber = 1;
+  let leftIndex = 0;
+  let rightIndex = 0;
   let additions = 0;
   let removals = 0;
   for (let index = 0; index < changes.length; index += 1) {
     const change = changes[index];
     if (change.removed && changes[index + 1] && changes[index + 1].added) {
-      const removed = lines(change.value);
-      const added = lines(changes[index + 1].value);
-      const count = Math.max(removed.length, added.length);
+      const removedCount = change.count ?? change.value.length;
+      const addedCount = changes[index + 1].count ?? changes[index + 1].value.length;
+      const count = Math.max(removedCount, addedCount);
       for (let line = 0; line < count; line += 1) {
-        const inlineChange = inlineChangeFor(removed[line], added[line], inlineEnabled);
+        const removed = line < removedCount ? leftDocument.lines[leftIndex + line] : undefined;
+        const added = line < addedCount ? rightDocument.lines[rightIndex + line] : undefined;
+        const inlineChange = inlineChangeFor(removed, added, inlineEnabled);
         appendRow(
-          removed[line], added[line],
-          removed[line] == null ? "empty" : changeClass("removed", inlineChange),
-          added[line] == null ? "empty" : changeClass("added", inlineChange),
-          removed[line] == null ? null : leftNumber++,
-          added[line] == null ? null : rightNumber++,
+          removed, added,
+          removed == null ? "empty" : changeClass("removed", inlineChange),
+          added == null ? "empty" : changeClass("added", inlineChange),
+          removed == null ? null : leftNumber++,
+          added == null ? null : rightNumber++,
           inlineChange
         );
       }
-      removals += removed.length;
-      additions += added.length;
+      leftIndex += removedCount;
+      rightIndex += addedCount;
+      removals += removedCount;
+      additions += addedCount;
       index += 1;
     } else if (change.removed) {
-      for (const value of lines(change.value)) { appendRow(value, null, "removed diff-heavy", "empty", leftNumber++, null); removals += 1; }
+      const count = change.count ?? change.value.length;
+      for (let line = 0; line < count; line += 1) {
+        appendRow(leftDocument.lines[leftIndex++], null, "removed diff-heavy", "empty", leftNumber++, null);
+        removals += 1;
+      }
     } else if (change.added) {
-      for (const value of lines(change.value)) { appendRow(null, value, "empty", "added diff-heavy", null, rightNumber++); additions += 1; }
+      const count = change.count ?? change.value.length;
+      for (let line = 0; line < count; line += 1) {
+        appendRow(null, rightDocument.lines[rightIndex++], "empty", "added diff-heavy", null, rightNumber++);
+        additions += 1;
+      }
     } else {
-      for (const value of lines(change.value)) appendRow(value, value, "same", "same", leftNumber++, rightNumber++);
+      const count = change.count ?? change.value.length;
+      for (let line = 0; line < count; line += 1) {
+        appendRow(leftDocument.lines[leftIndex++], rightDocument.lines[rightIndex++], "same", "same", leftNumber++, rightNumber++);
+      }
     }
   }
+  const eofNewlineDiffers = leftDocument.lines.length > 0 && rightDocument.lines.length > 0 &&
+    leftDocument.hasFinalNewline !== rightDocument.hasFinalNewline;
+  if (eofNewlineDiffers) appendEofMarker(leftDocument.hasFinalNewline, rightDocument.hasFinalNewline);
   patchText = Diff.createTwoFilesPatch("left", "right", leftText.value, rightText.value, "", "", { context: 3 });
   patchButton.disabled = false;
-  UsefulTool.status(status, additions + " added line(s), " + removals + " removed line(s). Word highlighting " + (inlineEnabled ? "on." : "off."), additions || removals ? "warn" : "");
+  UsefulTool.status(status, additions + " added line(s), " + removals + " removed line(s). Word highlighting " + (inlineEnabled ? "on." : "off.") + (eofNewlineDiffers ? " End-of-file newline differs." : ""), additions || removals || eofNewlineDiffers ? "warn" : "");
 }
 
 leftText.addEventListener("input", saveDrafts);
@@ -176,4 +223,4 @@ if (!restoreDrafts()) {
   rightText.value = "line one\nline 2 edited\nshared line\nnew line\n";
 }
 compare();
-window.UsefulToolDiff = { compare, inlineChangeFor, saveDrafts, restoreDrafts, storageKeys };
+window.UsefulToolDiff = { compare, inlineChangeFor, lineChanges, normalizeWhitespace, saveDrafts, splitDocument, restoreDrafts, storageKeys };
