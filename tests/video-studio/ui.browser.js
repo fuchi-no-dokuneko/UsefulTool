@@ -43,14 +43,17 @@
     );
     const box = (selector) => d.querySelector(selector).getBoundingClientRect();
     check(
-      "desktop regions match the 1363 by 936 specification",
+      "desktop timeline spans beneath preview and settings without overlapping either",
       box(".topbar").height === 64 &&
         box(".workflow-stepper").height === 56 &&
         box(".media-panel").width === 248 &&
         box(".context-panel").width === 292 &&
         box(".editor-workspace").width === 823 &&
-        box(".preview-card").height === 454 &&
-        box(".timeline-card").height === 362,
+        box(".timeline-card").left === box(".preview-card").left &&
+        box(".timeline-card").right === box(".context-panel").right &&
+        Math.abs(box(".timeline-card").top - box(".preview-card").bottom) < 1 &&
+        box(".context-panel").bottom <= box(".timeline-card").top &&
+        box(".timeline-card").height >= 280,
     );
     const source = await (await fetch("fixtures/source.mp4")).blob();
     await api.importFiles(
@@ -169,11 +172,18 @@
     );
     check(
       "four overlapping sounds trigger the three-source limit",
-      api.Model.evaluateAudio(api.project, 0.4).length === 3 && api.Model.audioConflicts(api.project).length > 0,
+      api.Model.evaluateAudio(api.project, 0.4).length === 3 &&
+        api.Model.audioConflicts(api.project).length > 0,
     );
-    api.edit(() => {
-      api.project.items.find(i => i.kind === "audio" && i.linkId === overlays[1].linkId).audio.muted = true;
-    }, "Mute an overlay sound", { context: true });
+    api.edit(
+      () => {
+        api.project.items.find(
+          (i) => i.kind === "audio" && i.linkId === overlays[1].linkId,
+        ).audio.muted = true;
+      },
+      "Mute an overlay sound",
+      { context: true },
+    );
     await api.seekTo(0.4);
     const selection = api.selectedItem.id;
     const playing = api.engine.play();

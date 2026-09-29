@@ -3,6 +3,22 @@
 (function () {
   "use strict";
   const HELP_CONTENT = {
+    decoupleChannels: [
+      "Decouple left and right ears",
+      "Split this sound into independent Left and Right ear tracks. Drag either segment or set Starts at to offset it. Move Right to 15 seconds to hear Left 15 seconds earlier. Undo restores the stereo segment.",
+    ],
+    copySegment: [
+      "Copy segment",
+      "Copy the selected segment with Ctrl+C or Command+C. A linked video includes its original sound. Copying sound copies only that sound. Text fields keep their normal copy behavior.",
+    ],
+    pasteSegment: [
+      "Paste at the playhead",
+      "Click the time ruler or empty track space, then press Ctrl+V or Command+V. Main video inserts at that moment and shifts later clips. Audio and overlays keep the chosen time. Undo removes the paste.",
+    ],
+    toggleTrack: [
+      "Enable or disable this track",
+      "Switch a video track off to hide its picture, or a sound track off to silence it. Segments and timing are kept. Switch it back on to restore it. Preview and export use this setting.",
+    ],
     addVideos: [
       "Add videos",
       "Choose video files. They are placed at the end of Main video.",
@@ -523,9 +539,18 @@
       "Right output",
       "Set the right output from 0 to 100 percent. With both custom outputs enabled, the source's stereo channels remain separate.",
     ],
-    channelStereo: ["Stereo", "Send the source's left and right channels to their matching ears at 100 percent."],
-    channelLeft: ["Left only", "Mix both source channels to mono, then send the whole song to the left ear only."],
-    channelRight: ["Right only", "Mix both source channels to mono, then send the whole song to the right ear only."],
+    channelStereo: [
+      "Stereo",
+      "Send the source's left and right channels to their matching ears at 100 percent.",
+    ],
+    channelLeft: [
+      "Left only",
+      "Mix both source channels to mono, then send the whole song to the left ear only.",
+    ],
+    channelRight: [
+      "Right only",
+      "Mix both source channels to mono, then send the whole song to the right ear only.",
+    ],
     repeat: [
       "Repeat sound",
       "Repeat the selected source range until this sound item's end. Turn it off to leave silence after the source ends.",
@@ -605,13 +630,16 @@
     ],
     segmentCuts: [
       "Show interval cuts",
-      "Show evenly spaced cut markers without changing your editable clips.",
+      "Show numbered intervals in a separate timeline row. Numbers match the exported ZIP segments, starting at #1. Zoom in to read every number when cuts are close together.",
     ],
     exportSegments: [
       "Export segments",
       "Stream every interval into one ZIP containing numbered video files. Cancel discards the incomplete archive; errors identify the affected segment.",
     ],
-    downloadSegments: ["Download ZIP", "Download the single archive containing all numbered interval segments."],
+    downloadSegments: [
+      "Download ZIP",
+      "Download the single archive containing all numbered interval segments.",
+    ],
     relink: [
       "Relink file",
       "Choose the original file matching the saved name, size and content fingerprint.",

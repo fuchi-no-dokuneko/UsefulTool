@@ -47,11 +47,12 @@
   let selectedId = null,
     mediaTab = "video",
     zoom = 70,
-    soundExpanded = false,
+    soundExpanded = true,
     exporting = false,
     importing = false,
     projectLoading = false,
-    showCuts = false;
+    showCuts = false,
+    segmentClipboard = null;
   let results = [],
     importErrors = [],
     saveStatus = "Ready on this device",
@@ -397,6 +398,8 @@
         " video layers";
     const playhead = $("timelinePlayhead");
     if (playhead) playhead.style.left = 140 + t * zoom + "px";
+    const rulerPlayhead = document.querySelector(".ruler-playhead");
+    if (rulerPlayhead) rulerPlayhead.style.left = 140 + t * zoom + "px";
     const seek = $("seek");
     if (seek) seek.value = t;
     const transportTime = $("timeLabel");
@@ -862,6 +865,8 @@
         ["S", "Cut here"],
         ["Delete", "Delete selected item"],
         ["Ctrl / Command + Z", "Undo"],
+        ["Ctrl / Command + C", "Copy selected segment"],
+        ["Ctrl / Command + V", "Paste segment at the playhead"],
         ["Ctrl + Y / Command + Shift + Z", "Redo"],
         ["← / →", "Move one frame; move a focused selection by one pixel"],
         ["Escape", "Close a panel or explanation"],
@@ -1117,7 +1122,8 @@
       ? source?.[
           routing?.mono
             ? "waveformMono"
-            : channel === "left"
+            : routing?.sourceChannel === "left" ||
+                (routing?.sourceChannel !== "right" && channel === "left")
               ? "waveformLeft"
               : "waveformRight"
         ] || []
@@ -1389,7 +1395,7 @@
       if (firstMovieImport && M.mainItems(project).length) {
         zoom = M.clamp(
           Math.floor(
-            (document.querySelector(".editor-workspace").clientWidth - 200) /
+            ($("timelineViewport").clientWidth - 200) /
               Math.max(1, project.duration) /
               5,
           ) * 5,
@@ -1519,6 +1525,46 @@
       { context: true, toast: true },
     );
   }
+  function copySelected() {
+    commitFieldEdit();
+    if (!selected()) return;
+    segmentClipboard = M.copySegment(project, selectedId);
+    announce(
+      "Segment copied. Move the playhead, then press Ctrl+V or Command+V to paste.",
+    );
+    renderTimeline();
+  }
+  function pasteSelected() {
+    engine.stop();
+    edit(
+      () => {
+        const value = M.pasteSegment(
+          project,
+          segmentClipboard,
+          project.playhead,
+        );
+        selectedId = value.id;
+        if (value.audio) soundExpanded = true;
+      },
+      "Segment pasted at the playhead",
+      { context: true, toast: true },
+    );
+  }
+  function decoupleSelected() {
+    engine.stop();
+    edit(
+      () => {
+        const [left] = M.decoupleChannels(project, selectedId);
+        selectedId = left.id;
+        soundExpanded = true;
+      },
+      "Left and right ears can now move independently",
+      { context: true, toast: true },
+    );
+    document
+      .querySelector(".timeline-item.is-selected")
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
   function deleteSelected() {
     const key = selectedId;
     if (!key) return;
@@ -1534,6 +1580,14 @@
   function renderTimeline() {
     const value = selected(),
       locked = value && M.isLocked(project, value),
+      sound = value?.audio
+        ? value
+        : project.items.find(
+            (i) =>
+              value?.linkedGroupId &&
+              i.linkedGroupId === value.linkedGroupId &&
+              i.audio,
+          ),
       canCut =
         value &&
         project.playhead > value.start + M.minimumSpan(project) &&
@@ -1556,6 +1610,23 @@
     $("timelineHead").replaceChildren(
       el("h2", "", "Your movie"),
       row(
+        B("decoupleChannels", "Decouple L/R", decoupleSelected, {
+          id: "decoupleChannelsButton",
+          disabled:
+            !sound || Boolean(sound.audio.sourceChannel) || locked || exporting,
+          reason: "Select a stereo sound or a video with original sound.",
+        }),
+        B("copySegment", "Copy", copySelected, {
+          id: "copySegmentButton",
+          disabled: !value || exporting,
+        }),
+        B("pasteSegment", "Paste", pasteSelected, {
+          id: "pasteSegmentButton",
+          disabled:
+            !segmentClipboard ||
+            segmentClipboard.projectId !== project.id ||
+            exporting,
+        }),
         B("cutHere", "Cut here", cutSelected, {
           id: "splitButton",
           disabled: !canCut || locked || exporting,
@@ -1580,7 +1651,11 @@
     const content = $("timelineContent");
     const scroll = $("timelineViewport").scrollLeft;
     content.replaceChildren();
-    const width = Math.max(720, project.duration * zoom + 250);
+    const width = Math.max(
+      720,
+      $("timelineViewport").clientWidth,
+      project.duration * zoom + 250,
+    );
     content.style.width = width + "px";
     const ruler = el("div", "timeline-ruler");
     ruler.tabIndex = 0;
@@ -1606,19 +1681,46 @@
         ).catch(report);
       }
     });
+    const rulerPlayhead = el("div", "ruler-playhead");
+    rulerPlayhead.style.left = 140 + project.playhead * zoom + "px";
+    ruler.append(rulerPlayhead);
     content.append(ruler);
+    if (showCuts) {
+      const indices = el("div", "segment-index-row");
+      indices.append(el("span", "ruler-label", "Interval index"));
+      try {
+        const ranges = M.segmentRanges(
+          project.duration,
+          project.exportSettings.segmentInterval,
+          project.exportSettings.fps,
+        );
+        const stride = Math.max(
+          1,
+          Math.ceil(36 / (project.exportSettings.segmentInterval * zoom)),
+        );
+        ranges.forEach((range, index) => {
+          const mark = el("span", "segment-index");
+          mark.dataset.segmentIndex = index + 1;
+          mark.style.left = 140 + range.start * zoom + "px";
+          mark.style.width =
+            Math.max(1, (range.end - range.start) * zoom) + "px";
+          mark.title = `Segment ${index + 1}: ${time(range.start)} – ${time(range.end)}`;
+          mark.setAttribute("aria-label", mark.title);
+          if (index % stride === 0) {
+            const label = el("span", "", "#" + (index + 1));
+            label.style.width =
+              Math.min(stride, ranges.length - index) *
+                project.exportSettings.segmentInterval *
+                zoom +
+              "px";
+            mark.append(label);
+          }
+          indices.append(mark);
+        });
+      } catch {}
+      content.append(indices);
+    }
     addTrackRow(M.layer(project, "main"), M.mainItems(project), 0);
-    const tops = el("div", "group-heading");
-    tops.append(el("span", "", "Things on top"));
-    content.append(tops);
-    for (const track of project.layers
-      .filter((l) => l.kind !== "sound" && l.id !== "main")
-      .sort((a, b) => a.order - b.order))
-      addTrackRow(
-        track,
-        project.items.filter((i) => i.layerId === track.id),
-        0,
-      );
     const soundGroup = el("div", "group-heading"),
       soundHeading = el("span", "", "Sound");
     soundHeading.append(
@@ -1644,7 +1746,10 @@
     content.append(soundGroup);
     if (soundExpanded) {
       for (const track of project.layers
-        .filter((l) => l.kind === "sound")
+        .filter(
+          (l) =>
+            l.kind === "sound" && project.items.some((i) => i.layerId === l.id),
+        )
         .sort((a, b) => a.order - b.order)) {
         const packed = [];
         for (const sound of project.items
@@ -1663,6 +1768,17 @@
         packed.forEach((list, index) => addTrackRow(track, list, index));
       }
     }
+    const tops = el("div", "group-heading");
+    tops.append(el("span", "", "Things on top"));
+    content.append(tops);
+    for (const track of project.layers
+      .filter((l) => l.kind !== "sound" && l.id !== "main")
+      .sort((a, b) => a.order - b.order))
+      addTrackRow(
+        track,
+        project.items.filter((i) => i.layerId === track.id),
+        0,
+      );
     if (!project.items.length)
       content.append(
         el(
@@ -1681,10 +1797,21 @@
           project.duration,
           project.exportSettings.segmentInterval,
           project.exportSettings.fps,
-        ).slice(1)) {
+        )
+          .slice(1)
+          .filter(
+            (_, index) =>
+              (index + 1) %
+                Math.max(
+                  1,
+                  Math.ceil(
+                    36 / (project.exportSettings.segmentInterval * zoom),
+                  ),
+                ) ===
+              0,
+          )) {
           const mark = el("div", "segment-cut");
           mark.style.left = 140 + range.start * zoom + "px";
-          mark.append(el("span", "", time(range.start)));
           content.append(mark);
         }
       } catch {}
@@ -1696,6 +1823,10 @@
         "track-row" + (track.kind === "sound" ? " audio-row" : ""),
       );
       line.dataset.layerId = track.id;
+      line.addEventListener("pointerdown", (event) => {
+        if (event.target !== line) return;
+        beginScrub(event);
+      });
       line.addEventListener("dragover", (event) => {
         if ([...event.dataTransfer.types].includes("application/x-utv-asset"))
           event.preventDefault();
@@ -1732,13 +1863,40 @@
         renderStepper();
       });
       const head = el("div", "track-heading");
+      const enabled = track.visible && (track.kind !== "sound" || !track.muted);
+      const toggle = B(
+        "toggleTrack",
+        (enabled ? "Disable " : "Enable ") + track.name + " track",
+        () => {
+          engine.stop();
+          edit(
+            () => {
+              track.visible = !enabled;
+              if (track.kind === "sound") track.muted = enabled;
+            },
+            track.name + (enabled ? " disabled" : " enabled"),
+            { context: true },
+          );
+        },
+        {
+          disabled: exporting,
+          className: enabled ? "track-toggle is-active" : "track-toggle",
+          wrapperClass: "track-toggle-control",
+        },
+      );
+      toggle.firstElementChild.textContent = enabled ? "On" : "Off";
+      toggle.firstElementChild.setAttribute("aria-pressed", String(enabled));
+      toggle.firstElementChild.dataset.trackToggle = track.id;
       head.append(
         el("span", "track-name", track.name + (lane ? " " + (lane + 1) : "")),
-        B(
-          "layerSettings",
-          "Settings for " + track.name,
-          () => layerDialog(track.id),
-          { symbol: "⋯" },
+        row(
+          toggle,
+          B(
+            "layerSettings",
+            "Settings for " + track.name,
+            () => layerDialog(track.id),
+            { symbol: "⋯" },
+          ),
         ),
       );
       line.append(head);
@@ -1749,7 +1907,9 @@
             "timeline-item item-" +
               entry.kind +
               (selectedId === entry.id ? " is-selected" : "") +
-              (!entry.enabled || !track.visible ? " is-disabled" : ""),
+              (!entry.enabled || !enabled || entry.audio?.muted
+                ? " is-disabled"
+                : ""),
           );
         card.dataset.itemId = entry.id;
         card.tabIndex = 0;
@@ -1762,7 +1922,7 @@
         H.attach(card, "selectItem");
         card.style.left = 140 + entry.start * zoom + "px";
         card.style.width = Math.max(14, M.span(entry) * zoom) + "px";
-        if (source?.thumbnail) {
+        if (source?.thumbnail && entry.kind !== "audio") {
           const poster = el("div", "clip-poster");
           poster.style.backgroundImage = 'url("' + source.thumbnail + '")';
           card.append(poster);
@@ -1778,26 +1938,39 @@
                 : ""),
           ),
         );
-        if (
+        if (entry.kind === "audio") {
+          const channels =
+            entry.audio.sourceChannel && entry.audio.channelMode === "leftOnly"
+              ? ["left"]
+              : entry.audio.sourceChannel &&
+                  entry.audio.channelMode === "rightOnly"
+                ? ["right"]
+                : ["left", "right"];
+          const waves = el("div", "clip-channels");
+          for (const channel of channels) {
+            const lane = el("div", "clip-channel");
+            lane.dataset.channel = channel;
+            lane.append(el("span", "", channel === "left" ? "L" : "R"));
+            const wave = el("canvas");
+            wave.setAttribute(
+              "aria-label",
+              channel === "left" ? "Left ear waveform" : "Right ear waveform",
+            );
+            wave.style.width = Math.max(1, M.span(entry) * zoom - 46) + "px";
+            drawWaveform(wave, source, entry, 1, channel);
+            lane.append(wave);
+            waves.append(lane);
+          }
+          card.append(waves);
+        } else if (
           source?.waveform?.length &&
-          (entry.kind === "audio" ||
-            (entry.kind === "video" && source.hasAudio !== false))
+          entry.kind === "video" &&
+          source.hasAudio !== false
         ) {
           const wave = el("canvas", "clip-waveform");
           wave.style.width = Math.max(20, M.span(entry) * zoom - 4) + "px";
-          drawWaveform(wave, source, entry.kind === "audio" ? entry : null);
+          drawWaveform(wave, source);
           card.append(wave);
-          if (entry.kind === "video") {
-            const badge = el(
-              "span",
-              "clip-time",
-              entry.linkEnabled ? "↔ Sound linked" : "♪ Original sound",
-            );
-            badge.style.position = "absolute";
-            badge.style.right = "4px";
-            badge.style.bottom = "0";
-            card.append(badge);
-          }
         }
         for (const fx of entry.effects.filter((f) => f.enabled)) {
           const strip = el("div", "effect-strip");
@@ -1997,6 +2170,13 @@
         showDragReadout(event, error.message);
       }
       const viewport = $("timelineViewport").getBoundingClientRect();
+      if (event.clientY > viewport.bottom - 28)
+        $("timelineViewport").scrollTop += 12;
+      if (event.clientY < viewport.top + (showCuts ? 80 : 56))
+        $("timelineViewport").scrollTop = Math.max(
+          0,
+          $("timelineViewport").scrollTop - 12,
+        );
       if (event.clientX > viewport.right - 30)
         $("timelineViewport").scrollLeft += 12;
       if (event.clientX < viewport.left + 160)
@@ -3022,15 +3202,12 @@
   function audioControls(value, locked) {
     const a = value.audio,
       source = M.asset(project, value.assetId),
-      desktop = root.matchMedia("(min-width: 1100px)").matches,
       waves = el("div", "audio-waveforms"),
       canvases = [];
-    for (const [channel, label] of desktop
-      ? [
-          ["left", "L — Left"],
-          ["right", "R — Right"],
-        ]
-      : [[null, "Sound waveform"]]) {
+    for (const [channel, label] of [
+      ["left", "L — Left"],
+      ["right", "R — Right"],
+    ]) {
       const lane = el("div", "audio-waveform-lane"),
         wave = el("canvas", "waveform-large");
       wave.setAttribute("aria-label", label + " output waveform");
@@ -3047,7 +3224,7 @@
         drawWaveform(wave, source, value, waveZoom, channel),
       );
     drawWaves();
-    if (desktop && !source?.waveformLeft?.length)
+    if (!source?.waveformLeft?.length)
       waves.append(
         el(
           "small",
@@ -3058,7 +3235,7 @@
       );
     const routing = el("div", "audio-routing"),
       presets = el("div", "button-row");
-    if (desktop) {
+    {
       for (const [mode, help, label] of [
         ["stereo", "channelStereo", "Stereo"],
         ["leftOnly", "channelLeft", "Left only"],
@@ -3127,7 +3304,7 @@
     const basic = group(
       "Sound",
       waves,
-      desktop ? routing : null,
+      routing,
       range(
         "Volume (%)",
         "volume",
@@ -3200,36 +3377,6 @@
       details(
         "More sound settings",
         fades,
-        !desktop
-          ? range(
-              "Left channel (%)",
-              "leftGain",
-              a.leftGain * 100,
-              0,
-              200,
-              1,
-              setter((v) => {
-                a.leftGain = v / 100;
-                a.channelMode = "custom";
-              }, "Left channel changed"),
-              { disabled: locked },
-            )
-          : null,
-        !desktop
-          ? range(
-              "Right channel (%)",
-              "rightGain",
-              a.rightGain * 100,
-              0,
-              200,
-              1,
-              setter((v) => {
-                a.rightGain = v / 100;
-                a.channelMode = "custom";
-              }, "Right channel changed"),
-              { disabled: locked },
-            )
-          : null,
         check(
           "Preserve pitch",
           "preservePitch",
@@ -5251,6 +5398,14 @@
         return;
       }
       if (exporting) return;
+      if (command && ["c", "v"].includes(event.key.toLowerCase())) {
+        if (event.key.toLowerCase() === "c" ? selected() : segmentClipboard) {
+          event.preventDefault();
+          event.key.toLowerCase() === "c" ? copySelected() : pasteSelected();
+        }
+        return;
+      }
+      if (command) return;
       if (event.code === "Space") {
         event.preventDefault();
         engine.playing ? engine.stop() : engine.play().catch(report);
@@ -5308,6 +5463,22 @@
       store.flush().catch(() => {});
     });
     new ResizeObserver(resizePreview).observe($("stageViewport"));
+    const headerSize = new ResizeObserver(() => {
+      document.documentElement.style.setProperty(
+        "--studio-header-height",
+        $("topbar").offsetHeight + $("workflowStepper").offsetHeight + "px",
+      );
+    });
+    headerSize.observe($("topbar"));
+    headerSize.observe($("workflowStepper"));
+    let timelineWidth = 0;
+    new ResizeObserver(() => {
+      const width = $("timelineViewport").clientWidth;
+      if (width !== timelineWidth) {
+        timelineWidth = width;
+        renderTimeline();
+      }
+    }).observe($("timelineViewport"));
   }
   async function boot() {
     await root.UTStudio.Export.loadFormats();

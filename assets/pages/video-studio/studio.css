@@ -378,7 +378,7 @@ small,
 .studio-shell {
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr) 292px;
-  height: calc(100vh - 120px);
+  height: calc(100vh - var(--studio-header-height, 120px));
   min-height: 774px;
 }
 .media-panel {
@@ -487,6 +487,7 @@ small,
 }
 .preview-card {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 40px 366px 48px;
   min-width: 0;
   background: var(--panel);
@@ -498,8 +499,10 @@ small,
   gap: 10px;
   padding: 0 16px;
   font-size: 12px;
+  min-width: 0;
 }
 .stage-title {
+  min-width: 0;
   font-weight: 650;
   white-space: nowrap;
   overflow: hidden;
@@ -688,7 +691,7 @@ small,
   position: relative;
   isolation: isolate;
   display: grid;
-  grid-template-rows: 48px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   min-height: 320px;
   background: var(--paper);
   border-top: 1px solid var(--line);
@@ -702,12 +705,13 @@ small,
   justify-content: space-between;
   border-bottom: 1px solid var(--line);
   min-width: 0;
+  flex-wrap: wrap;
 }
 .timeline-head h2 {
   font-size: 13px;
 }
 .timeline-head .button-row {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   min-width: 0;
 }
 .zoom-label {
@@ -731,13 +735,15 @@ small,
 }
 .timeline-content {
   position: relative;
-  min-width: 720px;
+  min-width: max(720px, 100%);
   min-height: 100%;
   padding-bottom: 14px;
 }
 .timeline-ruler {
   height: 28px;
-  position: relative;
+  position: sticky;
+  top: 0;
+  z-index: 15;
   border-bottom: 1px solid var(--line);
   background: #f9fbf9;
   cursor: crosshair;
@@ -745,7 +751,7 @@ small,
 .ruler-label {
   position: sticky;
   left: 0;
-  z-index: 4;
+  z-index: 10;
   width: 140px;
   height: 28px;
   display: flex;
@@ -774,7 +780,7 @@ small,
   background-size: 40px 100%;
 }
 .track-row.audio-row {
-  height: 54px;
+  height: 88px;
 }
 .track-row.is-drop-target {
   background: #eef3ff;
@@ -785,10 +791,10 @@ small,
   z-index: 10;
   width: 140px;
   height: 100%;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0 7px;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  padding: 4px 7px;
   background: #f5f8f5;
   border-right: 1px solid var(--line);
 }
@@ -803,7 +809,8 @@ small,
 .track-heading button {
   padding: 0 4px;
   min-width: 40px;
-  height: 40px;
+  height: 28px;
+  min-height: 28px;
   font-size: 12px;
   background: transparent;
   border-color: transparent;
@@ -825,13 +832,19 @@ small,
   position: sticky;
   left: 0;
   width: 140px;
-  z-index: 4;
+  z-index: 10;
   background: #edf2ed;
   padding: 0 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   height: 30px;
+}
+.group-heading > small {
+  position: sticky;
+  left: 140px;
+  padding-left: 8px;
+  background: inherit;
 }
 .group-heading button {
   height: 26px;
@@ -842,6 +855,7 @@ small,
   font-size: 11px;
 }
 .timeline-item {
+  z-index: 2;
   position: absolute;
   top: 6px;
   height: 52px;
@@ -874,7 +888,7 @@ small,
   color: #824514;
 }
 .timeline-item.item-audio {
-  height: 40px;
+  height: 76px;
   background: #dcefe5;
   color: var(--audio);
 }
@@ -912,9 +926,60 @@ small,
   bottom: 0;
   left: 2px;
   width: calc(100% - 4px);
-  height: 20px;
+  height: 14px;
   opacity: 0.75;
   pointer-events: none;
+}
+.clip-channels {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 3px;
+  display: grid;
+  gap: 2px;
+  pointer-events: none;
+}
+.clip-channel {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  align-items: center;
+  gap: 4px;
+  height: 16px;
+  font-size: 9px;
+  font-weight: 700;
+}
+.clip-channel canvas {
+  max-width: 100%;
+  height: 16px;
+}
+.segment-index-row {
+  height: 24px;
+  position: sticky;
+  top: 28px;
+  z-index: 14;
+  background: #fff4e7;
+  border-bottom: 1px solid #e7cfb6;
+}
+.segment-index-row .ruler-label {
+  height: 24px;
+  background: #fff4e7;
+  color: #814014;
+}
+.segment-index {
+  position: absolute;
+  top: 0;
+  height: 24px;
+  border-left: 1px solid #c28c58;
+  color: #814014;
+  font-size: 10px;
+}
+.segment-index > span {
+  position: absolute;
+  padding: 4px 3px;
+  overflow: hidden;
+  white-space: nowrap;
+  z-index: 1;
+  background: #fff4e7;
 }
 .effect-strip {
   height: 3px;
@@ -973,6 +1038,23 @@ small,
   background: var(--accent);
   clip-path: polygon(0 0, 100% 0, 100% 50%, 50% 100%, 0 50%);
 }
+.ruler-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 2px solid var(--accent);
+  pointer-events: none;
+}
+.ruler-playhead::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 0;
+  width: 10px;
+  height: 10px;
+  background: var(--accent);
+  clip-path: polygon(0 0, 100% 0, 100% 50%, 50% 100%, 0 50%);
+}
 .timeline-add {
   position: absolute;
   top: 17px;
@@ -1004,12 +1086,12 @@ small,
 }
 .segment-cut {
   position: absolute;
-  top: 0;
+  top: 52px;
   bottom: 0;
   width: 1px;
   border-left: 1px dashed var(--danger);
   pointer-events: none;
-  z-index: 6;
+  z-index: 1;
 }
 .segment-cut span {
   position: absolute;
@@ -1193,25 +1275,24 @@ small,
   background: #edf6f0;
   border-radius: 6px;
 }
-@media (min-width: 1100px) {
-  .audio-waveforms, .audio-routing {
-    display: grid;
-    gap: 8px;
-  }
-  .audio-waveform-lane strong {
-    display: block;
-    margin-bottom: 3px;
-    font-size: 11px;
-  }
-  .audio-waveform-lane .waveform-large {
-    display: block;
-    height: 40px;
-  }
-  .audio-routing .button-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-  }
+.audio-waveforms,
+.audio-routing {
+  display: grid;
+  gap: 8px;
+}
+.audio-waveform-lane strong {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 11px;
+}
+.audio-waveform-lane .waveform-large {
+  display: block;
+  height: 40px;
+}
+.audio-routing .button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 dialog {
   border: 1px solid var(--line);
@@ -1425,7 +1506,7 @@ dialog::backdrop {
   .media-panel {
     display: none;
     position: fixed;
-    top: 120px;
+    top: var(--studio-header-height, 120px);
     bottom: 0;
     left: 0;
     width: 248px;
@@ -1461,13 +1542,68 @@ dialog::backdrop {
     display: none;
   }
 }
+@media (min-width: 760px) {
+  .studio-shell {
+    height: calc(100dvh - var(--studio-header-height, 120px));
+    min-height: 0;
+    grid-template-rows: minmax(200px, 1fr) minmax(280px, 0.9fr);
+  }
+  .media-panel {
+    grid-column: 1;
+    grid-row: 1 / -1;
+  }
+  .editor-workspace {
+    grid-column: 2;
+    grid-row: 1;
+    grid-template-rows: minmax(0, 1fr);
+    min-height: 0;
+  }
+  .preview-card {
+    grid-template-rows: 40px minmax(0, 1fr) 48px;
+  }
+  .stage-viewport {
+    min-height: 0;
+  }
+  .context-panel {
+    grid-column: 3;
+    grid-row: 1;
+    min-height: 0;
+  }
+  .timeline-card {
+    grid-column: 2 / -1;
+    grid-row: 2;
+    min-height: 0;
+  }
+}
+@media (min-width: 760px) and (max-width: 1099px) {
+  .editor-workspace {
+    grid-column: 1;
+  }
+  .context-panel {
+    grid-column: 2;
+  }
+  .timeline-card {
+    grid-column: 1 / -1;
+  }
+}
+@media (min-width: 760px) and (max-height: 599px) {
+  body {
+    overflow-y: auto;
+  }
+  .studio-shell {
+    height: 600px;
+  }
+}
 @media (max-width: 759px) {
   body {
     overflow: auto;
   }
   .topbar {
-    padding: 0 10px;
+    padding: 8px 10px;
     gap: 5px;
+    height: auto;
+    min-height: 104px;
+    flex-wrap: wrap;
   }
   .brand-name,
   .save-status,
@@ -1478,6 +1614,11 @@ dialog::backdrop {
   .project-title {
     max-width: none;
     min-width: 0;
+    flex: 1 0 100%;
+    order: 2;
+  }
+  .topbar-actions {
+    margin-left: auto;
   }
   .topbar-actions > .help-wrap:nth-child(-n + 2) {
     display: none;
@@ -1489,7 +1630,15 @@ dialog::backdrop {
   .workflow-stepper button {
     font-size: 10px;
     gap: 4px;
-    padding: 0 5px;
+    padding: 0 3px;
+    white-space: normal;
+    line-height: 1.2;
+    height: 44px;
+    width: 100%;
+  }
+  .workflow-stepper > .help-wrap {
+    flex: 1;
+    min-width: 0;
   }
   .step-connector {
     display: none;
@@ -1501,13 +1650,16 @@ dialog::backdrop {
   }
   .studio-shell {
     display: block;
-    min-height: calc(100vh - 120px);
+    min-height: calc(100vh - var(--studio-header-height, 120px));
     height: auto;
   }
   .editor-workspace {
     display: grid;
-    grid-template-rows: 350px minmax(320px, 1fr);
-    min-height: 670px;
+    grid-template-rows: 350px;
+    min-height: 350px;
+  }
+  .timeline-card {
+    height: 420px;
   }
   .preview-card {
     grid-template-rows: 40px 262px 48px;
@@ -1520,6 +1672,9 @@ dialog::backdrop {
   }
   .stage-facts {
     font-size: 9px;
+  }
+  #stageFacts {
+    display: none;
   }
   .stage-title {
     font-size: 11px;
@@ -1574,7 +1729,7 @@ dialog::backdrop {
   .media-panel {
     display: none;
     position: fixed;
-    top: 120px;
+    top: var(--studio-header-height, 160px);
     bottom: 0;
     left: 0;
     width: min(320px, 90vw);
@@ -1644,10 +1799,23 @@ dialog::backdrop {
     grid-template-rows: 350px;
   }
   .studio-shell[data-step="export"] .timeline-card {
-    display: none;
+    display: grid;
   }
 }
 @media (hover: none) and (pointer: coarse) {
+  .track-heading .button-row {
+    gap: 4px;
+  }
+  .track-heading button {
+    height: 40px;
+    min-height: 40px;
+  }
+  .track-toggle-control {
+    padding-right: 0 !important;
+  }
+  .track-toggle-control > .touch-help {
+    display: none !important;
+  }
   .help-wrap {
     padding-right: 40px;
   }
@@ -1711,9 +1879,9 @@ dialog::backdrop {
     height: 88px;
   }
   .media-panel {
-    top: 160px;
+    top: var(--studio-header-height, 160px);
   }
   .studio-shell {
-    min-height: calc(100vh - 160px);
+    min-height: calc(100vh - var(--studio-header-height, 160px));
   }
 }

@@ -392,7 +392,7 @@ small,
 .studio-shell {
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr) 292px;
-  height: calc(100vh - 120px);
+  height: calc(100vh - var(--studio-header-height, 120px));
   min-height: 774px;
 }
 .media-panel {
@@ -501,6 +501,7 @@ small,
 }
 .preview-card {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 40px 366px 48px;
   min-width: 0;
   background: var(--panel);
@@ -512,8 +513,10 @@ small,
   gap: 10px;
   padding: 0 16px;
   font-size: 12px;
+  min-width: 0;
 }
 .stage-title {
+  min-width: 0;
   font-weight: 650;
   white-space: nowrap;
   overflow: hidden;
@@ -702,7 +705,7 @@ small,
   position: relative;
   isolation: isolate;
   display: grid;
-  grid-template-rows: 48px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   min-height: 320px;
   background: var(--paper);
   border-top: 1px solid var(--line);
@@ -716,12 +719,13 @@ small,
   justify-content: space-between;
   border-bottom: 1px solid var(--line);
   min-width: 0;
+  flex-wrap: wrap;
 }
 .timeline-head h2 {
   font-size: 13px;
 }
 .timeline-head .button-row {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   min-width: 0;
 }
 .zoom-label {
@@ -745,13 +749,15 @@ small,
 }
 .timeline-content {
   position: relative;
-  min-width: 720px;
+  min-width: max(720px, 100%);
   min-height: 100%;
   padding-bottom: 14px;
 }
 .timeline-ruler {
   height: 28px;
-  position: relative;
+  position: sticky;
+  top: 0;
+  z-index: 15;
   border-bottom: 1px solid var(--line);
   background: #f9fbf9;
   cursor: crosshair;
@@ -759,7 +765,7 @@ small,
 .ruler-label {
   position: sticky;
   left: 0;
-  z-index: 4;
+  z-index: 10;
   width: 140px;
   height: 28px;
   display: flex;
@@ -788,7 +794,7 @@ small,
   background-size: 40px 100%;
 }
 .track-row.audio-row {
-  height: 54px;
+  height: 88px;
 }
 .track-row.is-drop-target {
   background: #eef3ff;
@@ -799,10 +805,10 @@ small,
   z-index: 10;
   width: 140px;
   height: 100%;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0 7px;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  padding: 4px 7px;
   background: #f5f8f5;
   border-right: 1px solid var(--line);
 }
@@ -817,7 +823,8 @@ small,
 .track-heading button {
   padding: 0 4px;
   min-width: 40px;
-  height: 40px;
+  height: 28px;
+  min-height: 28px;
   font-size: 12px;
   background: transparent;
   border-color: transparent;
@@ -839,13 +846,19 @@ small,
   position: sticky;
   left: 0;
   width: 140px;
-  z-index: 4;
+  z-index: 10;
   background: #edf2ed;
   padding: 0 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   height: 30px;
+}
+.group-heading > small {
+  position: sticky;
+  left: 140px;
+  padding-left: 8px;
+  background: inherit;
 }
 .group-heading button {
   height: 26px;
@@ -856,6 +869,7 @@ small,
   font-size: 11px;
 }
 .timeline-item {
+  z-index: 2;
   position: absolute;
   top: 6px;
   height: 52px;
@@ -888,7 +902,7 @@ small,
   color: #824514;
 }
 .timeline-item.item-audio {
-  height: 40px;
+  height: 76px;
   background: #dcefe5;
   color: var(--audio);
 }
@@ -926,9 +940,60 @@ small,
   bottom: 0;
   left: 2px;
   width: calc(100% - 4px);
-  height: 20px;
+  height: 14px;
   opacity: 0.75;
   pointer-events: none;
+}
+.clip-channels {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 3px;
+  display: grid;
+  gap: 2px;
+  pointer-events: none;
+}
+.clip-channel {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  align-items: center;
+  gap: 4px;
+  height: 16px;
+  font-size: 9px;
+  font-weight: 700;
+}
+.clip-channel canvas {
+  max-width: 100%;
+  height: 16px;
+}
+.segment-index-row {
+  height: 24px;
+  position: sticky;
+  top: 28px;
+  z-index: 14;
+  background: #fff4e7;
+  border-bottom: 1px solid #e7cfb6;
+}
+.segment-index-row .ruler-label {
+  height: 24px;
+  background: #fff4e7;
+  color: #814014;
+}
+.segment-index {
+  position: absolute;
+  top: 0;
+  height: 24px;
+  border-left: 1px solid #c28c58;
+  color: #814014;
+  font-size: 10px;
+}
+.segment-index > span {
+  position: absolute;
+  padding: 4px 3px;
+  overflow: hidden;
+  white-space: nowrap;
+  z-index: 1;
+  background: #fff4e7;
 }
 .effect-strip {
   height: 3px;
@@ -987,6 +1052,23 @@ small,
   background: var(--accent);
   clip-path: polygon(0 0, 100% 0, 100% 50%, 50% 100%, 0 50%);
 }
+.ruler-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 2px solid var(--accent);
+  pointer-events: none;
+}
+.ruler-playhead::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 0;
+  width: 10px;
+  height: 10px;
+  background: var(--accent);
+  clip-path: polygon(0 0, 100% 0, 100% 50%, 50% 100%, 0 50%);
+}
 .timeline-add {
   position: absolute;
   top: 17px;
@@ -1018,12 +1100,12 @@ small,
 }
 .segment-cut {
   position: absolute;
-  top: 0;
+  top: 52px;
   bottom: 0;
   width: 1px;
   border-left: 1px dashed var(--danger);
   pointer-events: none;
-  z-index: 6;
+  z-index: 1;
 }
 .segment-cut span {
   position: absolute;
@@ -1207,25 +1289,24 @@ small,
   background: #edf6f0;
   border-radius: 6px;
 }
-@media (min-width: 1100px) {
-  .audio-waveforms, .audio-routing {
-    display: grid;
-    gap: 8px;
-  }
-  .audio-waveform-lane strong {
-    display: block;
-    margin-bottom: 3px;
-    font-size: 11px;
-  }
-  .audio-waveform-lane .waveform-large {
-    display: block;
-    height: 40px;
-  }
-  .audio-routing .button-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-  }
+.audio-waveforms,
+.audio-routing {
+  display: grid;
+  gap: 8px;
+}
+.audio-waveform-lane strong {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 11px;
+}
+.audio-waveform-lane .waveform-large {
+  display: block;
+  height: 40px;
+}
+.audio-routing .button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 dialog {
   border: 1px solid var(--line);
@@ -1439,7 +1520,7 @@ dialog::backdrop {
   .media-panel {
     display: none;
     position: fixed;
-    top: 120px;
+    top: var(--studio-header-height, 120px);
     bottom: 0;
     left: 0;
     width: 248px;
@@ -1475,13 +1556,68 @@ dialog::backdrop {
     display: none;
   }
 }
+@media (min-width: 760px) {
+  .studio-shell {
+    height: calc(100dvh - var(--studio-header-height, 120px));
+    min-height: 0;
+    grid-template-rows: minmax(200px, 1fr) minmax(280px, 0.9fr);
+  }
+  .media-panel {
+    grid-column: 1;
+    grid-row: 1 / -1;
+  }
+  .editor-workspace {
+    grid-column: 2;
+    grid-row: 1;
+    grid-template-rows: minmax(0, 1fr);
+    min-height: 0;
+  }
+  .preview-card {
+    grid-template-rows: 40px minmax(0, 1fr) 48px;
+  }
+  .stage-viewport {
+    min-height: 0;
+  }
+  .context-panel {
+    grid-column: 3;
+    grid-row: 1;
+    min-height: 0;
+  }
+  .timeline-card {
+    grid-column: 2 / -1;
+    grid-row: 2;
+    min-height: 0;
+  }
+}
+@media (min-width: 760px) and (max-width: 1099px) {
+  .editor-workspace {
+    grid-column: 1;
+  }
+  .context-panel {
+    grid-column: 2;
+  }
+  .timeline-card {
+    grid-column: 1 / -1;
+  }
+}
+@media (min-width: 760px) and (max-height: 599px) {
+  body {
+    overflow-y: auto;
+  }
+  .studio-shell {
+    height: 600px;
+  }
+}
 @media (max-width: 759px) {
   body {
     overflow: auto;
   }
   .topbar {
-    padding: 0 10px;
+    padding: 8px 10px;
     gap: 5px;
+    height: auto;
+    min-height: 104px;
+    flex-wrap: wrap;
   }
   .brand-name,
   .save-status,
@@ -1492,6 +1628,11 @@ dialog::backdrop {
   .project-title {
     max-width: none;
     min-width: 0;
+    flex: 1 0 100%;
+    order: 2;
+  }
+  .topbar-actions {
+    margin-left: auto;
   }
   .topbar-actions > .help-wrap:nth-child(-n + 2) {
     display: none;
@@ -1503,7 +1644,15 @@ dialog::backdrop {
   .workflow-stepper button {
     font-size: 10px;
     gap: 4px;
-    padding: 0 5px;
+    padding: 0 3px;
+    white-space: normal;
+    line-height: 1.2;
+    height: 44px;
+    width: 100%;
+  }
+  .workflow-stepper > .help-wrap {
+    flex: 1;
+    min-width: 0;
   }
   .step-connector {
     display: none;
@@ -1515,13 +1664,16 @@ dialog::backdrop {
   }
   .studio-shell {
     display: block;
-    min-height: calc(100vh - 120px);
+    min-height: calc(100vh - var(--studio-header-height, 120px));
     height: auto;
   }
   .editor-workspace {
     display: grid;
-    grid-template-rows: 350px minmax(320px, 1fr);
-    min-height: 670px;
+    grid-template-rows: 350px;
+    min-height: 350px;
+  }
+  .timeline-card {
+    height: 420px;
   }
   .preview-card {
     grid-template-rows: 40px 262px 48px;
@@ -1534,6 +1686,9 @@ dialog::backdrop {
   }
   .stage-facts {
     font-size: 9px;
+  }
+  #stageFacts {
+    display: none;
   }
   .stage-title {
     font-size: 11px;
@@ -1588,7 +1743,7 @@ dialog::backdrop {
   .media-panel {
     display: none;
     position: fixed;
-    top: 120px;
+    top: var(--studio-header-height, 160px);
     bottom: 0;
     left: 0;
     width: min(320px, 90vw);
@@ -1658,10 +1813,23 @@ dialog::backdrop {
     grid-template-rows: 350px;
   }
   .studio-shell[data-step="export"] .timeline-card {
-    display: none;
+    display: grid;
   }
 }
 @media (hover: none) and (pointer: coarse) {
+  .track-heading .button-row {
+    gap: 4px;
+  }
+  .track-heading button {
+    height: 40px;
+    min-height: 40px;
+  }
+  .track-toggle-control {
+    padding-right: 0 !important;
+  }
+  .track-toggle-control > .touch-help {
+    display: none !important;
+  }
   .help-wrap {
     padding-right: 40px;
   }
@@ -1725,10 +1893,10 @@ dialog::backdrop {
     height: 88px;
   }
   .media-panel {
-    top: 160px;
+    top: var(--studio-header-height, 160px);
   }
   .studio-shell {
-    min-height: calc(100vh - 160px);
+    min-height: calc(100vh - var(--studio-header-height, 160px));
   }
 }
 
@@ -1787,12 +1955,12 @@ dialog::backdrop {
           </div>
           <div class="transport" id="transport"></div>
         </section>
-        <section class="timeline-card" aria-label="Multi-layer timeline">
-          <header class="timeline-head" id="timelineHead"></header>
-          <div class="timeline-viewport" id="timelineViewport">
-            <div class="timeline-content" id="timelineContent"></div>
-          </div>
-        </section>
+      </section>
+      <section class="timeline-card" aria-label="Multi-layer timeline">
+        <header class="timeline-head" id="timelineHead"></header>
+        <div class="timeline-viewport" id="timelineViewport">
+          <div class="timeline-content" id="timelineContent"></div>
+        </div>
       </section>
       <aside
         class="context-panel"
@@ -1873,11 +2041,13 @@ dialog::backdrop {
     const mode = audio.channelMode ?? "stereo";
     const left = mode === "rightOnly" ? 0 : audio.leftGain ?? 1;
     const right = mode === "leftOnly" ? 0 : audio.rightGain ?? 1;
-    // A single output always carries both source channels, including custom
-    // one-ear gains. With both custom outputs enabled, preserve source stereo.
-    const mono = mode === "leftOnly" || mode === "rightOnly" ||
-      (mode === "custom" && (left === 0 || right === 0));
-    return { left, right, mono };
+    // Ordinary one-ear routing downmixes both source channels. Decoupled ears
+    // explicitly select a source channel and retain it when output gains change.
+    const sourceChannel = audio.sourceChannel || "stereo";
+    const mono = sourceChannel === "mono" || (sourceChannel === "stereo" &&
+      (mode === "leftOnly" || mode === "rightOnly" ||
+      (mode === "custom" && (left === 0 || right === 0))));
+    return { left, right, mono, ...(sourceChannel === "stereo" ? {} : { sourceChannel }) };
   }
   function setChannelMode(value, mode) {
     if (!value?.audio || !["stereo", "leftOnly", "rightOnly", "custom"].includes(mode)) return;
@@ -1941,6 +2111,7 @@ dialog::backdrop {
     });
     let time = 0;
     for (const value of mainItems(project)) {
+      time += Math.max(0, value.gapBefore || 0);
       const duration = span(value), previousStart = value.start;
       const tr = project.transitions.find((t) => t.toId === value.id);
       if (tr) {
@@ -2035,6 +2206,91 @@ dialog::backdrop {
       sibling.linkEnabled = Boolean(enabled);
       sibling.linkIntent = enabled ? "linked" : "unlinked";
     }
+  }
+  function decoupleChannels(project, itemId) {
+    const selected = item(project, itemId);
+    const sound = selected?.kind === "video"
+      ? project.items.find(i => i.kind === "audio" && selected.linkedGroupId && i.linkedGroupId === selected.linkedGroupId)
+      : selected;
+    if (!sound?.audio || sound.audio.sourceChannel) throw new Error("Select a stereo sound or a video with original sound to decouple.");
+    if ([sound, ...related(project, sound)].some(i => isLocked(project, i))) throw new Error("Unlock the sound and its linked picture first.");
+    const parentTrack = layer(project, sound.layerId);
+    for (const channel of ["left", "right"]) if (layer(project, parentTrack.id + "-" + channel)?.locked)
+      throw new Error("Unlock the destination ear track first.");
+    const routing = audioRouting(sound.audio);
+    setLink(project, sound.id, false);
+    const right = copy(sound);
+    right.id = id("audio");
+    for (const [value, channel] of [[sound, "left"], [right, "right"]]) {
+      const trackId = parentTrack.id + "-" + channel;
+      if (!layer(project, trackId)) project.layers.push({ ...copy(parentTrack), id: trackId,
+        name: parentTrack.name + (channel === "left" ? " · L" : " · R"), order: parentTrack.order + (channel === "left" ? .1 : .2) });
+      value.layerId = trackId;
+      delete value.linkId; delete value.linkedGroupId;
+      value.linkEnabled = false;
+      value.linkIntent = "unlinked";
+      value.name += channel === "left" ? " · Left ear" : " · Right ear";
+      value.audio.sourceChannel = routing.mono ? "mono" : channel;
+      value.audio.channelMode = channel === "left" ? "leftOnly" : "rightOnly";
+      value.audio.leftGain = channel === "left" ? routing.left : 0;
+      value.audio.rightGain = channel === "right" ? routing.right : 0;
+      // Whole-movie mode pins start to zero; decoupled ears must move freely.
+      value.audio.wholeMovie = false;
+    }
+    project.items.push(right);
+    normalize(project);
+    return [sound, right];
+  }
+  function copySegment(project, itemId) {
+    const value = item(project, itemId);
+    if (!value) return null;
+    // Copying an audio segment never unexpectedly copies its picture.
+    const items = value.kind === "video" ? related(project, value) : [value];
+    return copy({ projectId: project.id, selectedId: value.id, items,
+      layers: project.layers.filter(l => items.some(i => i.layerId === l.id)) });
+  }
+  function pasteSegment(project, clipboard, start = project.playhead) {
+    if (!clipboard || clipboard.projectId !== project.id) throw new Error("Copy a segment in this project first.");
+    // Work on a draft so a locked ripple edit or occupied overlay is atomic.
+    const draft = copy(project), original = clipboard.items.find(i => i.id === clipboard.selectedId);
+    if (!original) throw new Error("Copy a segment first.");
+    const at = rounded(Math.max(0, finite(start))), group = id("link");
+    for (const entry of clipboard.items) {
+      if (entry.assetId && !asset(draft, entry.assetId)) throw new Error("The copied media is no longer available.");
+      if (!layer(draft, entry.layerId)) draft.layers.push(copy(clipboard.layers.find(l => l.id === entry.layerId)));
+      if (layer(draft, entry.layerId).locked) throw new Error("Unlock the destination layer before pasting.");
+    }
+    let insertAt, gap = 0;
+    if (original.layerId === "main") {
+      if (draft.transitions.some(tr => at > item(draft, tr.toId).start && at < item(draft, tr.fromId).end))
+        throw new Error("Move the playhead outside the transition before pasting.");
+      const containing = mainItems(draft).find(i => at > i.start + 1e-7 && at < i.end - 1e-7);
+      if (containing) {
+        if (isLocked(draft, containing) || !splitItem(draft, containing.id, at)) throw new Error("Choose an unlocked position at least one frame from the clip edge.");
+      }
+      const ordered = mainItems(draft);
+      insertAt = ordered.findIndex(i => i.start >= at - 1e-7);
+      if (insertAt < 0) insertAt = ordered.length;
+      gap = Math.max(0, at - (ordered[insertAt - 1]?.end || 0));
+      if (ordered[insertAt]) ordered[insertAt].gapBefore = Math.max(0, ordered[insertAt].start - at);
+    }
+    let result;
+    for (const entry of clipboard.items) {
+      const dupe = copy(entry), delta = at - original.start;
+      dupe.id = id(dupe.kind); dupe.start = rounded(entry.start + delta); dupe.end = rounded(entry.end + delta);
+      dupe.locked = false;
+      if (dupe.kind === "video" && dupe.layerId !== "main" && draft.items.some(i => i.kind === "video" && i.layerId === dupe.layerId && i.start < dupe.end && i.end > dupe.start))
+        throw new Error("This overlay track is occupied. Choose an empty position before pasting.");
+      if (clipboard.items.length > 1 && dupe.linkEnabled) dupe.linkId = dupe.linkedGroupId = group;
+      else { delete dupe.linkId; delete dupe.linkedGroupId; dupe.linkEnabled = false; }
+      if (dupe.audio) dupe.audio.wholeMovie = false;
+      if (dupe.layerId === "main") { dupe.gapBefore = gap; draft.mainOrder.splice(insertAt, 0, dupe.id); }
+      draft.items.push(dupe);
+      if (entry.id === original.id) result = dupe;
+    }
+    original.layerId === "main" ? reflow(draft) : normalize(draft);
+    Object.assign(project, draft);
+    return result;
   }
   function legacyLinkCandidates(project) {
     return project.items.filter(video => {
@@ -2149,6 +2405,7 @@ dialog::backdrop {
     const rightGroup = id("link"); let result;
     for (const sibling of siblings) {
       const right = copy(sibling), offset = time - sibling.start;
+      if (right.layerId === "main") right.gapBefore = 0;
       right.id = id(sibling.kind); right.start = rounded(time); sibling.end = rounded(time);
       if (sibling.kind === "video" || sibling.kind === "audio") {
         const sourceTime = sourceTimeAt(sibling, time);
@@ -2180,6 +2437,7 @@ dialog::backdrop {
     const group = id("link"); let result;
     for (const sibling of siblings) {
       const dupe = copy(sibling); dupe.id = id(sibling.kind); dupe.start = sibling.end; dupe.end = dupe.start + span(sibling);
+      if (dupe.layerId === "main") dupe.gapBefore = 0;
       if (!["video", "audio"].includes(dupe.kind) && dupe.layerId !== "main") {
         const track = copy(layer(project, dupe.layerId));
         track.id = id("layer"); track.order += .1; project.layers.push(track); dupe.layerId = track.id;
@@ -2299,7 +2557,7 @@ dialog::backdrop {
   function audioGains(project, value, time) {
     const gain = value.audio.volume * fadeAt(value, time, true) * (project.soundBalance[value.audio.category] ?? 1);
     const routing = audioRouting(value.audio);
-    return { left: gain * routing.left, right: gain * routing.right, mono: routing.mono };
+    return { ...routing, left: gain * routing.left, right: gain * routing.right };
   }
   const MAX_AUDIO_SOURCES = 3;
   function audioConflicts(project) {
@@ -2432,6 +2690,7 @@ dialog::backdrop {
       if (!Array.isArray(entry.effects) || !Array.isArray(entry.opacityKeys)) throw new Error("Missing effect data.");
       const track = layer(value, entry.layerId), source = asset(value, entry.assetId);
       fail(numeric(entry.zIndex) && ["enabled", "locked"].every(k => typeof entry[k] === "boolean"), "Invalid item state.");
+      if (entry.gapBefore !== undefined) fail(numeric(entry.gapBefore, 0), "Invalid timeline gap.");
       if (entry.kind === "video") fail(VIDEO_LAYERS.includes(entry.layerId) && source?.kind === "video", "Invalid video track or source.");
       if (entry.kind === "image") fail(source?.kind === "image" && track.kind !== "sound", "Invalid image source or track.");
       if (entry.kind === "audio") fail(track.kind === "sound" && ["audio", "video"].includes(source?.kind), "Invalid sound source or track.");
@@ -2441,6 +2700,7 @@ dialog::backdrop {
       fail(entry.opacityKeys.every(k => k && numeric(k.time, 0) && numeric(k.value, 0, 1) && ["linear", "smooth", "ease-in", "ease-out", "hold"].includes(k.easing)), "Invalid visibility curve.");
       fail(entry.effects.every(f => f && EFFECTS.includes(f.type) && numeric(f.amount, f.type === "hue" ? -360 : 0, f.type === "hue" ? 360 : 3) && numeric(f.start, 0) && numeric(f.end, f.start) && typeof f.enabled === "boolean"), "Invalid effect data.");
       if (entry.audio) {
+        if (entry.audio.sourceChannel !== undefined) fail(["stereo", "mono", "left", "right"].includes(entry.audio.sourceChannel), "Invalid source channel.");
         if (entry.audio.channelMode === undefined) entry.audio.channelMode = "stereo";
         for (const key of ["leftGain", "rightGain"]) if (entry.audio[key] === undefined) entry.audio[key] = 1;
         // Old projects allowed up to 200% per channel. Keep those saved values;
@@ -2493,7 +2753,7 @@ dialog::backdrop {
   }
   const api = { MIN, SCHEMA_VERSION, MAX_PIXELS, VIDEO_LAYERS, KINDS, EFFECTS, BLURS, TRANSITIONS, id, copy, clamp, finite, rounded, active, span, sourceSpan, minimumSpan,
     layer, asset, item, isLocked, mainItems, createProject, transform, baseItem, audioProps, normalize, reflow, addAsset, addMedia, addLayerItem,
-    related, setLink, moveItem, reorderMain, trimItem, setSpeed, splitItem, duplicateItem, deleteItem, transitionMaximum, setTransition, removeTransition,
+    related, setLink, decoupleChannels, copySegment, pasteSegment, moveItem, reorderMain, trimItem, setSpeed, splitItem, duplicateItem, deleteItem, transitionMaximum, setTransition, removeTransition,
     ease, curveAt, setKey, fadeAt, sourceTimeAt, setRepeat, snapTime, visibleItems, videoConflicts, MAX_AUDIO_SOURCES, audioConflicts, fixAudioConflicts, audioGains, evaluateFrame, evaluateAudio, applyOverlayPreset, addEffect,
     creditsHeight, updateCreditsDuration, fitTransform, segmentRanges, formatTime, exportDimensions, serialize, parseProject, History, visualEnd,
     legacyLinkCandidates, migrateProject, timelineCheckpoint, restoreTimeline, audioRouting, setChannelMode };
@@ -3530,7 +3790,8 @@ dialog::backdrop {
     right.connect(merge, 0, 1);
     merge.connect(destination);
     left.gain.value = right.gain.value = 0;
-    let downmixed = false;
+    let downmixed = false,
+      sourceChannel = "stereo";
     return {
       source,
       upmix,
@@ -3541,6 +3802,13 @@ dialog::backdrop {
       right,
       merge,
       apply(routing, time = c.currentTime) {
+        const channel = routing.sourceChannel || "stereo";
+        if (channel !== sourceChannel) {
+          split.disconnect();
+          split.connect(left, channel === "right" ? 1 : 0);
+          split.connect(right, channel === "left" ? 0 : 1);
+          sourceChannel = channel;
+        }
         if (routing.mono !== downmixed) {
           upmix.disconnect();
           upmix.connect(routing.mono ? mono : split);
@@ -5494,6 +5762,8 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
                 (pcm.right[index + 1] || 0) * fraction;
             }
             if (gainStart.mono) a = b = (a + b) / 2;
+            else if (gainStart.sourceChannel === "left") b = a;
+            else if (gainStart.sourceChannel === "right") a = b;
             left[offset + j] +=
               a *
               (gainStart.left + ((gainEnd.left - gainStart.left) * j) / size);
@@ -6122,6 +6392,22 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
 (function () {
   "use strict";
   const HELP_CONTENT = {
+    decoupleChannels: [
+      "Decouple left and right ears",
+      "Split this sound into independent Left and Right ear tracks. Drag either segment or set Starts at to offset it. Move Right to 15 seconds to hear Left 15 seconds earlier. Undo restores the stereo segment.",
+    ],
+    copySegment: [
+      "Copy segment",
+      "Copy the selected segment with Ctrl+C or Command+C. A linked video includes its original sound. Copying sound copies only that sound. Text fields keep their normal copy behavior.",
+    ],
+    pasteSegment: [
+      "Paste at the playhead",
+      "Click the time ruler or empty track space, then press Ctrl+V or Command+V. Main video inserts at that moment and shifts later clips. Audio and overlays keep the chosen time. Undo removes the paste.",
+    ],
+    toggleTrack: [
+      "Enable or disable this track",
+      "Switch a video track off to hide its picture, or a sound track off to silence it. Segments and timing are kept. Switch it back on to restore it. Preview and export use this setting.",
+    ],
     addVideos: [
       "Add videos",
       "Choose video files. They are placed at the end of Main video.",
@@ -6642,9 +6928,18 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
       "Right output",
       "Set the right output from 0 to 100 percent. With both custom outputs enabled, the source's stereo channels remain separate.",
     ],
-    channelStereo: ["Stereo", "Send the source's left and right channels to their matching ears at 100 percent."],
-    channelLeft: ["Left only", "Mix both source channels to mono, then send the whole song to the left ear only."],
-    channelRight: ["Right only", "Mix both source channels to mono, then send the whole song to the right ear only."],
+    channelStereo: [
+      "Stereo",
+      "Send the source's left and right channels to their matching ears at 100 percent.",
+    ],
+    channelLeft: [
+      "Left only",
+      "Mix both source channels to mono, then send the whole song to the left ear only.",
+    ],
+    channelRight: [
+      "Right only",
+      "Mix both source channels to mono, then send the whole song to the right ear only.",
+    ],
     repeat: [
       "Repeat sound",
       "Repeat the selected source range until this sound item's end. Turn it off to leave silence after the source ends.",
@@ -6724,13 +7019,16 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
     ],
     segmentCuts: [
       "Show interval cuts",
-      "Show evenly spaced cut markers without changing your editable clips.",
+      "Show numbered intervals in a separate timeline row. Numbers match the exported ZIP segments, starting at #1. Zoom in to read every number when cuts are close together.",
     ],
     exportSegments: [
       "Export segments",
       "Stream every interval into one ZIP containing numbered video files. Cancel discards the incomplete archive; errors identify the affected segment.",
     ],
-    downloadSegments: ["Download ZIP", "Download the single archive containing all numbered interval segments."],
+    downloadSegments: [
+      "Download ZIP",
+      "Download the single archive containing all numbered interval segments.",
+    ],
     relink: [
       "Relink file",
       "Choose the original file matching the saved name, size and content fingerprint.",
@@ -7169,11 +7467,12 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
   let selectedId = null,
     mediaTab = "video",
     zoom = 70,
-    soundExpanded = false,
+    soundExpanded = true,
     exporting = false,
     importing = false,
     projectLoading = false,
-    showCuts = false;
+    showCuts = false,
+    segmentClipboard = null;
   let results = [],
     importErrors = [],
     saveStatus = "Ready on this device",
@@ -7519,6 +7818,8 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
         " video layers";
     const playhead = $("timelinePlayhead");
     if (playhead) playhead.style.left = 140 + t * zoom + "px";
+    const rulerPlayhead = document.querySelector(".ruler-playhead");
+    if (rulerPlayhead) rulerPlayhead.style.left = 140 + t * zoom + "px";
     const seek = $("seek");
     if (seek) seek.value = t;
     const transportTime = $("timeLabel");
@@ -7984,6 +8285,8 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
         ["S", "Cut here"],
         ["Delete", "Delete selected item"],
         ["Ctrl / Command + Z", "Undo"],
+        ["Ctrl / Command + C", "Copy selected segment"],
+        ["Ctrl / Command + V", "Paste segment at the playhead"],
         ["Ctrl + Y / Command + Shift + Z", "Redo"],
         ["← / →", "Move one frame; move a focused selection by one pixel"],
         ["Escape", "Close a panel or explanation"],
@@ -8239,7 +8542,8 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
       ? source?.[
           routing?.mono
             ? "waveformMono"
-            : channel === "left"
+            : routing?.sourceChannel === "left" ||
+                (routing?.sourceChannel !== "right" && channel === "left")
               ? "waveformLeft"
               : "waveformRight"
         ] || []
@@ -8511,7 +8815,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
       if (firstMovieImport && M.mainItems(project).length) {
         zoom = M.clamp(
           Math.floor(
-            (document.querySelector(".editor-workspace").clientWidth - 200) /
+            ($("timelineViewport").clientWidth - 200) /
               Math.max(1, project.duration) /
               5,
           ) * 5,
@@ -8641,6 +8945,46 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
       { context: true, toast: true },
     );
   }
+  function copySelected() {
+    commitFieldEdit();
+    if (!selected()) return;
+    segmentClipboard = M.copySegment(project, selectedId);
+    announce(
+      "Segment copied. Move the playhead, then press Ctrl+V or Command+V to paste.",
+    );
+    renderTimeline();
+  }
+  function pasteSelected() {
+    engine.stop();
+    edit(
+      () => {
+        const value = M.pasteSegment(
+          project,
+          segmentClipboard,
+          project.playhead,
+        );
+        selectedId = value.id;
+        if (value.audio) soundExpanded = true;
+      },
+      "Segment pasted at the playhead",
+      { context: true, toast: true },
+    );
+  }
+  function decoupleSelected() {
+    engine.stop();
+    edit(
+      () => {
+        const [left] = M.decoupleChannels(project, selectedId);
+        selectedId = left.id;
+        soundExpanded = true;
+      },
+      "Left and right ears can now move independently",
+      { context: true, toast: true },
+    );
+    document
+      .querySelector(".timeline-item.is-selected")
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
   function deleteSelected() {
     const key = selectedId;
     if (!key) return;
@@ -8656,6 +9000,14 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
   function renderTimeline() {
     const value = selected(),
       locked = value && M.isLocked(project, value),
+      sound = value?.audio
+        ? value
+        : project.items.find(
+            (i) =>
+              value?.linkedGroupId &&
+              i.linkedGroupId === value.linkedGroupId &&
+              i.audio,
+          ),
       canCut =
         value &&
         project.playhead > value.start + M.minimumSpan(project) &&
@@ -8678,6 +9030,23 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
     $("timelineHead").replaceChildren(
       el("h2", "", "Your movie"),
       row(
+        B("decoupleChannels", "Decouple L/R", decoupleSelected, {
+          id: "decoupleChannelsButton",
+          disabled:
+            !sound || Boolean(sound.audio.sourceChannel) || locked || exporting,
+          reason: "Select a stereo sound or a video with original sound.",
+        }),
+        B("copySegment", "Copy", copySelected, {
+          id: "copySegmentButton",
+          disabled: !value || exporting,
+        }),
+        B("pasteSegment", "Paste", pasteSelected, {
+          id: "pasteSegmentButton",
+          disabled:
+            !segmentClipboard ||
+            segmentClipboard.projectId !== project.id ||
+            exporting,
+        }),
         B("cutHere", "Cut here", cutSelected, {
           id: "splitButton",
           disabled: !canCut || locked || exporting,
@@ -8702,7 +9071,11 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
     const content = $("timelineContent");
     const scroll = $("timelineViewport").scrollLeft;
     content.replaceChildren();
-    const width = Math.max(720, project.duration * zoom + 250);
+    const width = Math.max(
+      720,
+      $("timelineViewport").clientWidth,
+      project.duration * zoom + 250,
+    );
     content.style.width = width + "px";
     const ruler = el("div", "timeline-ruler");
     ruler.tabIndex = 0;
@@ -8728,19 +9101,46 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
         ).catch(report);
       }
     });
+    const rulerPlayhead = el("div", "ruler-playhead");
+    rulerPlayhead.style.left = 140 + project.playhead * zoom + "px";
+    ruler.append(rulerPlayhead);
     content.append(ruler);
+    if (showCuts) {
+      const indices = el("div", "segment-index-row");
+      indices.append(el("span", "ruler-label", "Interval index"));
+      try {
+        const ranges = M.segmentRanges(
+          project.duration,
+          project.exportSettings.segmentInterval,
+          project.exportSettings.fps,
+        );
+        const stride = Math.max(
+          1,
+          Math.ceil(36 / (project.exportSettings.segmentInterval * zoom)),
+        );
+        ranges.forEach((range, index) => {
+          const mark = el("span", "segment-index");
+          mark.dataset.segmentIndex = index + 1;
+          mark.style.left = 140 + range.start * zoom + "px";
+          mark.style.width =
+            Math.max(1, (range.end - range.start) * zoom) + "px";
+          mark.title = `Segment ${index + 1}: ${time(range.start)} – ${time(range.end)}`;
+          mark.setAttribute("aria-label", mark.title);
+          if (index % stride === 0) {
+            const label = el("span", "", "#" + (index + 1));
+            label.style.width =
+              Math.min(stride, ranges.length - index) *
+                project.exportSettings.segmentInterval *
+                zoom +
+              "px";
+            mark.append(label);
+          }
+          indices.append(mark);
+        });
+      } catch {}
+      content.append(indices);
+    }
     addTrackRow(M.layer(project, "main"), M.mainItems(project), 0);
-    const tops = el("div", "group-heading");
-    tops.append(el("span", "", "Things on top"));
-    content.append(tops);
-    for (const track of project.layers
-      .filter((l) => l.kind !== "sound" && l.id !== "main")
-      .sort((a, b) => a.order - b.order))
-      addTrackRow(
-        track,
-        project.items.filter((i) => i.layerId === track.id),
-        0,
-      );
     const soundGroup = el("div", "group-heading"),
       soundHeading = el("span", "", "Sound");
     soundHeading.append(
@@ -8766,7 +9166,10 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
     content.append(soundGroup);
     if (soundExpanded) {
       for (const track of project.layers
-        .filter((l) => l.kind === "sound")
+        .filter(
+          (l) =>
+            l.kind === "sound" && project.items.some((i) => i.layerId === l.id),
+        )
         .sort((a, b) => a.order - b.order)) {
         const packed = [];
         for (const sound of project.items
@@ -8785,6 +9188,17 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
         packed.forEach((list, index) => addTrackRow(track, list, index));
       }
     }
+    const tops = el("div", "group-heading");
+    tops.append(el("span", "", "Things on top"));
+    content.append(tops);
+    for (const track of project.layers
+      .filter((l) => l.kind !== "sound" && l.id !== "main")
+      .sort((a, b) => a.order - b.order))
+      addTrackRow(
+        track,
+        project.items.filter((i) => i.layerId === track.id),
+        0,
+      );
     if (!project.items.length)
       content.append(
         el(
@@ -8803,10 +9217,21 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
           project.duration,
           project.exportSettings.segmentInterval,
           project.exportSettings.fps,
-        ).slice(1)) {
+        )
+          .slice(1)
+          .filter(
+            (_, index) =>
+              (index + 1) %
+                Math.max(
+                  1,
+                  Math.ceil(
+                    36 / (project.exportSettings.segmentInterval * zoom),
+                  ),
+                ) ===
+              0,
+          )) {
           const mark = el("div", "segment-cut");
           mark.style.left = 140 + range.start * zoom + "px";
-          mark.append(el("span", "", time(range.start)));
           content.append(mark);
         }
       } catch {}
@@ -8818,6 +9243,10 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
         "track-row" + (track.kind === "sound" ? " audio-row" : ""),
       );
       line.dataset.layerId = track.id;
+      line.addEventListener("pointerdown", (event) => {
+        if (event.target !== line) return;
+        beginScrub(event);
+      });
       line.addEventListener("dragover", (event) => {
         if ([...event.dataTransfer.types].includes("application/x-utv-asset"))
           event.preventDefault();
@@ -8854,13 +9283,40 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
         renderStepper();
       });
       const head = el("div", "track-heading");
+      const enabled = track.visible && (track.kind !== "sound" || !track.muted);
+      const toggle = B(
+        "toggleTrack",
+        (enabled ? "Disable " : "Enable ") + track.name + " track",
+        () => {
+          engine.stop();
+          edit(
+            () => {
+              track.visible = !enabled;
+              if (track.kind === "sound") track.muted = enabled;
+            },
+            track.name + (enabled ? " disabled" : " enabled"),
+            { context: true },
+          );
+        },
+        {
+          disabled: exporting,
+          className: enabled ? "track-toggle is-active" : "track-toggle",
+          wrapperClass: "track-toggle-control",
+        },
+      );
+      toggle.firstElementChild.textContent = enabled ? "On" : "Off";
+      toggle.firstElementChild.setAttribute("aria-pressed", String(enabled));
+      toggle.firstElementChild.dataset.trackToggle = track.id;
       head.append(
         el("span", "track-name", track.name + (lane ? " " + (lane + 1) : "")),
-        B(
-          "layerSettings",
-          "Settings for " + track.name,
-          () => layerDialog(track.id),
-          { symbol: "⋯" },
+        row(
+          toggle,
+          B(
+            "layerSettings",
+            "Settings for " + track.name,
+            () => layerDialog(track.id),
+            { symbol: "⋯" },
+          ),
         ),
       );
       line.append(head);
@@ -8871,7 +9327,9 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
             "timeline-item item-" +
               entry.kind +
               (selectedId === entry.id ? " is-selected" : "") +
-              (!entry.enabled || !track.visible ? " is-disabled" : ""),
+              (!entry.enabled || !enabled || entry.audio?.muted
+                ? " is-disabled"
+                : ""),
           );
         card.dataset.itemId = entry.id;
         card.tabIndex = 0;
@@ -8884,7 +9342,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
         H.attach(card, "selectItem");
         card.style.left = 140 + entry.start * zoom + "px";
         card.style.width = Math.max(14, M.span(entry) * zoom) + "px";
-        if (source?.thumbnail) {
+        if (source?.thumbnail && entry.kind !== "audio") {
           const poster = el("div", "clip-poster");
           poster.style.backgroundImage = 'url("' + source.thumbnail + '")';
           card.append(poster);
@@ -8900,26 +9358,39 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
                 : ""),
           ),
         );
-        if (
+        if (entry.kind === "audio") {
+          const channels =
+            entry.audio.sourceChannel && entry.audio.channelMode === "leftOnly"
+              ? ["left"]
+              : entry.audio.sourceChannel &&
+                  entry.audio.channelMode === "rightOnly"
+                ? ["right"]
+                : ["left", "right"];
+          const waves = el("div", "clip-channels");
+          for (const channel of channels) {
+            const lane = el("div", "clip-channel");
+            lane.dataset.channel = channel;
+            lane.append(el("span", "", channel === "left" ? "L" : "R"));
+            const wave = el("canvas");
+            wave.setAttribute(
+              "aria-label",
+              channel === "left" ? "Left ear waveform" : "Right ear waveform",
+            );
+            wave.style.width = Math.max(1, M.span(entry) * zoom - 46) + "px";
+            drawWaveform(wave, source, entry, 1, channel);
+            lane.append(wave);
+            waves.append(lane);
+          }
+          card.append(waves);
+        } else if (
           source?.waveform?.length &&
-          (entry.kind === "audio" ||
-            (entry.kind === "video" && source.hasAudio !== false))
+          entry.kind === "video" &&
+          source.hasAudio !== false
         ) {
           const wave = el("canvas", "clip-waveform");
           wave.style.width = Math.max(20, M.span(entry) * zoom - 4) + "px";
-          drawWaveform(wave, source, entry.kind === "audio" ? entry : null);
+          drawWaveform(wave, source);
           card.append(wave);
-          if (entry.kind === "video") {
-            const badge = el(
-              "span",
-              "clip-time",
-              entry.linkEnabled ? "↔ Sound linked" : "♪ Original sound",
-            );
-            badge.style.position = "absolute";
-            badge.style.right = "4px";
-            badge.style.bottom = "0";
-            card.append(badge);
-          }
         }
         for (const fx of entry.effects.filter((f) => f.enabled)) {
           const strip = el("div", "effect-strip");
@@ -9119,6 +9590,13 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
         showDragReadout(event, error.message);
       }
       const viewport = $("timelineViewport").getBoundingClientRect();
+      if (event.clientY > viewport.bottom - 28)
+        $("timelineViewport").scrollTop += 12;
+      if (event.clientY < viewport.top + (showCuts ? 80 : 56))
+        $("timelineViewport").scrollTop = Math.max(
+          0,
+          $("timelineViewport").scrollTop - 12,
+        );
       if (event.clientX > viewport.right - 30)
         $("timelineViewport").scrollLeft += 12;
       if (event.clientX < viewport.left + 160)
@@ -10144,15 +10622,12 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
   function audioControls(value, locked) {
     const a = value.audio,
       source = M.asset(project, value.assetId),
-      desktop = root.matchMedia("(min-width: 1100px)").matches,
       waves = el("div", "audio-waveforms"),
       canvases = [];
-    for (const [channel, label] of desktop
-      ? [
-          ["left", "L — Left"],
-          ["right", "R — Right"],
-        ]
-      : [[null, "Sound waveform"]]) {
+    for (const [channel, label] of [
+      ["left", "L — Left"],
+      ["right", "R — Right"],
+    ]) {
       const lane = el("div", "audio-waveform-lane"),
         wave = el("canvas", "waveform-large");
       wave.setAttribute("aria-label", label + " output waveform");
@@ -10169,7 +10644,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
         drawWaveform(wave, source, value, waveZoom, channel),
       );
     drawWaves();
-    if (desktop && !source?.waveformLeft?.length)
+    if (!source?.waveformLeft?.length)
       waves.append(
         el(
           "small",
@@ -10180,7 +10655,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
       );
     const routing = el("div", "audio-routing"),
       presets = el("div", "button-row");
-    if (desktop) {
+    {
       for (const [mode, help, label] of [
         ["stereo", "channelStereo", "Stereo"],
         ["leftOnly", "channelLeft", "Left only"],
@@ -10249,7 +10724,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
     const basic = group(
       "Sound",
       waves,
-      desktop ? routing : null,
+      routing,
       range(
         "Volume (%)",
         "volume",
@@ -10322,36 +10797,6 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
       details(
         "More sound settings",
         fades,
-        !desktop
-          ? range(
-              "Left channel (%)",
-              "leftGain",
-              a.leftGain * 100,
-              0,
-              200,
-              1,
-              setter((v) => {
-                a.leftGain = v / 100;
-                a.channelMode = "custom";
-              }, "Left channel changed"),
-              { disabled: locked },
-            )
-          : null,
-        !desktop
-          ? range(
-              "Right channel (%)",
-              "rightGain",
-              a.rightGain * 100,
-              0,
-              200,
-              1,
-              setter((v) => {
-                a.rightGain = v / 100;
-                a.channelMode = "custom";
-              }, "Right channel changed"),
-              { disabled: locked },
-            )
-          : null,
         check(
           "Preserve pitch",
           "preservePitch",
@@ -12373,6 +12818,14 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
         return;
       }
       if (exporting) return;
+      if (command && ["c", "v"].includes(event.key.toLowerCase())) {
+        if (event.key.toLowerCase() === "c" ? selected() : segmentClipboard) {
+          event.preventDefault();
+          event.key.toLowerCase() === "c" ? copySelected() : pasteSelected();
+        }
+        return;
+      }
+      if (command) return;
       if (event.code === "Space") {
         event.preventDefault();
         engine.playing ? engine.stop() : engine.play().catch(report);
@@ -12430,6 +12883,22 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
       store.flush().catch(() => {});
     });
     new ResizeObserver(resizePreview).observe($("stageViewport"));
+    const headerSize = new ResizeObserver(() => {
+      document.documentElement.style.setProperty(
+        "--studio-header-height",
+        $("topbar").offsetHeight + $("workflowStepper").offsetHeight + "px",
+      );
+    });
+    headerSize.observe($("topbar"));
+    headerSize.observe($("workflowStepper"));
+    let timelineWidth = 0;
+    new ResizeObserver(() => {
+      const width = $("timelineViewport").clientWidth;
+      if (width !== timelineWidth) {
+        timelineWidth = width;
+        renderTimeline();
+      }
+    }).observe($("timelineViewport"));
   }
   async function boot() {
     await root.UTStudio.Export.loadFormats();

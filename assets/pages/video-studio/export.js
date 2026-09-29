@@ -353,6 +353,8 @@
                 (pcm.right[index + 1] || 0) * fraction;
             }
             if (gainStart.mono) a = b = (a + b) / 2;
+            else if (gainStart.sourceChannel === "left") b = a;
+            else if (gainStart.sourceChannel === "right") a = b;
             left[offset + j] +=
               a *
               (gainStart.left + ((gainEnd.left - gainStart.left) * j) / size);

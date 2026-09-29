@@ -3,10 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "test": "node --test model.test.cjs linked-edits.test.cjs playback.test.cjs media-frames.test.cjs archive.test.cjs static.test.cjs",
+    "test": "node --test model.test.cjs ear-editing.test.cjs linked-edits.test.cjs playback.test.cjs media-frames.test.cjs archive.test.cjs static.test.cjs",
     "test:browser": "node run-browser.cjs core.html && node run-browser.cjs render.html && node run-browser.cjs ui.html && node run-browser.cjs advanced.html && node run-browser.cjs controls.html && node run-browser.cjs gestures.html && node run-browser.cjs regressions.html && node run-browser.cjs review.html && node run-browser.cjs touch.html && node run-browser.cjs offline.html && node run-browser.cjs tools.html",
     "test:long-playback": "node run-browser.cjs long-playback.html",
     "test:desktop-review": "node run-browser.cjs review.html",
+    "test:firefox-ears": "node firefox-ears.cjs",
     "test:stereo-segments": "node run-browser.cjs routing.html && node verify-routing-export.cjs",
     "test:release": "node run-browser.cjs release.html && node verify-release-export.cjs",
     "check:help": "tsc --noEmit --allowJs --checkJs --target ES2022 --lib ES2022,DOM ../../assets/pages/video-studio/help.js"
@@ -15,6 +16,7 @@
     "esbuild": "0.28.2",
     "mediabunny": "1.56.2",
     "prettier": "3.6.2",
+    "puppeteer-core": "25.12.0",
     "soundtouchjs": "0.3.0",
     "typescript": "7.0.2"
   }

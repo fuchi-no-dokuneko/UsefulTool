@@ -342,7 +342,9 @@
       layerId = api.selectedItem.layerId;
     click("moveBehind");
     click("moveFront");
-    const layerButton = q(`[data-layer-id="${layerId}"] .track-heading button`);
+    const layerButton = q(
+      `[data-layer-id="${layerId}"] .track-heading button[data-help-id="layerSettings"]`,
+    );
     layerButton.click();
     set("renameLayer", "Captions", "#studioDialog");
     set("showLayer", false, "#studioDialog");

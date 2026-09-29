@@ -46,7 +46,8 @@
     right.connect(merge, 0, 1);
     merge.connect(destination);
     left.gain.value = right.gain.value = 0;
-    let downmixed = false;
+    let downmixed = false,
+      sourceChannel = "stereo";
     return {
       source,
       upmix,
@@ -57,6 +58,13 @@
       right,
       merge,
       apply(routing, time = c.currentTime) {
+        const channel = routing.sourceChannel || "stereo";
+        if (channel !== sourceChannel) {
+          split.disconnect();
+          split.connect(left, channel === "right" ? 1 : 0);
+          split.connect(right, channel === "left" ? 0 : 1);
+          sourceChannel = channel;
+        }
         if (routing.mono !== downmixed) {
           upmix.disconnect();
           upmix.connect(routing.mono ? mono : split);

@@ -57,11 +57,13 @@
     const mode = audio.channelMode ?? "stereo";
     const left = mode === "rightOnly" ? 0 : audio.leftGain ?? 1;
     const right = mode === "leftOnly" ? 0 : audio.rightGain ?? 1;
-    // A single output always carries both source channels, including custom
-    // one-ear gains. With both custom outputs enabled, preserve source stereo.
-    const mono = mode === "leftOnly" || mode === "rightOnly" ||
-      (mode === "custom" && (left === 0 || right === 0));
-    return { left, right, mono };
+    // Ordinary one-ear routing downmixes both source channels. Decoupled ears
+    // explicitly select a source channel and retain it when output gains change.
+    const sourceChannel = audio.sourceChannel || "stereo";
+    const mono = sourceChannel === "mono" || (sourceChannel === "stereo" &&
+      (mode === "leftOnly" || mode === "rightOnly" ||
+      (mode === "custom" && (left === 0 || right === 0))));
+    return { left, right, mono, ...(sourceChannel === "stereo" ? {} : { sourceChannel }) };
   }
   function setChannelMode(value, mode) {
     if (!value?.audio || !["stereo", "leftOnly", "rightOnly", "custom"].includes(mode)) return;
@@ -125,6 +127,7 @@
     });
     let time = 0;
     for (const value of mainItems(project)) {
+      time += Math.max(0, value.gapBefore || 0);
       const duration = span(value), previousStart = value.start;
       const tr = project.transitions.find((t) => t.toId === value.id);
       if (tr) {
@@ -219,6 +222,91 @@
       sibling.linkEnabled = Boolean(enabled);
       sibling.linkIntent = enabled ? "linked" : "unlinked";
     }
+  }
+  function decoupleChannels(project, itemId) {
+    const selected = item(project, itemId);
+    const sound = selected?.kind === "video"
+      ? project.items.find(i => i.kind === "audio" && selected.linkedGroupId && i.linkedGroupId === selected.linkedGroupId)
+      : selected;
+    if (!sound?.audio || sound.audio.sourceChannel) throw new Error("Select a stereo sound or a video with original sound to decouple.");
+    if ([sound, ...related(project, sound)].some(i => isLocked(project, i))) throw new Error("Unlock the sound and its linked picture first.");
+    const parentTrack = layer(project, sound.layerId);
+    for (const channel of ["left", "right"]) if (layer(project, parentTrack.id + "-" + channel)?.locked)
+      throw new Error("Unlock the destination ear track first.");
+    const routing = audioRouting(sound.audio);
+    setLink(project, sound.id, false);
+    const right = copy(sound);
+    right.id = id("audio");
+    for (const [value, channel] of [[sound, "left"], [right, "right"]]) {
+      const trackId = parentTrack.id + "-" + channel;
+      if (!layer(project, trackId)) project.layers.push({ ...copy(parentTrack), id: trackId,
+        name: parentTrack.name + (channel === "left" ? " · L" : " · R"), order: parentTrack.order + (channel === "left" ? .1 : .2) });
+      value.layerId = trackId;
+      delete value.linkId; delete value.linkedGroupId;
+      value.linkEnabled = false;
+      value.linkIntent = "unlinked";
+      value.name += channel === "left" ? " · Left ear" : " · Right ear";
+      value.audio.sourceChannel = routing.mono ? "mono" : channel;
+      value.audio.channelMode = channel === "left" ? "leftOnly" : "rightOnly";
+      value.audio.leftGain = channel === "left" ? routing.left : 0;
+      value.audio.rightGain = channel === "right" ? routing.right : 0;
+      // Whole-movie mode pins start to zero; decoupled ears must move freely.
+      value.audio.wholeMovie = false;
+    }
+    project.items.push(right);
+    normalize(project);
+    return [sound, right];
+  }
+  function copySegment(project, itemId) {
+    const value = item(project, itemId);
+    if (!value) return null;
+    // Copying an audio segment never unexpectedly copies its picture.
+    const items = value.kind === "video" ? related(project, value) : [value];
+    return copy({ projectId: project.id, selectedId: value.id, items,
+      layers: project.layers.filter(l => items.some(i => i.layerId === l.id)) });
+  }
+  function pasteSegment(project, clipboard, start = project.playhead) {
+    if (!clipboard || clipboard.projectId !== project.id) throw new Error("Copy a segment in this project first.");
+    // Work on a draft so a locked ripple edit or occupied overlay is atomic.
+    const draft = copy(project), original = clipboard.items.find(i => i.id === clipboard.selectedId);
+    if (!original) throw new Error("Copy a segment first.");
+    const at = rounded(Math.max(0, finite(start))), group = id("link");
+    for (const entry of clipboard.items) {
+      if (entry.assetId && !asset(draft, entry.assetId)) throw new Error("The copied media is no longer available.");
+      if (!layer(draft, entry.layerId)) draft.layers.push(copy(clipboard.layers.find(l => l.id === entry.layerId)));
+      if (layer(draft, entry.layerId).locked) throw new Error("Unlock the destination layer before pasting.");
+    }
+    let insertAt, gap = 0;
+    if (original.layerId === "main") {
+      if (draft.transitions.some(tr => at > item(draft, tr.toId).start && at < item(draft, tr.fromId).end))
+        throw new Error("Move the playhead outside the transition before pasting.");
+      const containing = mainItems(draft).find(i => at > i.start + 1e-7 && at < i.end - 1e-7);
+      if (containing) {
+        if (isLocked(draft, containing) || !splitItem(draft, containing.id, at)) throw new Error("Choose an unlocked position at least one frame from the clip edge.");
+      }
+      const ordered = mainItems(draft);
+      insertAt = ordered.findIndex(i => i.start >= at - 1e-7);
+      if (insertAt < 0) insertAt = ordered.length;
+      gap = Math.max(0, at - (ordered[insertAt - 1]?.end || 0));
+      if (ordered[insertAt]) ordered[insertAt].gapBefore = Math.max(0, ordered[insertAt].start - at);
+    }
+    let result;
+    for (const entry of clipboard.items) {
+      const dupe = copy(entry), delta = at - original.start;
+      dupe.id = id(dupe.kind); dupe.start = rounded(entry.start + delta); dupe.end = rounded(entry.end + delta);
+      dupe.locked = false;
+      if (dupe.kind === "video" && dupe.layerId !== "main" && draft.items.some(i => i.kind === "video" && i.layerId === dupe.layerId && i.start < dupe.end && i.end > dupe.start))
+        throw new Error("This overlay track is occupied. Choose an empty position before pasting.");
+      if (clipboard.items.length > 1 && dupe.linkEnabled) dupe.linkId = dupe.linkedGroupId = group;
+      else { delete dupe.linkId; delete dupe.linkedGroupId; dupe.linkEnabled = false; }
+      if (dupe.audio) dupe.audio.wholeMovie = false;
+      if (dupe.layerId === "main") { dupe.gapBefore = gap; draft.mainOrder.splice(insertAt, 0, dupe.id); }
+      draft.items.push(dupe);
+      if (entry.id === original.id) result = dupe;
+    }
+    original.layerId === "main" ? reflow(draft) : normalize(draft);
+    Object.assign(project, draft);
+    return result;
   }
   function legacyLinkCandidates(project) {
     return project.items.filter(video => {
@@ -333,6 +421,7 @@
     const rightGroup = id("link"); let result;
     for (const sibling of siblings) {
       const right = copy(sibling), offset = time - sibling.start;
+      if (right.layerId === "main") right.gapBefore = 0;
       right.id = id(sibling.kind); right.start = rounded(time); sibling.end = rounded(time);
       if (sibling.kind === "video" || sibling.kind === "audio") {
         const sourceTime = sourceTimeAt(sibling, time);
@@ -364,6 +453,7 @@
     const group = id("link"); let result;
     for (const sibling of siblings) {
       const dupe = copy(sibling); dupe.id = id(sibling.kind); dupe.start = sibling.end; dupe.end = dupe.start + span(sibling);
+      if (dupe.layerId === "main") dupe.gapBefore = 0;
       if (!["video", "audio"].includes(dupe.kind) && dupe.layerId !== "main") {
         const track = copy(layer(project, dupe.layerId));
         track.id = id("layer"); track.order += .1; project.layers.push(track); dupe.layerId = track.id;
@@ -483,7 +573,7 @@
   function audioGains(project, value, time) {
     const gain = value.audio.volume * fadeAt(value, time, true) * (project.soundBalance[value.audio.category] ?? 1);
     const routing = audioRouting(value.audio);
-    return { left: gain * routing.left, right: gain * routing.right, mono: routing.mono };
+    return { ...routing, left: gain * routing.left, right: gain * routing.right };
   }
   const MAX_AUDIO_SOURCES = 3;
   function audioConflicts(project) {
@@ -616,6 +706,7 @@
       if (!Array.isArray(entry.effects) || !Array.isArray(entry.opacityKeys)) throw new Error("Missing effect data.");
       const track = layer(value, entry.layerId), source = asset(value, entry.assetId);
       fail(numeric(entry.zIndex) && ["enabled", "locked"].every(k => typeof entry[k] === "boolean"), "Invalid item state.");
+      if (entry.gapBefore !== undefined) fail(numeric(entry.gapBefore, 0), "Invalid timeline gap.");
       if (entry.kind === "video") fail(VIDEO_LAYERS.includes(entry.layerId) && source?.kind === "video", "Invalid video track or source.");
       if (entry.kind === "image") fail(source?.kind === "image" && track.kind !== "sound", "Invalid image source or track.");
       if (entry.kind === "audio") fail(track.kind === "sound" && ["audio", "video"].includes(source?.kind), "Invalid sound source or track.");
@@ -625,6 +716,7 @@
       fail(entry.opacityKeys.every(k => k && numeric(k.time, 0) && numeric(k.value, 0, 1) && ["linear", "smooth", "ease-in", "ease-out", "hold"].includes(k.easing)), "Invalid visibility curve.");
       fail(entry.effects.every(f => f && EFFECTS.includes(f.type) && numeric(f.amount, f.type === "hue" ? -360 : 0, f.type === "hue" ? 360 : 3) && numeric(f.start, 0) && numeric(f.end, f.start) && typeof f.enabled === "boolean"), "Invalid effect data.");
       if (entry.audio) {
+        if (entry.audio.sourceChannel !== undefined) fail(["stereo", "mono", "left", "right"].includes(entry.audio.sourceChannel), "Invalid source channel.");
         if (entry.audio.channelMode === undefined) entry.audio.channelMode = "stereo";
         for (const key of ["leftGain", "rightGain"]) if (entry.audio[key] === undefined) entry.audio[key] = 1;
         // Old projects allowed up to 200% per channel. Keep those saved values;
@@ -677,7 +769,7 @@
   }
   const api = { MIN, SCHEMA_VERSION, MAX_PIXELS, VIDEO_LAYERS, KINDS, EFFECTS, BLURS, TRANSITIONS, id, copy, clamp, finite, rounded, active, span, sourceSpan, minimumSpan,
     layer, asset, item, isLocked, mainItems, createProject, transform, baseItem, audioProps, normalize, reflow, addAsset, addMedia, addLayerItem,
-    related, setLink, moveItem, reorderMain, trimItem, setSpeed, splitItem, duplicateItem, deleteItem, transitionMaximum, setTransition, removeTransition,
+    related, setLink, decoupleChannels, copySegment, pasteSegment, moveItem, reorderMain, trimItem, setSpeed, splitItem, duplicateItem, deleteItem, transitionMaximum, setTransition, removeTransition,
     ease, curveAt, setKey, fadeAt, sourceTimeAt, setRepeat, snapTime, visibleItems, videoConflicts, MAX_AUDIO_SOURCES, audioConflicts, fixAudioConflicts, audioGains, evaluateFrame, evaluateAudio, applyOverlayPreset, addEffect,
     creditsHeight, updateCreditsDuration, fitTransform, segmentRanges, formatTime, exportDimensions, serialize, parseProject, History, visualEnd,
     legacyLinkCandidates, migrateProject, timelineCheckpoint, restoreTimeline, audioRouting, setChannelMode };

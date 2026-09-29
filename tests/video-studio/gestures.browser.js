@@ -53,11 +53,18 @@
     const card = q('.timeline-item[data-item-id="' + id + '"]');
     card.scrollIntoView({ block: "nearest" });
     const r = card.getBoundingClientRect(),
-      target = q('.track-row[data-layer-id="' + layer + '"]'),
-      tr = target.getBoundingClientRect();
+      target = q('.track-row[data-layer-id="' + layer + '"]');
     const x = r.left + r.width / 2,
       y = r.top + r.height / 2;
     pointer(card, "pointerdown", x, y);
+    // Sound lanes are expanded by default; scroll to reach the destination.
+    pointer(d, "pointermove", x, y + 20);
+    q('.track-row[data-layer-id="' + layer + '"]').scrollIntoView({
+      block: "nearest",
+    });
+    const tr = q(
+      '.track-row[data-layer-id="' + layer + '"]',
+    ).getBoundingClientRect();
     pointer(d, "pointermove", x + dx, tr.top + tr.height / 2);
     pointer(d, "pointerup", x + dx, tr.top + tr.height / 2);
   };
