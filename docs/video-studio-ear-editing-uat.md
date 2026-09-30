@@ -2,6 +2,8 @@
 
 September 28, 2026. Changes are confined to the video editor, its generated offline page, tests and this record.
 
+Follow-up: the [September 29 Firefox preview UAT](video-studio-preview-firefox-uat.md) reproduced and fixed preview switching after export, unavailable audio startup, and track switches stopping playback. Its checks assert actual moving preview pixels.
+
 | Request | Implemented behavior and evidence |
 | --- | --- |
 | Left/right sound in **Your movie** | Sound is expanded initially. Stereo segments display separate labelled L/R waveforms. Decoupled ears have independent named tracks. Firefox upload and media-library drop checks exercise the actual interface. |

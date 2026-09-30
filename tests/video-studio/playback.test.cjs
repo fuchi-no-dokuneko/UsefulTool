@@ -186,6 +186,60 @@ test("a slow incoming decoder cannot freeze the main playhead or existing sound"
   assert.equal(await playing, false);
 });
 
+test("unavailable audio keeps picture playback moving and retries on the next Play", async () => {
+  const h = harness();
+  h.engine.mixer.ready = async () => {
+    throw Object.assign(new Error("No output"), { name: "AudioOutputError" });
+  };
+  const silent = h.engine.play();
+  await h.advance(1000);
+  assert.equal(h.engine.audioUnavailable, true);
+  assert.ok(h.project.playhead >= 0.9);
+  assert.ok([...h.elements.values()].every((e) => e.item.kind === "video"));
+  h.engine.stop();
+  assert.equal(await silent, false);
+  h.engine.mixer.ready = async () => {};
+  const restored = h.engine.play();
+  await h.advance(500);
+  assert.equal(h.engine.audioUnavailable, false);
+  assert.ok(
+    [...h.elements.values()].some((e) => e.item.kind === "audio" && !e.paused),
+  );
+  h.engine.stop();
+  assert.equal(await restored, false);
+});
+
+test("recording never silently drops sound when audio startup fails", async () => {
+  const h = harness();
+  h.engine.mixer.ready = async () => {
+    throw Object.assign(new Error("No output"), { name: "AudioOutputError" });
+  };
+  const recording = h.engine.play({ recording: true });
+  await assert.rejects(recording, { name: "AudioOutputError" });
+  assert.equal(h.engine.playing, false);
+  assert.equal(h.calls.filter((c) => c.kind === "play").length, 0);
+});
+
+test("stopping during audio startup aborts it and a late resume cannot restart playback", async () => {
+  const h = harness();
+  let signal, resume;
+  h.engine.mixer.ready = (value) => {
+    signal = value;
+    return new Promise((resolve) => {
+      resume = resolve;
+    });
+  };
+  const playing = h.engine.play();
+  await h.drain();
+  h.engine.stop();
+  assert.equal(signal.aborted, true);
+  resume();
+  await h.advance(500);
+  assert.equal(await playing, false);
+  assert.equal(h.project.playhead, 0);
+  assert.equal(h.calls.length, 0);
+});
+
 test("correcting an audio clock does not pause or restart the audible stream", async () => {
   const h = harness((item, now) =>
     item.kind === "audio" && now >= 3000 ? 120 : 0,

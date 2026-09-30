@@ -7,10 +7,10 @@
     checks.push({ name, passed: Boolean(condition) });
     if (!condition) throw new Error(name);
   };
-  const wait = async (condition) => {
+  const wait = async (condition, timeout = 20000) => {
     const start = performance.now();
     while (!condition()) {
-      if (performance.now() - start > 20000)
+      if (performance.now() - start > timeout)
         throw new Error("Timed out waiting for the editor.");
       await new Promise((r) => setTimeout(r, 30));
     }
@@ -314,7 +314,8 @@
       Boolean(d.getElementById("exportProgress")) &&
         Boolean(d.getElementById("cancelButton")),
     );
-    await wait(() => !api.exporting && api.results.length > 0);
+    // Firefox's software VP9 encoder needs longer for the complete 1080p movie.
+    await wait(() => !api.exporting && api.results.length > 0, 120000);
     check(
       "the full Export video flow produces preview and Download video",
       Boolean(d.getElementById("downloadButton")) &&

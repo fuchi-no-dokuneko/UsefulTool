@@ -342,6 +342,7 @@
       $("previewCanvas"),
       onFrame,
       (state, error) => {
+        if (state === "preparing") showTimelinePreview();
         renderTransport();
         if (state === "error") report(error);
         if (state === "paused" && !exporting && !projectLoading)
@@ -423,11 +424,14 @@
       );
     updateSelectionBox();
   }
-  async function seekTo(value, duringLoad = false) {
-    if (projectLoading && !duringLoad) return;
+  function showTimelinePreview() {
     $("outputVideo").pause();
     $("outputVideo").hidden = true;
     $("previewCanvas").hidden = false;
+  }
+  async function seekTo(value, duringLoad = false) {
+    if (projectLoading && !duringLoad) return;
+    showTimelinePreview();
     const currentEngine = engine;
     const done = await engine.seek(value);
     if (currentEngine !== engine || done === false) return;
@@ -999,7 +1003,9 @@
         ? "Loading frame…"
         : engine.preparing
           ? "Preparing playback…"
-          : "";
+          : engine.audioUnavailable
+            ? "Audio unavailable · silent preview"
+            : "";
     // Keep pointer/focus targets mounted while decoder work finishes. Replacing
     // Play between pointerdown and pointerup would discard the user's click.
     if ($("playButton")) {
@@ -1868,7 +1874,7 @@
         "toggleTrack",
         (enabled ? "Disable " : "Enable ") + track.name + " track",
         () => {
-          engine.stop();
+          const wasPlaying = engine.playing;
           edit(
             () => {
               track.visible = !enabled;
@@ -1877,6 +1883,7 @@
             track.name + (enabled ? " disabled" : " enabled"),
             { context: true },
           );
+          if (!wasPlaying) return seekTo(project.playhead);
         },
         {
           disabled: exporting,

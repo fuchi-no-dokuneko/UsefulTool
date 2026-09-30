@@ -3826,11 +3826,18 @@ dialog::backdrop {
       this.chains = new Map();
       this.muted = false;
     }
-    async ready() {
+    async ready(signal) {
+      const unavailable = () =>
+        Object.assign(
+          new Error(
+            "Audio output did not start. Check the browser's audio output and press Play to retry.",
+          ),
+          { name: "AudioOutputError" },
+        );
+      signal?.throwIfAborted();
       if (!this.context) {
         const Context = root.AudioContext || root.webkitAudioContext;
-        if (!Context)
-          throw new Error("This browser does not provide audio mixing.");
+        if (!Context) throw unavailable();
         const context = (this.context = new Context());
         this.bus = context.createGain();
         this.bus.channelCount = 2;
@@ -3846,7 +3853,32 @@ dialog::backdrop {
         this.limiter.connect(this.analyser);
         this.analyser.fftSize = 256;
       }
-      if (this.context.state === "suspended") await this.context.resume();
+      if (this.context.state !== "running") {
+        const context = this.context;
+        // Firefox can leave resume() pending forever without an audio device.
+        // Bound startup and release cancelled playback immediately.
+        await new Promise((resolve, reject) => {
+          const finish = (error) => {
+            clearTimeout(timer);
+            context.removeEventListener("statechange", changed);
+            signal?.removeEventListener("abort", aborted);
+            error ? reject(error) : resolve();
+          };
+          const changed = () => {
+            if (context.state === "running") finish();
+            else if (context.state === "closed") finish(unavailable());
+          };
+          const aborted = () => finish(signal.reason);
+          const timer = setTimeout(() => finish(unavailable()), 2500);
+          context.addEventListener("statechange", changed);
+          signal?.addEventListener("abort", aborted, { once: true });
+          try {
+            context.resume().then(changed, () => finish(unavailable()));
+          } catch {
+            finish(unavailable());
+          }
+        });
+      }
       this.monitor.gain.value = this.muted ? 0 : 1;
       return this;
     }
@@ -6000,9 +6032,9 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
     get playing() {
       return Boolean(this.session);
     }
-    async prepare(project, time, signal) {
+    async prepare(project, time, signal, includeAudio = true) {
       const plan = M.evaluateFrame(project, time),
-        audio = M.evaluateAudio(project, time);
+        audio = includeAudio ? M.evaluateAudio(project, time) : [];
       const values = [
         ...plan.items.filter((e) => e.item.kind === "video"),
         ...audio,
@@ -6226,6 +6258,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
       for (const item of project.items) {
         if (
           !item.assetId ||
+          (item.kind === "audio" && !session.audioAvailable) ||
           !["video", "audio"].includes(item.kind) ||
           item.start <= time ||
           item.start > time + 1.5 ||
@@ -6278,7 +6311,9 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
         controller: new AbortController(),
         media: new Map(),
         nextWarm: start,
+        audioAvailable: true,
       };
+      this.audioUnavailable = false;
       this.session = session;
       const abort = () => {
         if (this.session === session) this.stop();
@@ -6304,7 +6339,9 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
             safeTime = Math.min(time, end - 1e-6);
           project.playhead = time;
           const frame = M.evaluateFrame(project, safeTime),
-            audio = M.evaluateAudio(project, safeTime);
+            audio = session.audioAvailable
+              ? M.evaluateAudio(project, safeTime)
+              : [];
           const entries = [
             ...frame.items.filter((e) => e.item.kind === "video"),
             ...audio,
@@ -6319,7 +6356,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
             }
           }
           this.warmUpcoming(session, project, safeTime);
-          this.mixer.apply(project, safeTime);
+          if (session.audioAvailable) this.mixer.apply(project, safeTime);
           if (
             time - lastFrame >= 1 / project.exportSettings.fps - 0.002 ||
             time >= end
@@ -6343,15 +6380,24 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
       };
       const initialize = async () => {
         this.onState("preparing");
-        await this.mixer.ready();
+        try {
+          await this.mixer.ready(session.controller.signal);
+        } catch (error) {
+          if (session.cancelled) return;
+          if (error.name !== "AudioOutputError" || options.recording)
+            throw error;
+          session.audioAvailable = false;
+          this.audioUnavailable = true;
+        }
         if (session.cancelled) return;
         const initial = await this.prepare(
           project,
           start,
           session.controller.signal,
+          session.audioAvailable,
         );
         if (session.cancelled) return;
-        this.mixer.apply(project, start);
+        if (session.audioAvailable) this.mixer.apply(project, start);
         await Promise.all(
           initial.map(async (e) => {
             const state = this.mediaState(session, e.item);
@@ -6373,7 +6419,14 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
       return completion;
     }
     async recordRange(start, end, onProgress = () => {}, signal, cache) {
-      return root.UTStudio.Export.record(this, start, end, onProgress, signal, cache);
+      return root.UTStudio.Export.record(
+        this,
+        start,
+        end,
+        onProgress,
+        signal,
+        cache,
+      );
     }
     async dispose() {
       this.stop();
@@ -7762,6 +7815,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
       $("previewCanvas"),
       onFrame,
       (state, error) => {
+        if (state === "preparing") showTimelinePreview();
         renderTransport();
         if (state === "error") report(error);
         if (state === "paused" && !exporting && !projectLoading)
@@ -7843,11 +7897,14 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
       );
     updateSelectionBox();
   }
-  async function seekTo(value, duringLoad = false) {
-    if (projectLoading && !duringLoad) return;
+  function showTimelinePreview() {
     $("outputVideo").pause();
     $("outputVideo").hidden = true;
     $("previewCanvas").hidden = false;
+  }
+  async function seekTo(value, duringLoad = false) {
+    if (projectLoading && !duringLoad) return;
+    showTimelinePreview();
     const currentEngine = engine;
     const done = await engine.seek(value);
     if (currentEngine !== engine || done === false) return;
@@ -8419,7 +8476,9 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
         ? "Loading frame…"
         : engine.preparing
           ? "Preparing playback…"
-          : "";
+          : engine.audioUnavailable
+            ? "Audio unavailable · silent preview"
+            : "";
     // Keep pointer/focus targets mounted while decoder work finishes. Replacing
     // Play between pointerdown and pointerup would discard the user's click.
     if ($("playButton")) {
@@ -9288,7 +9347,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
         "toggleTrack",
         (enabled ? "Disable " : "Enable ") + track.name + " track",
         () => {
-          engine.stop();
+          const wasPlaying = engine.playing;
           edit(
             () => {
               track.visible = !enabled;
@@ -9297,6 +9356,7 @@ Mediabunny was loaded twice. This will likely cause Mediabunny not to work corre
             track.name + (enabled ? " disabled" : " enabled"),
             { context: true },
           );
+          if (!wasPlaying) return seekTo(project.playhead);
         },
         {
           disabled: exporting,

@@ -82,11 +82,18 @@
       this.chains = new Map();
       this.muted = false;
     }
-    async ready() {
+    async ready(signal) {
+      const unavailable = () =>
+        Object.assign(
+          new Error(
+            "Audio output did not start. Check the browser's audio output and press Play to retry.",
+          ),
+          { name: "AudioOutputError" },
+        );
+      signal?.throwIfAborted();
       if (!this.context) {
         const Context = root.AudioContext || root.webkitAudioContext;
-        if (!Context)
-          throw new Error("This browser does not provide audio mixing.");
+        if (!Context) throw unavailable();
         const context = (this.context = new Context());
         this.bus = context.createGain();
         this.bus.channelCount = 2;
@@ -102,7 +109,32 @@
         this.limiter.connect(this.analyser);
         this.analyser.fftSize = 256;
       }
-      if (this.context.state === "suspended") await this.context.resume();
+      if (this.context.state !== "running") {
+        const context = this.context;
+        // Firefox can leave resume() pending forever without an audio device.
+        // Bound startup and release cancelled playback immediately.
+        await new Promise((resolve, reject) => {
+          const finish = (error) => {
+            clearTimeout(timer);
+            context.removeEventListener("statechange", changed);
+            signal?.removeEventListener("abort", aborted);
+            error ? reject(error) : resolve();
+          };
+          const changed = () => {
+            if (context.state === "running") finish();
+            else if (context.state === "closed") finish(unavailable());
+          };
+          const aborted = () => finish(signal.reason);
+          const timer = setTimeout(() => finish(unavailable()), 2500);
+          context.addEventListener("statechange", changed);
+          signal?.addEventListener("abort", aborted, { once: true });
+          try {
+            context.resume().then(changed, () => finish(unavailable()));
+          } catch {
+            finish(unavailable());
+          }
+        });
+      }
       this.monitor.gain.value = this.muted ? 0 : 1;
       return this;
     }

@@ -33,9 +33,9 @@
     get playing() {
       return Boolean(this.session);
     }
-    async prepare(project, time, signal) {
+    async prepare(project, time, signal, includeAudio = true) {
       const plan = M.evaluateFrame(project, time),
-        audio = M.evaluateAudio(project, time);
+        audio = includeAudio ? M.evaluateAudio(project, time) : [];
       const values = [
         ...plan.items.filter((e) => e.item.kind === "video"),
         ...audio,
@@ -259,6 +259,7 @@
       for (const item of project.items) {
         if (
           !item.assetId ||
+          (item.kind === "audio" && !session.audioAvailable) ||
           !["video", "audio"].includes(item.kind) ||
           item.start <= time ||
           item.start > time + 1.5 ||
@@ -311,7 +312,9 @@
         controller: new AbortController(),
         media: new Map(),
         nextWarm: start,
+        audioAvailable: true,
       };
+      this.audioUnavailable = false;
       this.session = session;
       const abort = () => {
         if (this.session === session) this.stop();
@@ -337,7 +340,9 @@
             safeTime = Math.min(time, end - 1e-6);
           project.playhead = time;
           const frame = M.evaluateFrame(project, safeTime),
-            audio = M.evaluateAudio(project, safeTime);
+            audio = session.audioAvailable
+              ? M.evaluateAudio(project, safeTime)
+              : [];
           const entries = [
             ...frame.items.filter((e) => e.item.kind === "video"),
             ...audio,
@@ -352,7 +357,7 @@
             }
           }
           this.warmUpcoming(session, project, safeTime);
-          this.mixer.apply(project, safeTime);
+          if (session.audioAvailable) this.mixer.apply(project, safeTime);
           if (
             time - lastFrame >= 1 / project.exportSettings.fps - 0.002 ||
             time >= end
@@ -376,15 +381,24 @@
       };
       const initialize = async () => {
         this.onState("preparing");
-        await this.mixer.ready();
+        try {
+          await this.mixer.ready(session.controller.signal);
+        } catch (error) {
+          if (session.cancelled) return;
+          if (error.name !== "AudioOutputError" || options.recording)
+            throw error;
+          session.audioAvailable = false;
+          this.audioUnavailable = true;
+        }
         if (session.cancelled) return;
         const initial = await this.prepare(
           project,
           start,
           session.controller.signal,
+          session.audioAvailable,
         );
         if (session.cancelled) return;
-        this.mixer.apply(project, start);
+        if (session.audioAvailable) this.mixer.apply(project, start);
         await Promise.all(
           initial.map(async (e) => {
             const state = this.mediaState(session, e.item);
@@ -406,7 +420,14 @@
       return completion;
     }
     async recordRange(start, end, onProgress = () => {}, signal, cache) {
-      return root.UTStudio.Export.record(this, start, end, onProgress, signal, cache);
+      return root.UTStudio.Export.record(
+        this,
+        start,
+        end,
+        onProgress,
+        signal,
+        cache,
+      );
     }
     async dispose() {
       this.stop();
