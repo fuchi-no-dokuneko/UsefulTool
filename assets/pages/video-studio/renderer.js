@@ -4,7 +4,7 @@
   const { Model: M, Media } = root.UTStudio;
   const canvas = Media.makeCanvas;
   const clear = (c) => {
-    const ctx = c.getContext("2d");
+    const ctx = Media.prepareCanvas(c).getContext("2d");
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";

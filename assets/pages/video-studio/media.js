@@ -88,7 +88,17 @@
     } else if (element.seeking) await waitMedia(element, "seeked", 20000, signal);
     await waitMedia(element, "loadeddata", 20000, signal);
   }
-  function makeCanvas(width, height) { const c = document.createElement("canvas"); c.width = width; c.height = height; return c; }
+  const userAgent = root.navigator?.userAgent || "";
+  const softwareCanvas = /Firefox\//.test(userAgent) && /Linux|X11/.test(userAgent) && !/Android/.test(userAgent);
+  function prepareCanvas(c) {
+    // Firefox/Linux can retain readable pixels while an accelerated canvas is
+    // not presented. Select its software backing before the FIRST getContext:
+    // setting this on an existing context cannot change its allocation.
+    // Apply it to scratch surfaces and UI waveforms too, not only the preview.
+    if (softwareCanvas) c.getContext("2d", { willReadFrequently: true });
+    return c;
+  }
+  function makeCanvas(width, height) { const c = document.createElement("canvas"); c.width = width; c.height = height; return prepareCanvas(c); }
   function poster(source, width, height) {
     const c = makeCanvas(160, Math.max(1, Math.round(160 * height / width)));
     c.getContext("2d").drawImage(source, 0, 0, c.width, c.height);
@@ -364,6 +374,6 @@
       this.elements.clear(); this.assets.clear();
     }
   }
-  root.UTStudio.Media = { SHA256, hashFile, fileKind, waitMedia, seek, makeCanvas, MediaLibrary };
+  root.UTStudio.Media = { SHA256, hashFile, fileKind, waitMedia, seek, prepareCanvas, makeCanvas, MediaLibrary };
   if (typeof module !== "undefined") module.exports = root.UTStudio.Media;
 })(globalThis);

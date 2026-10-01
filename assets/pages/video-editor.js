@@ -14,6 +14,7 @@
   const $ = (id) => document.getElementById(id);
   const el = (tag, cls = "", text = "") => {
     const node = document.createElement(tag);
+    if (tag === "canvas") Media.prepareCanvas(node);
     if (cls) node.className = cls;
     if (text !== undefined && text !== "") node.textContent = text;
     return node;
@@ -332,6 +333,7 @@
     $("previewCanvas").hidden = false;
   }
   function setupEngine() {
+    Media.prepareCanvas($("previewCanvas"));
     renderer = new Renderer(library);
     mixer = new Audio.AudioMixer(library);
     engine = new Engine(

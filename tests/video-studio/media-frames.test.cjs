@@ -4,6 +4,84 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 const path = require("node:path");
 
+function canvasHarness(userAgent) {
+  const created = [];
+  const context = {
+    navigator: { userAgent },
+    UTStudio: { Model: {} },
+    document: {
+      createElement() {
+        // Like a browser, the first context request fixes its attributes.
+        let attributes;
+        const canvas = {
+          getContext(type, options) {
+            attributes ??= { willReadFrequently: false, ...options };
+            return { getContextAttributes: () => attributes };
+          },
+        };
+        created.push(canvas);
+        return canvas;
+      },
+    },
+  };
+  vm.runInNewContext(
+    fs.readFileSync(
+      path.resolve(__dirname, "../../assets/pages/video-studio/media.js"),
+      "utf8",
+    ),
+    context,
+  );
+  return { media: context.UTStudio.Media, created };
+}
+
+test("Linux Firefox selects software backing before a canvas is first drawn", () => {
+  const { media } = canvasHarness(
+    "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:153.0) Gecko/20100101 Firefox/153.0",
+  );
+  const canvas = media.makeCanvas(704, 1280);
+  assert.equal(canvas.width, 704);
+  assert.equal(canvas.height, 1280);
+  assert.equal(
+    canvas.getContext("2d").getContextAttributes().willReadFrequently,
+    true,
+  );
+  canvas.width = 352;
+  assert.equal(
+    canvas.getContext("2d").getContextAttributes().willReadFrequently,
+    true,
+  );
+  const output = canvasHarness("").media.makeCanvas(704, 1280);
+  assert.equal(media.prepareCanvas(output), output);
+  assert.equal(
+    output.getContext("2d").getContextAttributes().willReadFrequently,
+    true,
+  );
+});
+
+test("canvas compatibility leaves other browsers and explicit readback choices unchanged", () => {
+  for (const userAgent of [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:153.0) Gecko/20100101 Firefox/153.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X; rv:153.0) Gecko/20100101 Firefox/153.0",
+    "Mozilla/5.0 (Android 15; Mobile; rv:153.0) Gecko/153.0 Firefox/153.0",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36",
+    "",
+  ]) {
+    const { media } = canvasHarness(userAgent);
+    assert.equal(
+      media.makeCanvas(100, 100).getContext("2d").getContextAttributes()
+        .willReadFrequently,
+      false,
+    );
+    assert.equal(
+      media
+        .makeCanvas(100, 100)
+        .getContext("2d", { willReadFrequently: true })
+        .getContextAttributes().willReadFrequently,
+      true,
+    );
+  }
+});
+
 function harness({ snapshots = true, bitmaps = true } = {}) {
   const pending = [],
     frames = [],

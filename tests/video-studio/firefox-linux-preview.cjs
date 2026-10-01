@@ -13,6 +13,7 @@ const reports = path.join(
 );
 fs.mkdirSync(reports, { recursive: true });
 const fixture = path.join(reports, "hd.mp4");
+const portrait = path.join(reports, "portrait.mp4");
 if (!fs.existsSync(fixture))
   execFileSync("ffmpeg", [
     "-v",
@@ -36,6 +37,23 @@ if (!fs.existsSync(fixture))
     "aac",
     "-shortest",
     fixture,
+  ]);
+if (!fs.existsSync(portrait))
+  execFileSync("ffmpeg", [
+    "-v",
+    "error",
+    "-y",
+    "-f",
+    "lavfi",
+    "-i",
+    "testsrc2=size=704x1280:rate=30:duration=4",
+    "-c:v",
+    "libx264",
+    "-preset",
+    "ultrafast",
+    "-pix_fmt",
+    "yuv420p",
+    portrait,
   ]);
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://localhost");
@@ -170,7 +188,9 @@ async function scenario(name, url) {
         window.VideoFrame = undefined;
       }
     }, name);
-    await (await page.$("#videoFiles")).uploadFile(fixture);
+    await (
+      await page.$("#videoFiles")
+    ).uploadFile(name === "presentation" ? portrait : fixture);
     await page.waitForFunction(() =>
       UsefulToolVideoEditor.project.items.some((i) => i.kind === "video"),
     );
@@ -184,6 +204,88 @@ async function scenario(name, url) {
       )
       .catch(() => {});
     await delay(100);
+    if (name === "presentation") {
+      await page.bringToFront();
+      const surfaces = await page.evaluate(() => {
+        const api = UsefulToolVideoEditor;
+        return [
+          ...document.querySelectorAll("canvas"),
+          ...api.renderer.buffers.values(),
+        ].map((c) => ({
+          name: c.id || c.className || "compositor buffer",
+          software: c.getContext("2d").getContextAttributes()
+            .willReadFrequently,
+        }));
+      });
+      check(
+        "Linux Firefox initializes every preview and UI canvas in software",
+        surfaces.length > 3 && surfaces.every((s) => s.software),
+        surfaces,
+      );
+      // Read the displayed screenshot BEFORE any canvas pixel readback. A
+      // healthy getImageData result does not establish that Firefox presented it.
+      for (const deviceScaleFactor of [1, 0.8]) {
+        for (const [width, height] of [
+          [1280, 940],
+          [1280, 700],
+          [1280, 699],
+          [1280, 698],
+          [1102, 685],
+          [1101, 685],
+          [1100, 685],
+          [1099, 685],
+          [1098, 685],
+          [1024, 601],
+          [1024, 600],
+          [1024, 599],
+          [1024, 598],
+          [760, 600],
+        ]) {
+          await page.setViewport({
+            width: width + 1,
+            height: height + 1,
+            deviceScaleFactor,
+          });
+          await page.setViewport({ width, height, deviceScaleFactor });
+          await delay(150);
+          const clip = await page.$eval("#previewCanvas", (c) => {
+            const r = c.getBoundingClientRect();
+            return { x: r.x, y: r.y, width: r.width, height: r.height };
+          });
+          const file = path.join(
+            reports,
+            `presentation-${width}x${height}-${deviceScaleFactor}.png`,
+          );
+          await page.screenshot({
+            path: file,
+            clip,
+            captureBeyondViewport: false,
+          });
+          const pixels = execFileSync("ffmpeg", [
+            "-v",
+            "error",
+            "-i",
+            file,
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "pipe:1",
+          ]);
+          let colored = 0;
+          for (let i = 0; i < pixels.length; i += 3)
+            if (Math.max(pixels[i], pixels[i + 1], pixels[i + 2]) > 40)
+              colored++;
+          const fraction = colored / (pixels.length / 3);
+          check(
+            `portrait is visibly painted at ${width}x${height}, scale ${deviceScaleFactor}`,
+            fraction > 0.8,
+            { clip, colored: fraction },
+          );
+        }
+      }
+      return;
+    }
     const imported = await snapshot(page);
     await page.screenshot({ path: path.join(reports, name + "-import.png") });
     check(
@@ -327,7 +429,8 @@ async function scenario(name, url) {
     processes.add(browser.process().pid);
     version = await browser.version();
     for (const name of (
-      process.env.SCENARIOS || "normal,legacy,stalled,rejected,native"
+      process.env.SCENARIOS ||
+      "presentation,normal,legacy,stalled,rejected,native"
     ).split(","))
       await scenario(
         name,
