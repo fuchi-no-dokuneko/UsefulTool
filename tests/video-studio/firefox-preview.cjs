@@ -88,7 +88,7 @@ async function startBrowser(noAudio = false) {
     executablePath:
       process.env.FIREFOX_BINARY ||
       path.join(os.homedir(), "UAT-firefox/firefox/firefox"),
-    headless: true,
+    headless: process.env.FIREFOX_HEADED !== "1",
     defaultViewport: { width: 1440, height: 900 },
     protocolTimeout: 90000,
     env: noAudio

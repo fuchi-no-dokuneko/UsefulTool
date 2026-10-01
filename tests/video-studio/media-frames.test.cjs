@@ -7,8 +7,10 @@ const path = require("node:path");
 function harness({ snapshots = true, bitmaps = true } = {}) {
   const pending = [],
     frames = [],
-    callbacks = new Map();
+    callbacks = new Map(),
+    timers = new Map();
   let callbackId = 0;
+  let timerId = 0;
   class Element extends EventTarget {
     constructor() {
       super();
@@ -35,6 +37,13 @@ function harness({ snapshots = true, bitmaps = true } = {}) {
     DOMException,
     Event,
     URL,
+    setTimeout(fn) {
+      timers.set(++timerId, fn);
+      return timerId;
+    },
+    clearTimeout(id) {
+      timers.delete(id);
+    },
     document: { createElement: () => new Element() },
     createImageBitmap: bitmaps
       ? (source, options) =>
@@ -45,6 +54,7 @@ function harness({ snapshots = true, bitmaps = true } = {}) {
     VideoFrame: snapshots
       ? class {
           constructor(element) {
+            if (element.snapshotError) throw element.snapshotError;
             if (element.invalidSnapshot)
               throw new DOMException("Decoder handoff", "InvalidStateError");
             this.timestamp = element.presented * 1e6;
@@ -90,8 +100,103 @@ function harness({ snapshots = true, bitmaps = true } = {}) {
     callbacks,
     drain,
     complete,
+    expire() {
+      for (const fn of [...timers.values()]) fn();
+    },
   };
 }
+
+test("decoded video remains drawable while the first bitmap is still pending", async () => {
+  const h = harness(),
+    preparing = h.library.captureFrame(h.item);
+  await h.drain();
+  assert.equal(h.library.frameFor(h.item), h.element);
+  assert.equal(h.library.frameTimestamp(h.item), null);
+  h.complete();
+  await preparing;
+  h.library.dispose();
+});
+
+test("a stalled bitmap cannot block seeking or playback and late pixels are released", async () => {
+  const h = harness(),
+    preparing = h.library.captureFrame(h.item);
+  await h.drain();
+  let finished = false;
+  preparing.then(() => {
+    finished = true;
+  });
+  h.expire();
+  await h.drain();
+  assert.equal(finished, true, "frame preparation has a bounded wait");
+  assert.equal(h.frames[0].closed, true, "release the stalled GPU snapshot");
+  assert.equal(h.library.frameFor(h.item), h.element);
+  assert.equal(h.library.frames.get(h.item.id).pending, null);
+  await h.library.captureFrame(h.item);
+  assert.equal(
+    h.pending.length,
+    1,
+    "do not queue more work on a stalled converter",
+  );
+  const late = h.complete();
+  await h.drain();
+  assert.equal(late.closed, true);
+  assert.equal(h.library.frameFor(h.item), h.element);
+  h.library.dispose();
+});
+
+test("bitmap conversion failures cannot suppress a successfully decoded video", async () => {
+  const h = harness(),
+    preparing = h.library.captureFrame(h.item);
+  await h.drain();
+  h.pending[0].reject(new DOMException("Surface copy failed", "UnknownError"));
+  await preparing;
+  assert.equal(h.library.frameFor(h.item), h.element);
+  assert.equal(h.frames[0].closed, true);
+  h.library.dispose();
+});
+
+test("a VideoFrame surface failure falls back to the decoded video", async () => {
+  const h = harness();
+  h.element.snapshotError = new DOMException(
+    "Surface copy failed",
+    "UnknownError",
+  );
+  const preparing = h.library.captureFrame(h.item);
+  await h.drain();
+  assert.equal(h.pending[0].source, h.element);
+  const bitmap = h.complete();
+  await preparing;
+  assert.equal(h.library.frameFor(h.item), bitmap);
+  h.element.paused = false;
+  h.element.currentTime += 1;
+  assert.equal(
+    h.library.frameFor(h.item),
+    h.element,
+    "timestamp sampling cannot break the native fallback",
+  );
+  await h.drain();
+  h.complete(1);
+  await h.drain();
+  h.library.dispose();
+});
+
+test("an obsolete conversion timeout cannot disable a newer seek's bitmap", async () => {
+  const h = harness(),
+    old = h.library.captureFrame(h.item);
+  await h.drain();
+  h.element.presented = 20;
+  const latest = h.library.captureFrame(h.item);
+  await h.drain();
+  const current = h.complete(1);
+  await latest;
+  h.expire();
+  await h.drain();
+  assert.equal(h.library.frameFor(h.item), current);
+  const late = h.complete(0);
+  await old;
+  assert.equal(late.closed, true);
+  h.library.dispose();
+});
 
 test("prepared preview pixels retain the decoded frame time, independent of the media clock", async () => {
   const h = harness(),
@@ -174,7 +279,7 @@ test("cancelling frame preparation releases the caller immediately and discards 
   const late = h.complete();
   await h.drain();
   assert.equal(late.closed, true);
-  assert.equal(h.library.frameFor(h.item), null);
+  assert.equal(h.library.frameFor(h.item), h.element);
   assert.equal(h.frames[0].closed, true);
   h.library.dispose();
 });

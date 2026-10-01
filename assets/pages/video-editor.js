@@ -367,6 +367,9 @@
         availableWidth / size.width,
         availableHeight / size.height,
       );
+    // A hidden/collapsed viewport has no display size yet. Keep its decoded
+    // picture until ResizeObserver supplies a usable size again.
+    if (availableWidth <= 0 || availableHeight <= 0) return;
     const stage = $("stageMedia");
     stage.style.width = Math.max(1, size.width * scale) + "px";
     stage.style.height = Math.max(1, size.height * scale) + "px";

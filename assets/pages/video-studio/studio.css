@@ -1558,6 +1558,15 @@ dialog::backdrop {
     grid-template-rows: minmax(0, 1fr);
     min-height: 0;
   }
+  /* Cached pages from studio-3 still nest the timeline in this workspace.
+     Place both cards in the shell grid so the preview cannot collapse. */
+  .editor-workspace:has(> .timeline-card) {
+    display: contents;
+  }
+  .editor-workspace:has(> .timeline-card) > .preview-card {
+    grid-column: 2;
+    grid-row: 1;
+  }
   .preview-card {
     grid-template-rows: 40px minmax(0, 1fr) 48px;
   }
@@ -1576,7 +1585,8 @@ dialog::backdrop {
   }
 }
 @media (min-width: 760px) and (max-width: 1099px) {
-  .editor-workspace {
+  .editor-workspace,
+  .editor-workspace:has(> .timeline-card) > .preview-card {
     grid-column: 1;
   }
   .context-panel {

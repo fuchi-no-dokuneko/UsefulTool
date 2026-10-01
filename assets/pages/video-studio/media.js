@@ -220,10 +220,9 @@
       let frame = element;
       if (root.VideoFrame) {
         try { frame = new root.VideoFrame(element); }
-        catch (error) {
-          // During decoder handoff Chrome can report readyState >= 2 before
-          // a VideoFrame can be copied. The native bitmap path is still usable.
-          if (!["InvalidStateError", "NotSupportedError", "TypeError"].includes(error.name)) throw error;
+        catch {
+          // A ready decoder need not support copying its surface to VideoFrame.
+          // The HTMLVideoElement remains usable without this optimization.
         }
       }
       const at = frame === element ? timestamp ?? element.currentTime : frame.timestamp / 1e6;
@@ -239,18 +238,34 @@
       const bitmapOptions = resize ? { resizeWidth: Math.round(fullWidth * scale), resizeHeight: Math.round(fullHeight * scale) } : {};
       if (!force && state.bitmap && at === state.timestamp) { if (frame !== element) frame.close(); return; }
       const serial = ++state.serial;
-      // Transfer the decoded picture asynchronously. The compositor only reads
-      // completed bitmaps and never waits inside drawImage(video) during playback.
-      const operation = Promise.resolve().then(() => root.createImageBitmap(frame, bitmapOptions)).then(bitmap => {
+      // Prefer completed bitmaps to avoid synchronous video-surface transfers
+      // on the playback clock, retaining the native video as a fallback.
+      const closeFrame = () => { if (frame !== element) frame.close(); };
+      const conversion = Promise.resolve().then(() => root.createImageBitmap(frame, bitmapOptions)).then(bitmap => {
         if (state.disposed || serial !== state.serial) { bitmap.close(); return; }
         state.bitmap?.close(); state.bitmap = bitmap; state.timestamp = at; state.nativeFallback = false;
       }).catch(error => {
         if (state.disposed || serial !== state.serial) return;
-        if (error.name === "InvalidStateError") {
+        if (error?.name === "InvalidStateError") {
           state.bitmap?.close(); state.bitmap = null; state.nativeFallback = true;
-        } else if (["NotSupportedError", "TypeError"].includes(error.name)) state.fallback = true;
-        else throw error;
-      }).finally(() => { if (frame !== element) frame.close(); });
+        } else state.fallback = true;
+      }).finally(closeFrame);
+      // Bitmap conversion is a preview optimization, not a decoding requirement.
+      // A stalled GPU copy must not hold Engine.prepare (and the first paint)
+      // forever. Retire this converter and draw the decoded video directly.
+      let timer;
+      const expired = new Promise(resolve => {
+        timer = setTimeout(() => {
+          if (!state.disposed && serial === state.serial) {
+            state.serial++;
+            state.fallback = true;
+            state.bitmap?.close(); state.bitmap = null;
+          }
+          closeFrame();
+          resolve();
+        }, 250);
+      });
+      const operation = Promise.race([conversion, expired]).finally(() => clearTimeout(timer));
       state.pending = operation;
       operation.finally(() => { if (state.pending === operation) state.pending = null; }).catch(() => {});
       if (!signal) return operation;
@@ -258,6 +273,7 @@
       const stopped = new Promise((_, reject) => {
         abort = () => {
           if (serial === state.serial) state.serial++;
+          closeFrame();
           reject(new DOMException("Frame preparation was cancelled.", "AbortError"));
         };
         signal.addEventListener("abort", abort, { once: true });
@@ -267,7 +283,8 @@
     }
     frameFor(value) {
       const element = this.element(value), state = this.frames.get(value.id);
-      if (!state || state.fallback) return element;
+      if (!state) return element;
+      if (state.fallback) { state.drawnAt = null; return element; }
       const tr = value.transform;
       if (state.bitmap && state.bitmap.width < element.videoWidth && tr &&
           (tr.cropWidth < element.videoWidth || tr.cropHeight < element.videoHeight ||
@@ -279,7 +296,7 @@
       if (!state.pending && (state.nativeFallback || !element.requestVideoFrameCallback ||
           (!element.paused && !element.seeking && Math.abs(element.currentTime - state.timestamp) > 1 / 60)))
         this.captureFrame(value, null, undefined, false).catch(() => {});
-      if (state.nativeFallback) { state.drawnAt = null; return element; }
+      if (state.nativeFallback || !state.bitmap) { state.drawnAt = null; return element; }
       // An asynchronous conversion can be delayed under load. Do not keep
       // displaying its older cached pixels after the decoder has moved on.
       if (state.bitmap && !element.paused && !element.seeking &&
@@ -290,9 +307,7 @@
             const current = new root.VideoFrame(element);
             state.drawnAt = current.timestamp / 1e6;
             current.close();
-          } catch (error) {
-            if (!["InvalidStateError", "NotSupportedError", "TypeError"].includes(error.name)) throw error;
-          }
+          } catch { /* Timestamp sampling must not suppress the native picture. */ }
         }
         return element;
       }

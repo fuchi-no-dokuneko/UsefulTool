@@ -9,6 +9,7 @@
     "test:desktop-review": "node run-browser.cjs review.html",
     "test:firefox-ears": "node firefox-ears.cjs",
     "test:firefox-preview": "node firefox-preview.cjs",
+    "test:firefox-linux-preview": "node firefox-linux-preview.cjs",
     "test:firefox": "node run-firefox.cjs",
     "test:stereo-segments": "node run-browser.cjs routing.html && node verify-routing-export.cjs",
     "test:release": "node run-browser.cjs release.html && node verify-release-export.cjs",
