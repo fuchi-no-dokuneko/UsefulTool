@@ -1601,7 +1601,9 @@ dialog::backdrop {
     overflow-y: auto;
   }
   .studio-shell {
-    height: 600px;
+    /* Preserve the two minimum grid rows when the window becomes shorter.
+       A fixed 600px shell enlarged the preview at the 599px breakpoint. */
+    min-height: 480px;
   }
 }
 @media (max-width: 759px) {

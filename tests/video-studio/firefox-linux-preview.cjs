@@ -221,6 +221,32 @@ async function scenario(name, url) {
         restored.colored > 0.8 && restored.height > 80,
         restored,
       );
+      // Docked DevTools can move the viewport across this boundary one pixel
+      // at a time. The short-window layout must not suddenly enlarge the
+      // preview when the available space gets smaller.
+      for (const deviceScaleFactor of [1, 0.8]) {
+        const sizes = [];
+        for (const height of [601, 600, 599, 598]) {
+          await page.setViewport({ width: 1024, height, deviceScaleFactor });
+          await delay(150);
+          sizes.push(await snapshot(page));
+        }
+        check(
+          "preview size stays stable across 600px at scale " +
+            deviceScaleFactor,
+          sizes.every((s) => s.visible && s.colored > 0.8) &&
+            Math.max(...sizes.map((s) => s.height)) -
+              Math.min(...sizes.map((s) => s.height)) <=
+              2,
+          sizes,
+        );
+      }
+      await page.setViewport({
+        width: 1366,
+        height: 768,
+        deviceScaleFactor: 1,
+      });
+      await delay(150);
     }
     if (["stalled", "rejected"].includes(name))
       check(
