@@ -39,6 +39,13 @@
     mixer,
     engine;
   let pendingFieldEdit = false;
+  const fieldSync = new WeakMap();
+  function syncFields(committed) {
+    for (const input of document.querySelectorAll("[data-control]"))
+      fieldSync.get(input)?.(
+        input === committed || input !== document.activeElement,
+      );
+  }
   function commitFieldEdit() {
     if (!pendingFieldEdit) return;
     pendingFieldEdit = false;
@@ -163,41 +170,77 @@
         input.append(option);
       }
     else if (!options.multiline) input.type = options.type || "number";
-    if (options.min !== undefined) input.min = options.min;
-    if (options.max !== undefined) input.max = options.max;
+    const bound = (key, fallback) =>
+      (typeof options[key] === "function" ? options[key]() : options[key]) ??
+      fallback;
     if (!options.options && !options.multiline && input.type === "number")
       input.step = options.step ?? 0.01;
     if (options.multiline || input.type === "text")
       input.maxLength = options.maxLength || 12000;
     input.value = value ?? "";
+    let accepted = value ?? "",
+      dirty = false;
+    const sync = (display) => {
+      if (options.min !== undefined) input.min = bound("min");
+      if (options.max !== undefined) input.max = bound("max");
+      if (display) input.value = options.read ? options.read() : accepted;
+    };
+    fieldSync.set(input, sync);
+    sync(false);
     input.dataset.control = helpId;
     input.setAttribute("aria-label", label);
     if (options.id) input.id = options.id;
     H.attach(input, helpId, reason);
     input.disabled = Boolean(options.disabled || exporting || projectLoading);
     const update = (commit) => {
+      if (!input.isConnected) return;
       if (
         input.type === "number" &&
         (!input.value || !Number.isFinite(input.valueAsNumber))
-      )
+      ) {
+        if (commit) {
+          sync(true);
+          announce(
+            label + ": enter a finite number. The previous value was kept.",
+          );
+        }
         return;
+      }
+      // An exponent may be incomplete (e.g. 1e999). Do not apply its huge
+      // intermediate finite values to timeline geometry while it is a draft.
+      if (!commit && input.type === "number" && /e/i.test(input.value)) return;
+      const draft = input.value;
       const next =
         input.type === "number"
-          ? M.clamp(
-              input.valueAsNumber,
-              options.min ?? -1e9,
-              options.max ?? 1e9,
-            )
+          ? M.clamp(input.valueAsNumber, bound("min", -1e9), bound("max", 1e9))
           : input.value;
-      setter(next, commit);
+      if (setter(next, commit) === false) return;
+      accepted = options.read ? options.read() : next;
+      syncFields(commit ? input : null);
+      if (commit) {
+        input.value = accepted;
+        if (input.type === "number" && Number(draft) !== Number(accepted))
+          announce(label + " adjusted to " + accepted + ".");
+      }
+    };
+    const commit = () => {
+      if (dirty) {
+        dirty = false;
+        update(true);
+      }
+      commitFieldEdit();
     };
     input.addEventListener("input", () => {
+      dirty = true;
       if (!options.options) update(false);
     });
-    input.addEventListener("change", () => update(true));
-    input.addEventListener("blur", commitFieldEdit);
+    input.addEventListener("change", () => {
+      if (options.options || input.value !== String(accepted)) dirty = true;
+      commit();
+    });
+    input.addEventListener("blur", commit);
     input.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && !options.multiline) commitFieldEdit();
+      if (event.key === "Enter" && !options.multiline) commit();
     });
     node.append(heading, input);
     return node;
@@ -225,19 +268,48 @@
       input.disabled = Boolean(options.disabled || exporting || projectLoading);
       H.attach(input, helpId, reason);
     }
+    let accepted = value;
+    const dirty = new Set();
+    const sync = () => {
+      accepted = options.read ? options.read() : accepted;
+      number.value = accepted;
+      slider.value = accepted;
+    };
     const update = (source, commit) => {
-      if (source.value === "") return;
-      const next = M.clamp(source.value, min, max);
-      number.value = next;
-      slider.value = next;
-      setter(next, commit);
+      if (!source.isConnected) return;
+      if (!source.value || !Number.isFinite(source.valueAsNumber)) {
+        if (commit) {
+          sync();
+          announce(
+            label + ": enter a finite number. The previous value was kept.",
+          );
+        }
+        return;
+      }
+      const draft = source.valueAsNumber;
+      const next = M.clamp(draft, min, max);
+      if (setter(next, commit) === false) return;
+      accepted = options.read ? options.read() : next;
+      slider.value = accepted;
+      // Preserve partial negative/decimal text while the number is being typed.
+      if (source !== number || commit) number.value = accepted;
+      if (commit && draft !== Number(accepted))
+        announce(label + " adjusted to " + accepted + ".");
     };
     for (const input of [number, slider]) {
-      input.addEventListener("input", () => update(input, false));
-      input.addEventListener("change", () => update(input, true));
-      input.addEventListener("blur", commitFieldEdit);
+      const commit = () => {
+        if (dirty.delete(input) || input.value !== String(accepted))
+          update(input, true);
+        commitFieldEdit();
+      };
+      input.addEventListener("input", () => {
+        dirty.add(input);
+        update(input, false);
+      });
+      input.addEventListener("change", commit);
+      input.addEventListener("blur", commit);
       input.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") commitFieldEdit();
+        if (event.key === "Enter") commit();
       });
     }
     heading.append(H.label(helpId, label, reason), number);
@@ -282,10 +354,11 @@
       }
       M.normalize(project);
       project.selectedItemId = M.item(project, selectedId) ? selectedId : null;
+      // Validate autosave before advancing history or invalidating an export.
+      store.schedule(project);
       if (options.commit !== false) history.push(project);
       else pendingFieldEdit = true;
       errorMessage = "";
-      store.schedule(project);
       clearResults();
       if (options.timeline !== false) renderTimeline();
       if (options.context) renderContext();
@@ -293,7 +366,7 @@
         const speed = document.querySelector('[data-control="creditsSpeed"]');
         const end = document.querySelector('[data-control="endsAt"]');
         if (speed && speed !== document.activeElement)
-          speed.value = Math.round(selected().credits.speed);
+          speed.value = selected().credits.speed;
         if (end && end !== document.activeElement) end.value = selected().end;
       }
       updateAudioWarning();
@@ -301,9 +374,35 @@
       updateSelectionBox();
       requestPaint();
       if (options.toast) toast(message);
+      return true;
     } catch (error) {
+      const panel = $("contextPanel"),
+        active = document.activeElement;
+      const open = [...panel.querySelectorAll("details[open] > summary")].map(
+        (e) => e.textContent,
+      );
+      const control = active?.dataset.control;
+      const index = control
+        ? [...panel.querySelectorAll("[data-control]")]
+            .filter((e) => e.dataset.control === control)
+            .indexOf(active)
+        : -1;
       project = before;
+      errorMessage = error.message || String(error);
+      renderContext();
+      for (const summary of panel.querySelectorAll("details > summary"))
+        if (open.includes(summary.textContent))
+          summary.parentElement.open = true;
+      if (index >= 0)
+        [...panel.querySelectorAll("[data-control]")]
+          .filter((e) => e.dataset.control === control)
+          [index]?.focus();
+      renderTimeline();
+      updateHistory();
+      updateSelectionBox();
+      requestPaint();
       report(error);
+      return false;
     }
   }
   function setter(fn, label, refresh = false) {
@@ -321,16 +420,47 @@
     announce(message);
   }
   function clearResults() {
-    if (!results.length) return;
     for (const result of results) {
       if (result.url) URL.revokeObjectURL(result.url);
       result.dispose?.().catch(() => {});
     }
     results = [];
+    exportMessage = "";
+    document.querySelector(".export-results")?.remove();
+    $("exportMessage")?.remove();
+    const button = $("exportButton");
+    if (button) {
+      H.setButtonLabel(button, "exportVideo", "Export video");
+      button.classList.add("primary");
+    }
     $("outputVideo").pause();
     $("outputVideo").removeAttribute("src");
     $("outputVideo").hidden = true;
     $("previewCanvas").hidden = false;
+  }
+  function exportRevision() {
+    return JSON.stringify([
+      project.id,
+      project.name,
+      project.assets,
+      project.canvas,
+      project.layers,
+      project.items,
+      project.mainOrder,
+      project.transitions,
+      project.duration,
+      project.soundBalance,
+      project.exportSettings,
+    ]);
+  }
+  function currentResult(result) {
+    if (results.includes(result) && result.revision === exportRevision())
+      return true;
+    if (results.includes(result)) clearResults();
+    announce(
+      "The movie has changed. Export it again to download the current version.",
+    );
+    return false;
   }
   function setupEngine() {
     Media.prepareCanvas($("previewCanvas"));
@@ -916,6 +1046,7 @@
       project.updatedAt = Date.now();
       pendingFieldEdit = true;
       store.schedule(project);
+      clearResults();
     });
     const commitName = () => {
       commitFieldEdit();
@@ -1603,61 +1734,107 @@
         value &&
         project.playhead > value.start + M.minimumSpan(project) &&
         project.playhead < value.end - M.minimumSpan(project);
-    const zoomLabel = el("label", "zoom-label");
-    zoomLabel.append(H.label("zoom", "Zoom"));
-    const zoomInput = el("input");
-    zoomInput.type = "range";
-    zoomInput.min = 15;
-    zoomInput.max = 300;
-    zoomInput.step = 5;
+    // Keep the header mounted: replacing its range input interrupts both native
+    // keyboard focus and an in-progress pointer drag when geometry changes.
+    let zoomInput = $("timelineHead").querySelector('input[type="range"]');
+    if (!zoomInput) {
+      const zoomLabel = el("label", "zoom-label");
+      zoomLabel.append(H.label("zoom", "Zoom"));
+      zoomInput = el("input");
+      zoomInput.type = "range";
+      zoomInput.min = 15;
+      zoomInput.max = 300;
+      zoomInput.step = 5;
+      zoomInput.value = zoom;
+      zoomInput.setAttribute("aria-label", "Timeline zoom");
+      H.attach(zoomInput, "zoom");
+      zoomInput.addEventListener("input", () => {
+        zoom = Number(zoomInput.value);
+        renderTimeline();
+      });
+      zoomLabel.append(zoomInput);
+      $("timelineHead").replaceChildren(
+        el("h2", "", "Your movie"),
+        row(
+          B("decoupleChannels", "Decouple L/R", decoupleSelected, {
+            id: "decoupleChannelsButton",
+            disabled:
+              !sound ||
+              Boolean(sound.audio.sourceChannel) ||
+              locked ||
+              exporting,
+            reason: "Select a stereo sound or a video with original sound.",
+          }),
+          B("copySegment", "Copy", copySelected, {
+            id: "copySegmentButton",
+            disabled: !value || exporting,
+          }),
+          B("pasteSegment", "Paste", pasteSelected, {
+            id: "pasteSegmentButton",
+            disabled:
+              !segmentClipboard ||
+              segmentClipboard.projectId !== project.id ||
+              exporting,
+          }),
+          B("cutHere", "Cut here", cutSelected, {
+            id: "splitButton",
+            disabled: !canCut || locked || exporting,
+            reason: locked
+              ? "Unlock this item first."
+              : "Select an item and move the playhead inside it.",
+          }),
+          B("duplicateItem", "Duplicate", duplicateSelected, {
+            disabled: !value || locked || exporting,
+            wrapperClass: "timeline-secondary",
+            reason: "Select an unlocked item first.",
+          }),
+          B("deleteItem", "Delete", deleteSelected, {
+            disabled: !value || locked || exporting,
+            className: "danger",
+            wrapperClass: "timeline-secondary",
+            reason: "Select an unlocked item first.",
+          }),
+          zoomLabel,
+        ),
+      );
+    }
     zoomInput.value = zoom;
-    zoomInput.setAttribute("aria-label", "Timeline zoom");
-    H.attach(zoomInput, "zoom");
-    zoomInput.addEventListener("input", () => {
-      zoom = Number(zoomInput.value);
-      renderTimeline();
-    });
-    zoomLabel.append(zoomInput);
-    $("timelineHead").replaceChildren(
-      el("h2", "", "Your movie"),
-      row(
-        B("decoupleChannels", "Decouple L/R", decoupleSelected, {
-          id: "decoupleChannelsButton",
-          disabled:
-            !sound || Boolean(sound.audio.sourceChannel) || locked || exporting,
-          reason: "Select a stereo sound or a video with original sound.",
-        }),
-        B("copySegment", "Copy", copySelected, {
-          id: "copySegmentButton",
-          disabled: !value || exporting,
-        }),
-        B("pasteSegment", "Paste", pasteSelected, {
-          id: "pasteSegmentButton",
-          disabled:
-            !segmentClipboard ||
-            segmentClipboard.projectId !== project.id ||
-            exporting,
-        }),
-        B("cutHere", "Cut here", cutSelected, {
-          id: "splitButton",
-          disabled: !canCut || locked || exporting,
-          reason: locked
-            ? "Unlock this item first."
-            : "Select an item and move the playhead inside it.",
-        }),
-        B("duplicateItem", "Duplicate", duplicateSelected, {
-          disabled: !value || locked || exporting,
-          wrapperClass: "timeline-secondary",
-          reason: "Select an unlocked item first.",
-        }),
-        B("deleteItem", "Delete", deleteSelected, {
-          disabled: !value || locked || exporting,
-          className: "danger",
-          wrapperClass: "timeline-secondary",
-          reason: "Select an unlocked item first.",
-        }),
-        zoomLabel,
-      ),
+    const disabled = exporting || projectLoading;
+    const headerButton = (helpId, unavailable, reason) =>
+      H.setDisabled(
+        $("timelineHead").querySelector(
+          'button[data-help-id="' + helpId + '"]',
+        ),
+        Boolean(unavailable || disabled),
+        disabled ? "Finish the current operation first." : reason,
+      );
+    headerButton(
+      "decoupleChannels",
+      !sound || Boolean(sound.audio.sourceChannel) || locked,
+      "Select a stereo sound or a video with original sound.",
+    );
+    headerButton("copySegment", !value, "Select an item first.");
+    headerButton(
+      "pasteSegment",
+      !segmentClipboard || segmentClipboard.projectId !== project.id,
+      "Copy a segment in this project first.",
+    );
+    headerButton(
+      "cutHere",
+      !canCut || locked,
+      locked
+        ? "Unlock this item first."
+        : "Select an item and move the playhead inside it.",
+    );
+    headerButton(
+      "duplicateItem",
+      !value || locked,
+      "Select an unlocked item first.",
+    );
+    headerButton(
+      "deleteItem",
+      !value || locked,
+      "Select an unlocked item first.",
     );
     const content = $("timelineContent");
     const scroll = $("timelineViewport").scrollLeft;
@@ -2818,7 +2995,12 @@
             "Item moved",
             true,
           ),
-          { min: 0, step: 1 / project.exportSettings.fps, disabled: locked },
+          {
+            min: 0,
+            step: 1 / project.exportSettings.fps,
+            disabled: locked,
+            read: () => M.item(project, value.id).start,
+          },
         ),
         field(
           "Ends at (sec)",
@@ -2833,7 +3015,8 @@
             true,
           ),
           {
-            min: value.start + M.minimumSpan(project),
+            min: () => M.item(project, value.id).start + M.minimumSpan(project),
+            read: () => M.item(project, value.id).end,
             step: 1 / project.exportSettings.fps,
             disabled: locked,
           },
@@ -3028,15 +3211,16 @@
         field(
           label,
           helpId,
-          Math.round(tr[key] * 100) / 100,
+          tr[key],
           setter((v) => {
-            tr[key] = v;
+            M.item(project, value.id).transform[key] = v;
           }, "Position changed"),
           {
             min,
             max: key === "rotation" ? 360 : 100000,
             step: 1,
             disabled: locked,
+            read: () => M.item(project, value.id).transform[key],
           },
         ),
       );
@@ -3075,23 +3259,33 @@
           "sourceIn",
           value.sourceIn,
           setter(
-            (v) => sourceBounds(value, v, value.sourceOut),
+            (v) => sourceBounds(value.id, { start: v }),
             "Source range changed",
             true,
           ),
-          { min: 0, max: value.sourceOut - M.MIN, disabled: locked },
+          {
+            min: 0,
+            max: () =>
+              M.item(project, value.id).sourceOut -
+              M.minimumSpan(project) * M.item(project, value.id).playbackRate,
+            read: () => M.item(project, value.id).sourceIn,
+            disabled: locked,
+          },
         ),
         field(
           "Source out (sec)",
           "sourceOut",
           value.sourceOut,
           setter(
-            (v) => sourceBounds(value, value.sourceIn, v),
+            (v) => sourceBounds(value.id, { end: v }),
             "Source range changed",
             true,
           ),
           {
-            min: value.sourceIn + M.MIN,
+            min: () =>
+              M.item(project, value.id).sourceIn +
+              M.minimumSpan(project) * M.item(project, value.id).playbackRate,
+            read: () => M.item(project, value.id).sourceOut,
             max: source.duration,
             disabled: locked,
           },
@@ -3157,16 +3351,15 @@
     }
     return controls;
   }
-  function sourceBounds(value, start, end) {
+  function sourceBounds(itemId, changes) {
     engine.stop();
-    for (const sibling of M.related(project, value)) {
-      sibling.sourceIn = start;
-      sibling.sourceOut = end;
-      if (!sibling.audio?.loop)
-        sibling.end = sibling.start + (end - start) / sibling.playbackRate;
-    }
-    if (M.related(project, value).some((i) => i.layerId === "main"))
-      M.reflow(project);
+    const current = M.item(project, itemId);
+    M.setSourceBounds(
+      project,
+      itemId,
+      changes.start ?? current.sourceIn,
+      changes.end ?? current.sourceOut,
+    );
   }
   function speedControls(value, locked) {
     return group(
@@ -3186,7 +3379,10 @@
           "Playback speed changed",
           true,
         ),
-        { disabled: locked },
+        {
+          disabled: locked,
+          read: () => M.item(project, value.id).playbackRate,
+        },
       ),
       row(
         ...[0.5, 1, 1.5, 2].map((speed) =>
@@ -3793,12 +3989,18 @@
         field(
           "Pixels per second",
           "creditsSpeed",
-          Math.round(c.speed),
+          c.speed,
           update((v) => {
             c.speed = v;
             c.mode = "speed";
           }, true),
-          { min: 1, max: 2000, step: 1, disabled: locked },
+          {
+            min: 1,
+            max: 2000,
+            step: 1,
+            disabled: locked,
+            read: () => M.item(project, value.id).credits.speed,
+          },
         ),
       );
     const settings = el("div", "field-grid");
@@ -3943,6 +4145,8 @@
       }),
     );
     for (const [index, fx] of value.effects.entries()) {
+      const current = () =>
+        M.item(project, value.id).effects.find((e) => e.id === fx.id);
       const card = el("div", "effect-entry");
       const bounds = ["brightness", "contrast", "saturation"].includes(fx.type)
         ? [0, 3, 0.05]
@@ -3985,18 +4189,28 @@
           "effectStart",
           fx.start,
           setter((v) => {
-            fx.start = v;
+            M.setEffectRange(project, value.id, fx.id, { start: v });
           }, "Effect range changed"),
-          { min: 0, max: fx.end, disabled: locked },
+          {
+            min: 0,
+            max: () => current().end,
+            read: () => current().start,
+            disabled: locked,
+          },
         ),
         field(
           "Ends in item",
           "effectEnd",
           fx.end,
           setter((v) => {
-            fx.end = v;
+            M.setEffectRange(project, value.id, fx.id, { end: v });
           }, "Effect range changed"),
-          { min: fx.start, max: M.span(value), disabled: locked },
+          {
+            min: () => current().start,
+            max: () => M.span(M.item(project, value.id)),
+            read: () => current().end,
+            disabled: locked,
+          },
         ),
       );
       card.append(
@@ -4698,7 +4912,7 @@
         (v) => {
           duration = v;
         },
-        { min: 0.1, max: maximum, step: 0.1 },
+        { min: 0.1, max: maximum, step: 0.1, read: () => duration },
       );
       body.append(
         durationField,
@@ -4998,6 +5212,8 @@
       formats = root.UTStudio.supportedFormats();
     if (!formats.some((f) => f[0] === settings.format))
       settings.format = formats[0]?.[0] || "";
+    if (results.some((result) => result.revision !== exportRevision()))
+      clearResults();
     const quality = group(
       "Choose your quality",
       field(
@@ -5051,7 +5267,7 @@
         setter((v) => {
           settings.fps = Math.round(v);
         }, "Frame rate changed"),
-        { min: 1, max: 60, step: 1 },
+        { min: 1, max: 60, step: 1, read: () => project.exportSettings.fps },
       ),
       field(
         "Video Mbps",
@@ -5121,7 +5337,11 @@
       node.append(progress);
       return;
     }
-    if (exportMessage) node.append(el("p", "notice", exportMessage));
+    if (exportMessage) {
+      const message = el("p", "notice", exportMessage);
+      message.id = "exportMessage";
+      node.append(message);
+    }
     if (results.length) {
       const list = el("div", "export-results");
       for (const [i, result] of results.entries()) {
@@ -5148,7 +5368,9 @@
           B(
             result.kind === "segments" ? "downloadSegments" : "downloadVideo",
             result.kind === "segments" ? "Download ZIP" : "Download video",
-            () => download(result.blob, result.name),
+            () => {
+              if (currentResult(result)) download(result.blob, result.name);
+            },
             {
               id: i === 0 ? "downloadButton" : undefined,
               primary: i === 0,
@@ -5218,6 +5440,7 @@
     );
   }
   function showResult(result) {
+    if (!currentResult(result)) return;
     $("previewCanvas").hidden = true;
     $("outputVideo").hidden = false;
     $("outputVideo").src = result.url;
@@ -5243,6 +5466,7 @@
     document.body.classList.add("is-exporting");
     renderAll();
     const before = project.playhead;
+    const revision = exportRevision();
     const began = performance.now();
     let archive = null,
       target = null;
@@ -5311,6 +5535,11 @@
             if (exportAbort.signal.aborted) break;
             throw new Error("The encoder returned no video.");
           }
+          if (revision !== exportRevision())
+            throw new Error(
+              "The movie changed during export. Export it again.",
+            );
+          result.revision = revision;
           result.name =
             basename +
             (segmented
@@ -5346,6 +5575,7 @@
           ...summary,
           name: basename + "-segments.zip",
           kind: "segments",
+          revision,
         });
       }
       if (results.length)
@@ -5356,6 +5586,7 @@
           : "Export complete. Preview your movie and download it below.";
     } catch (error) {
       if (!exportAbort.signal.aborted) {
+        clearResults();
         exportMessage = error.message;
         report(error);
       }
@@ -5508,6 +5739,8 @@
           saved.name !== "Untitled movie")
       ) {
         dialog("Continue your movie", (body, foot) => {
+          if (store.recoveryMessage)
+            body.append(el("p", "notice", store.recoveryMessage));
           body.append(
             el("p", "", saved.name),
             el(

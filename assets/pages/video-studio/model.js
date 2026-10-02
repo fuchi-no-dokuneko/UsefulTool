@@ -76,7 +76,19 @@
   function visualEnd(project) {
     return Math.max(0, ...project.items.filter((i) => i.kind !== "audio" && i.kind !== "filter").map((i) => i.end));
   }
+  function checkEffectRanges(project, fit = false) {
+    for (const value of project.items || []) for (const fx of value.effects || []) {
+      if (!Number.isFinite(fx.start) || !Number.isFinite(fx.end) || fx.start < 0 || fx.end < fx.start)
+        throw new Error("Invalid effect range. Use finite times with Start at or before End.");
+      if (!fit && fx.end > span(value) + 1e-7) throw new Error("The effect range must stay inside its item.");
+    }
+    if (fit) for (const value of project.items || []) for (const fx of value.effects || []) {
+      fx.start = Math.min(fx.start, span(value)); fx.end = Math.min(fx.end, span(value));
+    }
+    if (project.previousTimeline) checkEffectRanges(project.previousTimeline, fit);
+  }
   function normalize(project) {
+    checkEffectRanges(project, true);
     // A verified video-only source must never contribute an original sound.
     const silent = new Set(project.assets.filter(a => a.kind === "video" && a.hasAudio === false).map(a => a.id));
     project.items = project.items.filter(i => i.kind !== "audio" || !silent.has(i.assetId));
@@ -412,6 +424,28 @@
     }
     siblings.some((i) => i.layerId === "main") ? reflow(project) : normalize(project); return true;
   }
+  function setSourceBounds(project, itemId, start, end) {
+    const value = item(project, itemId);
+    if (!value || !["video", "audio"].includes(value.kind)) throw new Error("Choose a video or sound first.");
+    const siblings = related(project, value);
+    if (siblings.some(i => isLocked(project, i))) throw new Error("Unlock the linked item first.");
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || siblings.some(i =>
+      end > asset(project, i.assetId).duration || end - start < minimumSpan(project) * i.playbackRate - 1e-7))
+      throw new Error("Use a source range within the file with at least one frame per linked item.");
+    const apply = target => {
+      const linked = related(target, item(target, itemId));
+      for (const sibling of linked) {
+        sibling.sourceIn = rounded(start); sibling.sourceOut = rounded(end);
+        if (!sibling.audio?.loop) sibling.end = rounded(sibling.start + (end - start) / sibling.playbackRate);
+      }
+      linked.some(i => i.layerId === "main") ? reflow(target) : normalize(target);
+    };
+    // Resolve downstream ripple/transition locks on a draft first. A rejected
+    // edit must not mutate the caller; success retains all live object identities.
+    apply(copy(project));
+    apply(project);
+    return true;
+  }
   function splitItem(project, itemId, time) {
     const value = item(project, itemId);
     const shortest = minimumSpan(project);
@@ -620,6 +654,17 @@
       start: 0, end: span(value), enabled: true };
     value.effects.push(effect); return effect;
   }
+  function setEffectRange(project, itemId, effectId, changes) {
+    const value = item(project, itemId), fx = value?.effects.find(f => f.id === effectId);
+    if (!fx) throw new Error("Choose an existing effect first.");
+    if (isLocked(project, value)) throw new Error("Unlock the item before changing its effect range.");
+    const start = Object.hasOwn(changes, "start") ? changes.start : fx.start;
+    const end = Object.hasOwn(changes, "end") ? changes.end : fx.end;
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || end > span(value) + 1e-7)
+      throw new Error("Use a finite effect range with 0 ≤ Start ≤ End ≤ the item duration.");
+    fx.start = start; fx.end = end;
+    return fx;
+  }
   function creditsHeight(value) {
     return value.credits.groups.reduce((n, g) => n + (1 + g.content.split("\n").length + 1) * value.credits.fontSize * value.credits.lineHeight, 0);
   }
@@ -665,9 +710,27 @@
     return { width: w, height: h };
   }
   function serialize(project) {
+    checkEffectRanges(project);
     const value = copy(project);
     value.assets = value.assets.map(({ objectUrl, fileHandleKey, ...rest }) => rest);
     return JSON.stringify(value, null, 2);
+  }
+  function recoverEffectRanges(text) {
+    try { return parseProject(text); }
+    catch (original) {
+      if (text.length > 32 * 1024 * 1024) throw original;
+      let value;
+      try { value = JSON.parse(text); } catch { throw original; }
+      let repaired = false;
+      for (const timeline of [value, value?.previousTimeline]) for (const entry of timeline?.items || [])
+        for (const fx of entry.effects || []) if (Number.isFinite(fx?.start) && Number.isFinite(fx?.end) && fx.end >= 0 && fx.start > fx.end) {
+          [fx.start, fx.end] = [fx.end, fx.start]; repaired = true;
+        }
+      if (!repaired) throw original;
+      // Repair only the known inverted timing defect; all other validation is
+      // still mandatory and the strict parser itself remains unchanged.
+      return parseProject(JSON.stringify(value));
+    }
   }
   function parseProject(text, checkpoint = false) {
     if (text.length > 32 * 1024 * 1024) throw new Error("This project file is too large.");
@@ -769,9 +832,9 @@
   }
   const api = { MIN, SCHEMA_VERSION, MAX_PIXELS, VIDEO_LAYERS, KINDS, EFFECTS, BLURS, TRANSITIONS, id, copy, clamp, finite, rounded, active, span, sourceSpan, minimumSpan,
     layer, asset, item, isLocked, mainItems, createProject, transform, baseItem, audioProps, normalize, reflow, addAsset, addMedia, addLayerItem,
-    related, setLink, decoupleChannels, copySegment, pasteSegment, moveItem, reorderMain, trimItem, setSpeed, splitItem, duplicateItem, deleteItem, transitionMaximum, setTransition, removeTransition,
+    related, setLink, decoupleChannels, copySegment, pasteSegment, moveItem, reorderMain, trimItem, setSpeed, setSourceBounds, splitItem, duplicateItem, deleteItem, transitionMaximum, setTransition, removeTransition,
     ease, curveAt, setKey, fadeAt, sourceTimeAt, setRepeat, snapTime, visibleItems, videoConflicts, MAX_AUDIO_SOURCES, audioConflicts, fixAudioConflicts, audioGains, evaluateFrame, evaluateAudio, applyOverlayPreset, addEffect,
-    creditsHeight, updateCreditsDuration, fitTransform, segmentRanges, formatTime, exportDimensions, serialize, parseProject, History, visualEnd,
+    creditsHeight, updateCreditsDuration, fitTransform, segmentRanges, formatTime, exportDimensions, serialize, parseProject, recoverEffectRanges, setEffectRange, History, visualEnd,
     legacyLinkCandidates, migrateProject, timelineCheckpoint, restoreTimeline, audioRouting, setChannelMode };
   root.UTStudio = Object.assign(root.UTStudio || {}, { Model: api });
   if (typeof module !== "undefined") module.exports = api;

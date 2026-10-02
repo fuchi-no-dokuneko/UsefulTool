@@ -38,21 +38,51 @@
       return entry ? new File([entry.blob], entry.name, { type: entry.type, lastModified: entry.modified }) : null;
     }
     schedule(project) {
-      this.latest = M.serialize(project); clearTimeout(this.timer); this.onStatus("Saving");
+      const json = M.serialize(project);
+      M.parseProject(json);
+      this.latest = json; clearTimeout(this.timer); this.onStatus("Saving");
       this.timer = setTimeout(() => { this.flush().catch(() => {}); }, 500);
     }
     async flush() {
       clearTimeout(this.timer);
       if (!this.latest) return this.queue;
       const json = this.latest; this.latest = null;
-      const save = this.queue.catch(() => {}).then(() => this.transact("projects", "readwrite", (store) => store.put({ json, savedAt: Date.now() }, this.key)));
+      const save = this.queue.catch(() => {}).then(() => this.transact("projects", "readwrite", (store) => {
+        const read = store.get(this.key);
+        read.onsuccess = () => {
+          let previous;
+          for (const candidate of [read.result?.json, read.result?.previous]) {
+            if (!candidate) continue;
+            try { M.parseProject(candidate); previous = candidate; break; } catch {}
+          }
+          store.put({ json, previous, savedAt: Date.now() }, this.key);
+        };
+        return read;
+      }));
       this.queue = save;
       try { await save; if (!this.latest) this.onStatus("Saved on this device"); }
       catch (error) { this.onStatus("Could not save on this device", error); throw error; }
     }
     async load() {
       const saved = await this.transact("projects", "readonly", (store) => store.get(this.key));
-      return saved ? M.parseProject(saved.json) : null;
+      this.recoveryMessage = "";
+      if (!saved) return null;
+      try { return M.parseProject(saved.json); }
+      catch (error) {
+        // Keep the invalid snapshot untouched until the user continues. Prefer
+        // repairing its known effect inversion so unrelated later edits survive.
+        try {
+          const repaired = M.recoverEffectRanges(saved.json);
+          this.recoveryMessage = "Recovered invalid effect timing. Review the effect start and end times.";
+          return repaired;
+        } catch {}
+        if (saved.previous) {
+          const previous = M.parseProject(saved.previous);
+          this.recoveryMessage = "The latest session was invalid. Recovered the previous valid save.";
+          return previous;
+        }
+        throw error;
+      }
     }
     async restore(project, library) {
       const missing = [];
