@@ -97,6 +97,83 @@ window.runVideoStudioSmoke = async function (frame, check, waitUntil) {
         (b) => b.dataset.helpId && b.getAttribute("aria-label"),
       ),
   );
+  const audio = api.project.items.find((item) => item.audio);
+  api.selectItem(audio.id, false);
+  const beforePaste = api.project.items.length;
+  d.getElementById("copySegmentButton").click();
+  await api.seekTo(0.5);
+  d.getElementById("pasteSegmentButton").click();
+  check(
+    "video studio Copy/Paste places only the selected sound at the playhead",
+    api.project.items.length === beforePaste + 1 &&
+      api.selectedItem.kind === "audio" &&
+      api.selectedItem.start === 0.5 &&
+      api.selectedItem.assetId === audio.assetId,
+  );
+  d.getElementById("projectMenuButton").click();
+  d.querySelector('dialog button[data-help-id="undo"]').click();
+  check(
+    "project-menu Undo reverses sound paste",
+    api.project.items.length === beforePaste,
+  );
+  d.getElementById("projectMenuButton").click();
+  d.querySelector('dialog button[data-help-id="redo"]').click();
+  check(
+    "project-menu Redo restores sound paste",
+    api.project.items.length === beforePaste + 1,
+  );
+  api.undo();
+  api.selectItem(audio.id, false);
+  d.getElementById("decoupleChannelsButton").click();
+  const ears = api.project.items.filter((item) => item.audio?.sourceChannel);
+  check(
+    "Decouple L/R retains independent left and right source channels",
+    ears.length === 2 &&
+      ears
+        .map((item) => item.audio.sourceChannel)
+        .sort()
+        .join(",") === "left,right" &&
+      ears
+        .map((item) => item.audio.channelMode)
+        .sort()
+        .join(",") === "leftOnly,rightOnly",
+  );
+  api.undo();
+  check(
+    "Undo restores the original stereo segment",
+    !api.project.items.some((item) => item.audio?.sourceChannel),
+  );
+  const wasMuted = api.mixer.muted;
+  d.getElementById("muteButton").click();
+  check("preview mute changes monitor output", api.mixer.muted !== wasMuted);
+  d.getElementById("muteButton").click();
+  check("preview unmute restores monitor output", api.mixer.muted === wasMuted);
+  const main = M.layer(api.project, "main"),
+    beforeItems = JSON.stringify(api.project.items);
+  d.querySelector('.track-toggle[data-help-id="toggleTrack"]').click();
+  check(
+    "track disable hides the picture without deleting segments",
+    !main.visible && JSON.stringify(api.project.items) === beforeItems,
+  );
+  d.querySelector('.track-toggle[data-help-id="toggleTrack"]').click();
+  check("track enable restores the picture", main.visible);
+  const expand = () => d.querySelector('button[data-help-id="expandSound"]');
+  const firstLabel = expand().textContent;
+  expand().click();
+  check(
+    "sound tracks can collapse and expand",
+    expand().textContent !== firstLabel,
+  );
+  expand().click();
+  for (const label of ["Music", "Images", "Videos"]) {
+    [...d.querySelectorAll('button[data-help-id="mediaTab"]')]
+      .find((button) => button.textContent === label)
+      .click();
+    check(
+      "media library opens its " + label + " tab",
+      d.querySelector(".media-tabs .is-active").textContent === label,
+    );
+  }
   await api.engine.dispose();
 };
 

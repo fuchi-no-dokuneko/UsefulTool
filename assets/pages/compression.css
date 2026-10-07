@@ -1,0 +1,10 @@
+.preview-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+.preview-grid figure { margin:0; min-width:0; }
+.preview-grid img, .preview-grid video { display:block; max-width:100%; max-height:65vh; margin:auto; }
+.preview-grid figcaption { color:var(--muted); margin:10px 0; overflow-wrap:anywhere; }
+.preview-grid .canvas-wrap { min-height:220px; padding:12px; }
+progress { width:100%; accent-color:var(--green); }
+.result-facts { white-space:pre-line; overflow-wrap:anywhere; }
+.controls.stack, .workspace.stack { align-content:start; }
+[hidden] { display:none !important; }
+@media(max-width:900px) { .preview-grid { grid-template-columns:1fr; } }

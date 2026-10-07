@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'"
+    />
+    <meta name="referrer" content="no-referrer" />
+    <title>Image Compressor | UsefulTool</title>
+    <link rel="stylesheet" href="toolkit.css" />
+    <link rel="stylesheet" href="assets/pages/compression.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="index.html"
+        ><span class="mark">UT</span><span>Image Compressor</span></a
+      >
+      <nav>
+        <a href="index.html">Home</a><a href="image-editor.html">Image Editor</a
+        ><a href="offline/image-compress.html" download>Download HTML</a>
+      </nav>
+    </header>
+    <section class="page-head">
+      <h1>Fit an image to a file size</h1>
+      <p>
+        Compare encoding quality and dimensions to keep the best tested picture
+        within your limit. Processing stays on this device.
+      </p>
+    </section>
+    <main class="tool-shell">
+      <section class="controls stack">
+        <label
+          >Image<input
+            id="imageFile"
+            type="file"
+            accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+        /></label>
+        <div class="row">
+          <label class="grow"
+            >Maximum size<input
+              id="targetSize"
+              type="number"
+              value="200"
+              min="0.001"
+              step="any" /></label
+          ><label
+            >Unit<select id="targetUnit">
+              <option>KiB</option>
+              <option>MiB</option>
+            </select></label
+          >
+        </div>
+        <label
+          >Output format<select id="imageFormat">
+            <option value="auto">Auto · best tested result</option>
+            <option value="image/webp">WebP</option>
+            <option value="image/jpeg">JPEG · white background</option>
+            <option value="image/png">
+              PNG · lossless pixels, resize if needed
+            </option>
+          </select></label
+        >
+        <button id="compressButton" class="primary" disabled>
+          Compress image</button
+        ><button id="cancelButton" hidden>Cancel</button>
+        <progress
+          id="progress"
+          max="1"
+          value="0"
+          aria-label="Compression progress"
+          hidden
+        ></progress>
+        <div id="status" class="status" role="status" aria-live="polite">
+          Choose a still image. Animated images are not flattened.
+        </div>
+        <p class="small muted">
+          1 KiB = 1,024 bytes. A file already within the limit is kept unchanged
+          when its format matches. Auto preserves transparency. Extremely small
+          limits may require reduced dimensions.
+        </p>
+      </section>
+      <section class="workspace stack">
+        <div class="preview-grid">
+          <figure>
+            <div class="canvas-wrap">
+              <img id="originalPreview" alt="Original image" hidden />
+            </div>
+            <figcaption id="originalFacts">Original</figcaption>
+          </figure>
+          <figure>
+            <div class="canvas-wrap">
+              <img id="resultPreview" alt="Compressed image" hidden />
+            </div>
+            <figcaption id="resultFacts" class="result-facts">
+              Compressed result
+            </figcaption>
+          </figure>
+        </div>
+        <button id="downloadButton" class="primary" disabled>
+          Download image
+        </button>
+      </section>
+    </main>
+    <footer>
+      Quality is compared across the tested candidates; no bytes are added just
+      to fill the size limit.
+    </footer>
+    <script src="toolkit.js"></script>
+    <script src="assets/pages/compression.js"></script>
+    <script src="assets/pages/image-compress.js"></script>
+  </body>
+</html>

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'"
+    />
+    <meta name="referrer" content="no-referrer" />
+    <title>Sticker Builder | UsefulTool</title>
+    <link rel="stylesheet" href="toolkit.css" />
+    <link rel="stylesheet" href="assets/pages/sticker.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="index.html"
+        ><span class="mark">UT</span><span>Sticker Builder</span></a
+      >
+      <nav>
+        <a href="index.html">Home</a><a href="image-editor.html">Image Editor</a
+        ><a href="offline/sticker.html" download>Download HTML</a>
+      </nav>
+    </header>
+    <section class="page-head">
+      <h1>Build a ring-text sticker</h1>
+      <p>
+        Arrange spacing, rings and circular text from the center outward. Export
+        your design as a transparent PNG.
+      </p>
+    </section>
+    <main class="tool-shell sticker-shell">
+      <section class="controls" id="right">
+        <div id="main">
+          <h2>Ring generator</h2>
+          <div class="section stack">
+            <label for="global-rot"
+              >Text rotation: <span id="rot-val">0</span>°</label
+            ><input type="range" id="global-rot" min="0" max="360" value="0" />
+            <label for="bg-select">Preview background</label
+            ><select id="bg-select">
+              <option value="transparent">Transparent</option>
+              <option value="black">Black</option>
+              <option value="dark">Dark grey</option>
+              <option value="white">White</option>
+            </select>
+          </div>
+          <h3>Layers · center to outside</h3>
+          <div id="layer-list"></div>
+        </div>
+        <div id="bottom-bar">
+          <div id="add-btns" class="row">
+            <button type="button" data-add-layer="space">+ Space</button
+            ><button type="button" data-add-layer="line">+ Ring</button
+            ><button type="button" data-add-layer="text">+ Text</button>
+          </div>
+          <button type="button" id="export-btn" class="primary">
+            Export transparent PNG
+          </button>
+        </div>
+        <div id="status" class="status" role="status" aria-live="polite">
+          Select a layer to edit. Preview background and zoom do not change the
+          exported PNG.
+        </div>
+      </section>
+      <section class="workspace">
+        <div class="sticker-preview">
+          <div id="scale-col">
+            <label for="scale-slider"
+              >Preview scale: <span id="scale-val">25</span>%</label
+            ><input
+              type="range"
+              id="scale-slider"
+              min="5"
+              max="100"
+              value="25"
+            />
+          </div>
+          <div id="preview-bar" class="canvas-wrap">
+            <div id="preview-wrap">
+              <canvas id="preview" aria-label="Sticker preview"></canvas>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+    <footer>
+      The original ring generator's drawing controls and transparent export work
+      entirely on this device.
+    </footer>
+    <script src="toolkit.js"></script>
+    <script src="assets/pages/sticker.js"></script>
+  </body>
+</html>

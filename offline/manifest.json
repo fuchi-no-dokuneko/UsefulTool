@@ -17,6 +17,11 @@
       "sha256": "3305b6b7d585c33e130c2c727a814298405e6bfc6e35a37c0f344437c6ba48fc"
     },
     {
+      "file": "image-compress.html",
+      "bytes": 28241,
+      "sha256": "3241fbcf8cb173accdd204d898050625224c3163861882aaa2bab63305cdce80"
+    },
+    {
       "file": "image-converter.html",
       "bytes": 26113,
       "sha256": "66a3cbf6b36b06bcfdea60eaa4d69765628a7f3afa394cbedd2b884412631916"
@@ -33,8 +38,8 @@
     },
     {
       "file": "index.html",
-      "bytes": 21384,
-      "sha256": "8d6834f0aad56740dabe6f97321a1e5f2bb740ddf85e6683e4a1ff8520344e4b"
+      "bytes": 23124,
+      "sha256": "0f5dcd4526fed747ced0608e7a6374e69b6f0c812b52267ee1e319515aa0ebcb"
     },
     {
       "file": "lan-chat.html",
@@ -47,9 +52,14 @@
       "sha256": "b4162ece03702207f23d0fb9b0158738f8747b9b5ad9127bac7758cff08aac95"
     },
     {
+      "file": "pdf-compress.html",
+      "bytes": 1530616,
+      "sha256": "d986702cde4fe276add896e57daa693aeb75ecf34ffb5aba5915d79044cb5770"
+    },
+    {
       "file": "pdf-merge.html",
-      "bytes": 541233,
-      "sha256": "4a05f8a6000dae3831490fe91f8e0097b47a4f323211ba073a644e3e9a94b1f4"
+      "bytes": 1512320,
+      "sha256": "b0b94d8cd32804c55c7b5d4e33a15d34c8b245fb3f8904e785532ec66b9d9ae4"
     },
     {
       "file": "pdf-to-text.html",
@@ -62,6 +72,11 @@
       "sha256": "659dcf2ecad634dedc0356be2cace9dc386beb79ad792596c852b9564fcf393f"
     },
     {
+      "file": "sticker.html",
+      "bytes": 27900,
+      "sha256": "7c7f323969187b3348a4801f243d029a7b4f0f18f14b921d9369e2614d7c832a"
+    },
+    {
       "file": "text-transfer.html",
       "bytes": 17094,
       "sha256": "0f1940e36d08abe077c6312f709b1da75b0f6297ad281b4c3c19c0cf340a67b3"
@@ -70,6 +85,11 @@
       "file": "unit-converter.html",
       "bytes": 24344,
       "sha256": "f97e3c6bac345ab52a73718d2993a676d22cf6fe1481d40807c334b502e1a996"
+    },
+    {
+      "file": "video-compress.html",
+      "bytes": 621075,
+      "sha256": "9277ee3b5230cde9da4999895e90000e530008009550888428f9209de140c386"
     },
     {
       "file": "video-editor.html",

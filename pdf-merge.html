@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; worker-src 'self' blob:; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <title>PDF Merge | UsefulTool</title>
   <link rel="stylesheet" href="toolkit.css">
-  <style>.pdf-row { display:grid; grid-template-columns:minmax(160px,1fr) minmax(130px,220px) auto; gap:10px; align-items:end; } @media(max-width:700px){.pdf-row{grid-template-columns:1fr}}</style>
+  <link rel="stylesheet" href="assets/pages/pdf-tools.css">
 </head>
 <body>
   <header class="topbar"><a class="brand" href="index.html"><span class="mark">UT</span><span>PDF Merge</span></a><nav><a href="index.html">Home</a><a href="images-to-pdf.html">Images to PDF</a><a href="offline/pdf-merge.html" download>Download HTML</a></nav></header>
@@ -17,18 +17,23 @@
       <label>Add PDF files<input id="pdfInput" type="file" accept="application/pdf,.pdf" multiple></label>
       <button class="primary" id="mergeButton" type="button">Build merged PDF</button>
       <button class="danger" id="clearButton" type="button">Clear list</button>
-      <div class="status" id="status">Add two or more PDF files.</div>
+      <div class="status" id="status" role="status" aria-live="polite">Add PDF files to preview and select their pages.</div>
       <p class="small muted">Page ranges are one-based and accept forms such as `1-3, 5, 8-6`. Leave blank to include every page.</p>
     </section>
     <section class="workspace stack">
       <h2>Merge order</h2>
       <div class="stack" id="pdfList"></div>
       <section class="output mono" id="summary">No PDF files loaded.</section>
+      <section id="mergePreview" hidden><h2>Selected pages in output order</h2><div id="selectedPreview"></div></section>
+      <section id="builtPreview" hidden><h2>Built PDF preview</h2><div id="outputPreview"></div><button id="downloadMerged" type="button">Download merged PDF again</button></section>
     </section>
   </main>
   <footer>PDF processing stays in browser memory.</footer>
   <script src="toolkit.js"></script>
   <script src="vendor/pdf-lib.min.js"></script>
-  <script src="assets/pages/pdf-merge.js"></script>
+  <script id="pdfWorkerSource" type="text/plain" data-inline-worker-src="vendor/pdf.worker.min.mjs" data-inline-worker-compress="gzip"></script>
+  <script type="module" src="vendor/pdf.min.mjs"></script>
+  <script type="module" src="assets/pages/pdf-preview.js"></script>
+  <script type="module" src="assets/pages/pdf-merge.js"></script>
 </body>
 </html>

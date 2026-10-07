@@ -464,11 +464,13 @@ async function main() {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       const evaluated = await client.call("Runtime.evaluate", {
-        expression: 'JSON.stringify({title: document.title, result: document.getElementById("result")?.textContent || ""})',
+        expression: 'JSON.stringify({title: document.title, hidden: document.hidden, result: document.getElementById("result")?.textContent || ""})',
         returnByValue: true,
       });
       if (evaluated.result?.value) {
         const state = JSON.parse(evaluated.result.value);
+        // Download/preview tabs must not suspend the next UI animation test.
+        if (state.hidden) await client.call("Page.bringToFront");
         title = state.title;
         resultText = state.result;
       }
@@ -476,6 +478,9 @@ async function main() {
       await sleep(100);
     }
 
+    // Existing preview/download tests can open another tab. Bring this report
+    // back before asking the compositor for a screenshot of its surface.
+    await client.call("Page.bringToFront");
     const screenshot = await client.call("Page.captureScreenshot", { format: "png", fromSurface: true });
     await writeFile(path.join(reportDirectory, "screenshot.png"), Buffer.from(screenshot.data, "base64"));
     const { result: coverageEntries } = await client.call("Profiler.takePreciseCoverage");

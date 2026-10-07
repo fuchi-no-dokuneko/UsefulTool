@@ -4,6 +4,7 @@
 - `diff.min.js`: jsdiff 9.0.0, BSD-3-Clause, from `kpdecker/jsdiff`.
 - `fabric.min.mjs`: Fabric.js 7.4.0, MIT, from `fabricjs/fabric.js`.
 - `pdf.min.mjs` and `pdf.worker.min.mjs`: PDF.js 6.3.289, Apache-2.0, from `mozilla/pdf.js`.
+- `video-compress.min.js`: Mediabunny 1.56.2, MPL-2.0; built separately with `scripts/build-video-compressor.mjs`. License: `LICENSE-video-compress.txt`; source archive URL is in the bundle's notice. Video Studio's existing vendor bundle is separate.
 - `prettier-standalone.js`, `prettier-babel.js`, `prettier-estree.js`: Prettier 3.6.2, MIT; copied from the pinned local build dependency for safe JavaScript formatting.
 
 The browser distributions are stored locally so UsefulTool does not require runtime CDN or API access. Corresponding license files are in this directory.

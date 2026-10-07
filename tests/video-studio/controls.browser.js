@@ -261,7 +261,21 @@
       "Dissolve",
     ]) {
       click("transition", "#timelineContent");
-      await delay(30);
+      await wait(() => {
+        const previews = [
+          ...d.querySelectorAll("#studioDialog .choice-grid canvas"),
+        ];
+        return (
+          previews.length === 6 &&
+          previews.every((canvas) =>
+            canvas
+              .getContext("2d")
+              .getImageData(0, 0, canvas.width, canvas.height)
+              .data.some((value, index) => index % 4 === 3 && value > 0),
+          )
+        );
+      });
+      check(type + " transition chooser paints all six previews", true);
       const b = [
         ...q("#studioDialog").querySelectorAll(
           'button[data-help-id="transitionType"]',

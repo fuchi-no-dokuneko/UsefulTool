@@ -13,6 +13,16 @@ User instruction: “DO NOT REMOVE OR EDIT ANY CURRENT FEATURE AND DO NOT LET TH
 
 User instruction: “until you fix the vlack screen dont add feature”
 
+## User-confirmed preview recovery and new scope — 2026-10-07
+
+The user confirmed: “the back screen fix already; no need work on it; the sticker is in sticker.html”. Stop the black-screen investigation. The feature freeze is released by that confirmation; preserve existing Video Studio features and UI.
+
+Resume the requested work: image compression to a size limit first, PDF merge previews and per-file page selection, PDF compression with image optimization first, a lightweight video compressor limited to resolution/FPS/encoding, and migration of the supplied `sticker.html` into the site's styling while preserving its ring/text/space layer controls and transparent PNG export.
+
+Delivered: selectable PDF page previews and exact output order; measured image/PDF size searches; opt-in PDF page-image fallback; a separate video compressor retaining audio; and the supplied sticker builder with shared styling and identical original artwork pixels. Every new tool has an offline HTML download. No Video Studio application script, stylesheet, HTML or offline artifact changed.
+
+Validation: 75 native Firefox checks, 556 hosted browser checks, 82 Node tests, and the unchanged 95% coverage gate passed (95.25% measured lines). Downloaded files were independently decoded/inspected; all twenty hosted and offline pages passed validation. Bundle/offline rebuilds are reproducible. See [scope, limits and acceptance evidence](docs/local-tools-uat.md).
+
 ## Black-preview correction under test — 2026-10-01
 
 Request software-backed canvas surfaces before their first context creation on desktop Linux Firefox. This applies to preview/compositing surfaces and UI canvases so the application avoids creating accelerated surfaces during upload and resize. Keep the existing compositor, controls, layout, editing behavior, and project format. The HTML changes only the cache versions of the three modified scripts; the stylesheet is unchanged.

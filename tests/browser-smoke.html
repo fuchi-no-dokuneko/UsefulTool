@@ -23,6 +23,7 @@
   <iframe id="chat" src="../lan-chat.html" hidden></iframe>
   <iframe id="home" src="../index.html" hidden></iframe>
   <pre id="result">RUNNING</pre>
+  <script src="new-tools/smoke.browser.js"></script>
   <script src="video-studio/smoke.browser.js"></script>
   <script src="video-studio/routing-smoke.browser.js"></script>
   <script>
@@ -911,6 +912,7 @@
       metadataWindow.document.getElementById("decodeBase64Button").click();
       await waitUntil(() => metadataWindow.document.getElementById("facts").textContent.includes("PNG"), "metadata Base64 inspect");
 
+      await runNewToolsSmoke(check);
       const passed = checks.every((item) => item.pass);
       document.getElementById("result").textContent = (passed ? "PASS" : "FAIL") + "\n" +
         checks.map((item) => (item.pass ? "PASS " : "FAIL ") + item.name + (item.detail ? " | " + item.detail : "")).join("\n");

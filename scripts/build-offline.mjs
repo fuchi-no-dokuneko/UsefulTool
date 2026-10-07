@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputDirectory = path.join(root, "offline");
@@ -49,12 +50,14 @@ async function inlinePage(name) {
   for (const match of workerBlocks) {
     if (!isLocal(match[2])) continue;
     const workerPath = path.resolve(root, path.dirname(name), localFileReference(match[2]));
-    const workerSource = safeScript(await fs.readFile(workerPath, "utf8"));
-    const attributes = (match[1] + match[3]).trim();
+    const compress = /data-inline-worker-compress="gzip"/.test(match[0]);
+    const rawWorker = await fs.readFile(workerPath, "utf8");
+    const workerSource = compress ? gzipSync(rawWorker, { level: 9 }).toString("base64") : safeScript(rawWorker);
+    const attributes = (match[1] + match[3]).replace(/[ \t]+\n/g, "\n").trim();
     html = html.replace(match[0], () => `<script${attributes ? " " + attributes : ""} data-inlined-from="${match[2]}">\n${workerSource}\n</script>`);
   }
 
-  const styles = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="([^"]+)"\s*>/g)];
+  const styles = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="([^"]+)"\s*\/?>/g)];
   for (const match of styles) {
     if (!isLocal(match[1])) continue;
     const css = (await fs.readFile(path.resolve(root, path.dirname(name), localFileReference(match[1])), "utf8"))

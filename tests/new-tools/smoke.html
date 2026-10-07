@@ -1,0 +1,3 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>RUNNING</title></head><body><pre id="result">RUNNING</pre><script src="smoke.browser.js"></script><script>
+const checks=[];runNewToolsSmoke((name,pass,detail)=>{checks.push({name,pass,detail});document.getElementById('result').textContent=checks.map(x=>(x.pass?'PASS ':'FAIL ')+x.name).join('\n');}).then(()=>{document.title=checks.every(x=>x.pass)?'PASS':'FAIL';}).catch(error=>{document.title='FAIL';document.getElementById('result').textContent+='\nFAIL '+error.stack;});
+</script></body></html>

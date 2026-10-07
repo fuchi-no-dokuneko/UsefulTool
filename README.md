@@ -6,6 +6,7 @@ A static browser toolkit for Cloudflare Pages and self-contained offline HTML. F
 
 - `index.html`: tool navigation.
 - `image-converter.html`: conversion, background removal and alpha masks.
+- `image-compress.html`: JPEG/PNG/WebP compression to a KiB/MiB limit, comparing decoded quality and retaining transparency where supported.
 - `calculator.html`: scientific calculation and numerical integration.
 - `unit-converter.html`: unit conversions.
 - `metadata-lab.html`: image/video metadata inspection, erasure and injection.
@@ -16,10 +17,13 @@ A static browser toolkit for Cloudflare Pages and self-contained offline HTML. F
 - `rot-cipher.html`: ROT ciphers and password generation.
 - `lan-chat.html`: direct WebRTC text and image exchange.
 - `image-editor.html`: layered image editing.
-- `pdf-merge.html`: ordered PDF/page merging.
+- `pdf-merge.html`: ordered PDF/page merging with per-file page ranges, selectable thumbnails, and output previews.
+- `pdf-compress.html`: compress PDF images toward a size limit while retaining text, vectors and links; page-image fallback requires an explicit choice.
 - `images-to-pdf.html`: image pages and Unicode filename captions.
 - `pdf-to-text.html`: embedded text extraction with page ranges, without OCR.
 - `video-editor.html`: layered timelines, linked picture/sound, Undo/Redo, desktop L/R routing and waveforms. Interval exports stream into one `<project>-segments.zip` containing numbered WebM files, with progress and cancellation.
+- `video-compress.html`: separate lightweight video conversion using resolution, frame rate and available encodings, with audio retained.
+- `sticker.html`: the original ring/text/space sticker builder with shared site styling and transparent PNG export.
 
 ## Run and build
 
@@ -32,9 +36,14 @@ node scripts/verify-offline.mjs
 npm test --prefix tests/video-studio
 npm run test:browser --prefix tests/video-studio
 npm run test:stereo-segments --prefix tests/video-studio
+node --test tests/new-tools/*.test.cjs
+# Requires Firefox, FFmpeg/FFprobe, and npm ci --prefix tests/video-studio.
+FIREFOX_BINARY=/path/to/firefox node tests/new-tools/uat.cjs
 ```
 
-Acceptance servers use IPv4 and a generated self-signed HTTPS certificate in `build/test-tls/`. Browser and Node V8 measurements feed the existing 95% coverage gate. See [acceptance evidence](docs/video-studio-stereo-segments-uat.md) and [licenses](CREDITS.md).
+Rebuild the separate video-compression bundle with `node scripts/build-video-compressor.mjs` after installing the pinned dependencies in `tests/video-studio`. Then rebuild offline HTML. This does not rebuild Video Studio.
+
+Acceptance servers use IPv4 and a generated self-signed HTTPS certificate in `build/test-tls/`. Browser and Node V8 measurements feed the existing 95% coverage gate. See [compression and sticker acceptance](docs/local-tools-uat.md), [Video Studio acceptance](docs/video-studio-stereo-segments-uat.md), and [licenses](CREDITS.md).
 
 ## Deployment
 

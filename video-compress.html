@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'"
+    />
+    <meta name="referrer" content="no-referrer" />
+    <title>Video Compressor | UsefulTool</title>
+    <link rel="stylesheet" href="toolkit.css" />
+    <link rel="stylesheet" href="assets/pages/compression.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="index.html"
+        ><span class="mark">UT</span><span>Video Compressor</span></a
+      >
+      <nav>
+        <a href="index.html">Home</a><a href="video-editor.html">Video Studio</a
+        ><a href="offline/video-compress.html" download>Download HTML</a>
+      </nav>
+    </header>
+    <section class="page-head">
+      <h1>Lightweight video compression</h1>
+      <p>
+        Change resolution, frame rate and encoding. Keep the full duration and
+        audio, using the codecs available in your browser.
+      </p>
+    </section>
+    <main class="tool-shell">
+      <section class="controls stack">
+        <label
+          >Video<input
+            id="videoFile"
+            type="file"
+            accept="video/*,.mp4,.mov,.webm,.mkv"
+        /></label>
+        <label
+          >Resolution · maximum side<select id="resolution">
+            <option value="0">Original dimensions</option>
+            <option value="1920">1920 px</option>
+            <option value="1280" selected>1280 px</option>
+            <option value="854">854 px</option>
+            <option value="640">640 px</option>
+            <option value="320">320 px</option>
+          </select></label
+        >
+        <label
+          >Frames per second<select id="frameRate">
+            <option value="0">Keep original timing</option>
+            <option>15</option>
+            <option>24</option>
+            <option>25</option>
+            <option selected>30</option>
+            <option>60</option>
+          </select></label
+        >
+        <label
+          >Encoding<select id="encoding">
+            <option value="vp9">WebM · VP9</option>
+            <option value="vp8">WebM · VP8</option>
+            <option value="avc">MP4 · H.264</option>
+            <option value="av1">WebM · AV1</option>
+          </select></label
+        >
+        <p class="small muted">
+          Aspect ratio is preserved and small videos are not enlarged. Audio is
+          copied when compatible or re-encoded for the selected container.
+          Smaller dimensions and FPS usually reduce size; already compressed
+          videos can grow.
+        </p>
+        <button id="compressButton" class="primary" disabled>
+          Compress video</button
+        ><button id="cancelButton" hidden>Cancel</button>
+        <progress
+          id="progress"
+          max="1"
+          value="0"
+          aria-label="Video compression progress"
+          hidden
+        ></progress>
+        <div id="status" class="status" role="status" aria-live="polite">
+          Checking available encoders…
+        </div>
+      </section>
+      <section class="workspace stack">
+        <div class="preview-grid">
+          <figure>
+            <video id="originalPreview" controls playsinline></video>
+            <figcaption id="originalFacts">Original video</figcaption>
+          </figure>
+          <figure>
+            <video id="resultPreview" controls playsinline hidden></video>
+            <figcaption id="resultFacts" class="result-facts">
+              Compressed result
+            </figcaption>
+          </figure>
+        </div>
+        <button id="downloadButton" class="primary" disabled>
+          Download video
+        </button>
+      </section>
+    </main>
+    <footer>
+      Files stay on this device. A local codec library uses browser media APIs;
+      no server or FFmpeg download is needed.
+    </footer>
+    <script src="toolkit.js"></script>
+    <script src="vendor/video-compress.min.js"></script>
+    <script src="assets/pages/video-compress.js"></script>
+  </body>
+</html>

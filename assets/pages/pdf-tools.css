@@ -1,0 +1,14 @@
+.pdf-row { display:grid; grid-template-columns:minmax(150px,1fr) minmax(130px,220px) auto; gap:10px; align-items:end; }
+.pdf-record { border:1px solid var(--line); border-radius:10px; padding:14px; min-width:0; }
+.pdf-previews { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,180px)); gap:12px; margin:14px 0; }
+.pdf-page { display:flex; flex-direction:column; justify-content:start; gap:8px; min-width:0; }
+.pdf-page canvas { border:1px solid var(--line); background:white; max-height:300px; object-fit:contain; width:auto; }
+.pdf-page label { display:flex; gap:6px; align-items:center; }
+.pdf-page input { width:auto; }
+.pdf-page span { overflow-wrap:anywhere; }
+.pdf-record details { margin-top:14px; }
+.pdf-record summary { cursor:pointer; color:var(--green); }
+.range-error { color:var(--red); margin:5px 0; }
+[aria-invalid="true"] { border-color:var(--red); }
+[hidden] { display:none !important; }
+@media(max-width:1000px) { .pdf-row { grid-template-columns:1fr; } }
