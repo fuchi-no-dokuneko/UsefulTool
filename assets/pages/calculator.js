@@ -28,7 +28,7 @@ const ops = {
   "*": { p: 3, a: "left", n: 2, fn: (a, b) => a * b },
   "/": { p: 3, a: "left", n: 2, fn: (a, b) => a / b },
   "^": { p: 4, a: "right", n: 2, fn: (a, b) => Math.pow(a, b) },
-  "neg": { p: 5, a: "right", n: 1, fn: (a) => -a }
+  "neg": { p: 4, a: "right", n: 1, fn: (a) => -a }
 };
 
 function toRad(value) {
@@ -197,7 +197,7 @@ function addHistory(expr, value) {
   while (history.children.length > 12) history.lastElementChild.remove();
 }
 
-function runCalculation() {
+function runCalculation(recordHistory = true) {
   const text = expression.value.trim();
   if (!text) {
     result.textContent = "0";
@@ -207,7 +207,7 @@ function runCalculation() {
     const value = calculate(text);
     const formatted = formatNumber(value);
     result.textContent = formatted;
-    addHistory(text, formatted);
+    if (recordHistory) addHistory(text, formatted);
   } catch (err) {
     result.textContent = err.message;
   }
@@ -226,7 +226,7 @@ function setAngleMode(next) {
   angleMode = next;
   radMode.setAttribute("aria-pressed", String(next === "rad"));
   degMode.setAttribute("aria-pressed", String(next === "deg"));
-  runCalculation();
+  runCalculation(false);
 }
 
 function integrate() {
@@ -281,7 +281,7 @@ expression.addEventListener("keydown", (evt) => {
   if (evt.key === "Enter") runCalculation();
 });
 expression.addEventListener("input", () => {
-  if (expression.value.trim()) runCalculation();
+  if (expression.value.trim()) runCalculation(false);
   else result.textContent = "0";
 });
 radMode.addEventListener("click", () => setAngleMode("rad"));
@@ -292,5 +292,5 @@ sourceButton.addEventListener("click", () => {
 });
 
 expression.value = "sin(pi/4)^2 + cos(pi/4)^2";
-runCalculation();
+runCalculation(false);
 window.UsefulToolCalculator = { calculate, formatNumber, integrate, runCalculation, setAngleMode, tokenize, toRpn, evaluateRpn };

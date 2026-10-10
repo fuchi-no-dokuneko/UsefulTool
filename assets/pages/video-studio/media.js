@@ -1,0 +1,379 @@
+/* Local media decoding, identity, thumbnails, waveforms and scene measurements. */
+(function (root) {
+  "use strict";
+  const M = root.UTStudio.Model;
+  const K = new Uint32Array([0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2]);
+  const rotate = (v, n) => v >>> n | v << 32 - n;
+  class SHA256 {
+    constructor() { this.h = new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]); this.tail = new Uint8Array(0); this.length = 0; this.w = new Uint32Array(64); }
+    block(bytes, offset) {
+      const w = this.w;
+      for (let i = 0; i < 16; i++) { const n = offset + i * 4; w[i] = bytes[n] << 24 | bytes[n + 1] << 16 | bytes[n + 2] << 8 | bytes[n + 3]; }
+      for (let i = 16; i < 64; i++) { const a = w[i - 15], b = w[i - 2]; w[i] = w[i - 16] + (rotate(a,7)^rotate(a,18)^a>>>3) + w[i-7] + (rotate(b,17)^rotate(b,19)^b>>>10); }
+      let [a,b,c,d,e,f,g,h] = this.h;
+      for (let i = 0; i < 64; i++) {
+        const t1 = (h + (rotate(e,6)^rotate(e,11)^rotate(e,25)) + (e&f ^ ~e&g) + K[i] + w[i]) | 0;
+        const t2 = ((rotate(a,2)^rotate(a,13)^rotate(a,22)) + (a&b ^ a&c ^ b&c)) | 0;
+        h=g; g=f; f=e; e=(d+t1)|0; d=c; c=b; b=a; a=(t1+t2)|0;
+      }
+      [a,b,c,d,e,f,g,h].forEach((v,i) => { this.h[i] += v; });
+    }
+    update(chunk) {
+      this.length += chunk.length;
+      let bytes = chunk;
+      if (this.tail.length) { bytes = new Uint8Array(this.tail.length + chunk.length); bytes.set(this.tail); bytes.set(chunk, this.tail.length); }
+      let offset = 0;
+      for (; offset + 64 <= bytes.length; offset += 64) this.block(bytes, offset);
+      this.tail = bytes.slice(offset); return this;
+    }
+    digest() {
+      const padded = new Uint8Array(this.tail.length < 56 ? 64 : 128);
+      padded.set(this.tail); padded[this.tail.length] = 128;
+      new DataView(padded.buffer).setBigUint64(padded.length - 8, BigInt(this.length) * 8n);
+      for (let offset = 0; offset < padded.length; offset += 64) this.block(padded, offset);
+      return [...this.h].map((v) => v.toString(16).padStart(8,"0")).join("");
+    }
+  }
+  async function hashFile(file) {
+    const sha = new SHA256(), chunk = 4 * 1024 * 1024;
+    for (let offset = 0; offset < file.size; offset += chunk) {
+      sha.update(new Uint8Array(await file.slice(offset, offset + chunk).arrayBuffer()));
+      if (offset) await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    return sha.digest();
+  }
+  function fileKind(file) {
+    if (file.type.startsWith("video/") || /\.(mp4|webm|mov|m4v|ogv)$/i.test(file.name)) return "video";
+    if (file.type === "audio/mpeg" || /\.mp3$/i.test(file.name)) return "audio";
+    if (/\.(png|jpe?g|bmp|gif|webp)$/i.test(file.name) || /^image\/(png|jpeg|bmp|gif|webp)$/.test(file.type)) return "image";
+    throw new Error("Choose a video, MP3, PNG, JPG, BMP, GIF or WebP file.");
+  }
+  function waitMedia(element, event = "loadeddata", timeout = 20000, signal) {
+    if (signal?.aborted) return Promise.reject(new DOMException("Media preparation was cancelled.", "AbortError"));
+    if (element.utvDisposed) return Promise.reject(new DOMException("The previous media decoder has been closed.", "AbortError"));
+    if (event === "loadedmetadata" && element.readyState >= 1) return Promise.resolve();
+    if (event === "loadeddata" && element.readyState >= 2) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      // Seeking can temporarily lower readyState after loadeddata has already
+      // fired. canplay/seeked must also release a waiter for decoded pixels.
+      const events = event === "loadeddata" ? ["loadeddata", "canplay", "seeked"] : [event];
+      const clean = () => { clearTimeout(timer); events.forEach(name => element.removeEventListener(name, ok)); element.removeEventListener("error", bad); element.removeEventListener("utv-disposed", disposed); signal?.removeEventListener("abort", cancelled); };
+      const ok = () => { if (event === "loadeddata" && element.readyState < 2) return; clean(); resolve(); };
+      const bad = () => { clean(); reject(new Error("This browser could not decode the file. Try a different video codec or MP3.")); };
+      const disposed = () => { clean(); reject(new DOMException("The previous media decoder has been closed.", "AbortError")); };
+      const cancelled = () => { clean(); reject(new DOMException("Media preparation was cancelled.", "AbortError")); };
+      const timer = setTimeout(() => { clean(); reject(new Error("Reading the media timed out. Try a smaller file.")); }, timeout);
+      events.forEach(name => element.addEventListener(name, ok)); element.addEventListener("error", bad, { once: true });
+      element.addEventListener("utv-disposed", disposed, {once:true});
+      signal?.addEventListener("abort", cancelled, {once:true});
+    });
+  }
+  const pendingSeeks = new WeakMap();
+  function seek(element, time, signal) {
+    // A restored preview and a new playback request can seek the same decoder.
+    // Serialize those requests so neither consumes the other's seeked event.
+    const result = (pendingSeeks.get(element) || Promise.resolve()).catch(() => {}).then(() => seekNow(element, time, signal));
+    pendingSeeks.set(element, result);
+    result.finally(() => { if (pendingSeeks.get(element) === result) pendingSeeks.delete(element); }).catch(() => {});
+    return result;
+  }
+  async function seekNow(element, time, signal) {
+    // A new target can supersede an abandoned seek as soon as metadata exists.
+    // Waiting for old decoded pixels first would retain the cancelled stall.
+    await waitMedia(element, "loadedmetadata", 20000, signal);
+    if (signal?.aborted) throw new DOMException("Media preparation was cancelled.", "AbortError");
+    const target = M.clamp(time, 0, Math.max(0, element.duration - .00001));
+    if (Math.abs(element.currentTime - target) >= .0001) {
+      const ready = waitMedia(element, "seeked", 20000, signal); element.currentTime = target; await ready;
+    } else if (element.seeking) await waitMedia(element, "seeked", 20000, signal);
+    await waitMedia(element, "loadeddata", 20000, signal);
+  }
+  const userAgent = root.navigator?.userAgent || "";
+  const softwareCanvas = /Firefox\//.test(userAgent) && /Linux|X11/.test(userAgent) && !/Android/.test(userAgent);
+  function prepareCanvas(c) {
+    // Firefox/Linux can retain readable pixels while an accelerated canvas is
+    // not presented. Select its software backing before the FIRST getContext:
+    // setting this on an existing context cannot change its allocation.
+    // Apply it to scratch surfaces and UI waveforms too, not only the preview.
+    if (softwareCanvas) c.getContext("2d", { willReadFrequently: true });
+    return c;
+  }
+  function makeCanvas(width, height) { const c = document.createElement("canvas"); c.width = width; c.height = height; return prepareCanvas(c); }
+  function poster(source, width, height) {
+    const c = makeCanvas(160, Math.max(1, Math.round(160 * height / width)));
+    c.getContext("2d").drawImage(source, 0, 0, c.width, c.height);
+    return c.toDataURL("image/png");
+  }
+  async function waveform(file) {
+    // Avoid allocating many gigabytes of decoded PCM merely to draw a thumbnail.
+    if (file.size > 128 * 1024 * 1024) return { waveform: [], waveformStatus: "Waveform omitted for this large file" };
+    const Offline = root.OfflineAudioContext || root.webkitOfflineAudioContext;
+    if (!Offline) return { waveform: [], waveformStatus: "Waveform unavailable in this browser" };
+    try {
+      const context = new Offline(2, 1, 22050);
+      let buffer = await context.decodeAudioData(await file.arrayBuffer());
+      if (buffer.numberOfChannels > 2) {
+        const downmix = new Offline(2, buffer.length, buffer.sampleRate), source = downmix.createBufferSource();
+        source.buffer = buffer; source.connect(downmix.destination); source.start();
+        buffer = await downmix.startRendering();
+      }
+      const bins = 512, size = Math.ceil(buffer.length / bins),
+        left = buffer.getChannelData(0), right = buffer.getChannelData(Math.min(1, buffer.numberOfChannels - 1)),
+        waveformLeft = [], waveformRight = [], waveformMono = [];
+      for (let bin = 0; bin < bins; bin++) {
+        let l = 0, r = 0, mono = 0;
+        for (let j = bin * size; j < Math.min(buffer.length, (bin + 1) * size); j++) {
+          l = Math.max(l, Math.abs(left[j])); r = Math.max(r, Math.abs(right[j]));
+          mono = Math.max(mono, Math.abs((left[j] + right[j]) / 2));
+        }
+        const peak = n => Math.min(1, Math.round(n * 1000) / 1000);
+        waveformLeft.push(peak(l)); waveformRight.push(peak(r)); waveformMono.push(peak(mono));
+      }
+      return { waveform: waveformLeft.map((n, i) => Math.max(n, waveformRight[i])),
+        waveformLeft, waveformRight, waveformMono, waveformStatus: "Ready", audioDuration: buffer.duration };
+    } catch { return { waveform: [], waveformStatus: "No decodable waveform; playback may still be available" }; }
+  }
+  class MediaLibrary {
+    constructor() { this.assets = new Map(); this.elements = new Map(); this.frames = new Map(); }
+    async read(file, requestedKind) {
+      const kind = fileKind(file);
+      if (requestedKind && kind !== requestedKind) throw new Error("This file is not a supported " + requestedKind + " file.");
+      if (file.size === 0) throw new Error("This file is empty.");
+      if (file.size > (kind === "image" ? 25 * 1024 * 1024 : 1024 * 1024 * 1024)) throw new Error(kind === "image" ? "Images must be at most 25 MiB." : "Media files must be at most 1 GiB.");
+      const descriptor = { id: M.id("asset"), kind, name: file.name, mimeType: file.type, size: file.size, contentHash: await hashFile(file) };
+      const runtime = await this.attach(descriptor, file);
+      if (kind === "image") {
+        const image = runtime.image;
+        const width = image.naturalWidth || image.width, height = image.naturalHeight || image.height;
+        Object.assign(descriptor, { width, height, thumbnail: poster(image, width, height) });
+        const c = makeCanvas(Math.min(256, width), Math.min(256, height));
+        const ctx = c.getContext("2d", { willReadFrequently: true }); ctx.drawImage(image, 0, 0, c.width, c.height);
+        const data = ctx.getImageData(0, 0, c.width, c.height).data;
+        descriptor.transparent = data.some((alpha, index) => index % 4 === 3 && alpha < 255);
+        descriptor.animated = /\.gif$/i.test(file.name);
+        // Freeze GIF/WebP at the decoded first frame for deterministic still-image exports.
+        const still = makeCanvas(width, height); still.getContext("2d").drawImage(image, 0, 0);
+        runtime.image = still;
+      } else {
+        const element = runtime.probe;
+        if (!Number.isFinite(element.duration) || element.duration < M.MIN) throw new Error("The file has no readable finite duration.");
+        descriptor.duration = element.duration;
+        if (kind === "video") {
+          descriptor.width = element.videoWidth; descriptor.height = element.videoHeight;
+          if (!(descriptor.width && descriptor.height)) throw new Error("This file has no readable video frames.");
+          descriptor.thumbnail = poster(element, descriptor.width, descriptor.height);
+        }
+      }
+      return descriptor;
+    }
+    async attach(descriptor, file) {
+      const existing = this.assets.get(descriptor.id);
+      if (existing) return existing;
+      const entry = { file, url: URL.createObjectURL(file) };
+      try {
+        if (descriptor.kind === "video") {
+          const C = root.UTVideoCodecs;
+          const input = new C.Input({ formats: C.ALL_FORMATS, source: new C.BlobSource(file) });
+          try {
+            const tracks = await input.getAudioTracks();
+            const metadata = await Promise.all(tracks.map(async track => ({ channels: await track.getNumberOfChannels(), sampleRate: await track.getSampleRate() })));
+            descriptor.hasAudio = metadata.some(track => track.channels > 0 && track.sampleRate > 0);
+          } finally { input.dispose(); }
+        }
+        if (descriptor.kind === "image") {
+          const image = new Image(); image.src = entry.url; await image.decode(); entry.image = image;
+          if (/\.(gif|webp)$/i.test(descriptor.name)) {
+            const c = makeCanvas(image.naturalWidth, image.naturalHeight); c.getContext("2d").drawImage(image, 0, 0); entry.image = c;
+          }
+        } else {
+          const element = document.createElement(descriptor.kind === "video" ? "video" : "audio");
+          element.preload = "auto"; element.muted = true; element.playsInline = true; element.src = entry.url;
+          await waitMedia(element); entry.probe = element;
+          if ((descriptor.kind === "audio" || descriptor.hasAudio) &&
+              (!descriptor.waveformLeft || !descriptor.waveformRight || !descriptor.waveformMono))
+            Object.assign(descriptor, await waveform(file));
+        }
+        this.assets.set(descriptor.id, entry); return entry;
+      } catch (error) { URL.revokeObjectURL(entry.url); throw error; }
+    }
+    has(assetId) { return this.assets.has(assetId); }
+    element(value) {
+      if (this.elements.has(value.id)) return this.elements.get(value.id);
+      const entry = this.assets.get(value.assetId);
+      if (!entry || value.kind === "image") return null;
+      const element = document.createElement(value.kind === "video" ? "video" : "audio");
+      element.preload = "auto"; element.playsInline = true; element.muted = value.kind === "video";
+      element.preservesPitch = true; element.src = entry.url;
+      this.elements.set(value.id, element);
+      if (value.kind === "video" && root.createImageBitmap) {
+        const state = { element, bitmap: null, serial: 0, pending: null, timestamp: null, drawnAt: null, disposed: false };
+        this.frames.set(value.id, state);
+        const decoded = (_, metadata) => {
+          if (state.disposed) return;
+          if (!state.pending && !state.fallback)
+            this.captureFrame(value, null, metadata.mediaTime, false).catch(() => {});
+          state.callback = element.requestVideoFrameCallback(decoded);
+        };
+        if (element.requestVideoFrameCallback) state.callback = element.requestVideoFrameCallback(decoded);
+      }
+      return element;
+    }
+    async captureFrame(value, signal, timestamp, force = true) {
+      if (value.kind !== "video" || !root.createImageBitmap) return;
+      const element = this.element(value), state = this.frames.get(value.id);
+      if (!state || state.disposed || state.fallback || element.readyState < 2) return;
+      if (signal?.aborted) throw new DOMException("Frame preparation was cancelled.", "AbortError");
+      if (!force && state.pending) return state.pending;
+      // A callback may arrive late for an offscreen media element. Snapshot the
+      // decoder's actual frame and retain its presentation timestamp, rather
+      // than labelling old pixels with the advancing media clock.
+      let frame = element;
+      if (root.VideoFrame) {
+        try { frame = new root.VideoFrame(element); }
+        catch {
+          // A ready decoder need not support copying its surface to VideoFrame.
+          // The HTMLVideoElement remains usable without this optimization.
+        }
+      }
+      const at = frame === element ? timestamp ?? element.currentTime : frame.timestamp / 1e6;
+      const transform = value.transform;
+      const fullWidth = element.videoWidth, fullHeight = element.videoHeight;
+      // Match the displayed preview, capped at 960px. Preserve native pixels for crops
+      // and enlarged layers; uncropped pictures need no larger intermediate.
+      const limit = Math.min(960, this.frameLimit?.() || 960);
+      const resize = transform && transform.cropWidth >= fullWidth &&
+        transform.cropHeight >= fullHeight && transform.width <= fullWidth &&
+        transform.height <= fullHeight && Math.max(fullWidth, fullHeight) > limit;
+      const scale = resize ? limit / Math.max(fullWidth, fullHeight) : 1;
+      const bitmapOptions = resize ? { resizeWidth: Math.round(fullWidth * scale), resizeHeight: Math.round(fullHeight * scale) } : {};
+      if (!force && state.bitmap && at === state.timestamp) { if (frame !== element) frame.close(); return; }
+      const serial = ++state.serial;
+      // Prefer completed bitmaps to avoid synchronous video-surface transfers
+      // on the playback clock, retaining the native video as a fallback.
+      const closeFrame = () => { if (frame !== element) frame.close(); };
+      const conversion = Promise.resolve().then(() => root.createImageBitmap(frame, bitmapOptions)).then(bitmap => {
+        if (state.disposed || serial !== state.serial) { bitmap.close(); return; }
+        state.bitmap?.close(); state.bitmap = bitmap; state.timestamp = at; state.nativeFallback = false;
+      }).catch(error => {
+        if (state.disposed || serial !== state.serial) return;
+        if (error?.name === "InvalidStateError") {
+          state.bitmap?.close(); state.bitmap = null; state.nativeFallback = true;
+        } else state.fallback = true;
+      }).finally(closeFrame);
+      // Bitmap conversion is a preview optimization, not a decoding requirement.
+      // A stalled GPU copy must not hold Engine.prepare (and the first paint)
+      // forever. Retire this converter and draw the decoded video directly.
+      let timer;
+      const expired = new Promise(resolve => {
+        timer = setTimeout(() => {
+          if (!state.disposed && serial === state.serial) {
+            state.serial++;
+            state.fallback = true;
+            state.bitmap?.close(); state.bitmap = null;
+          }
+          closeFrame();
+          resolve();
+        }, 250);
+      });
+      const operation = Promise.race([conversion, expired]).finally(() => clearTimeout(timer));
+      state.pending = operation;
+      operation.finally(() => { if (state.pending === operation) state.pending = null; }).catch(() => {});
+      if (!signal) return operation;
+      let abort;
+      const stopped = new Promise((_, reject) => {
+        abort = () => {
+          if (serial === state.serial) state.serial++;
+          closeFrame();
+          reject(new DOMException("Frame preparation was cancelled.", "AbortError"));
+        };
+        signal.addEventListener("abort", abort, { once: true });
+      });
+      try { await Promise.race([operation, stopped]); }
+      finally { signal.removeEventListener("abort", abort); }
+    }
+    frameFor(value) {
+      const element = this.element(value), state = this.frames.get(value.id);
+      if (!state) return element;
+      if (state.fallback) { state.drawnAt = null; return element; }
+      const tr = value.transform;
+      if (state.bitmap && state.bitmap.width < element.videoWidth && tr &&
+          (tr.cropWidth < element.videoWidth || tr.cropHeight < element.videoHeight ||
+            tr.width > element.videoWidth || tr.height > element.videoHeight ||
+            Math.max(state.bitmap.width, state.bitmap.height) < Math.min(element.videoWidth > element.videoHeight ? element.videoWidth : element.videoHeight, this.frameLimit?.() || 960))) {
+        state.drawnAt = null;
+        return element;
+      }
+      if (!state.pending && (state.nativeFallback || !element.requestVideoFrameCallback ||
+          (!element.paused && !element.seeking && Math.abs(element.currentTime - state.timestamp) > 1 / 60)))
+        this.captureFrame(value, null, undefined, false).catch(() => {});
+      if (state.nativeFallback || !state.bitmap) { state.drawnAt = null; return element; }
+      // An asynchronous conversion can be delayed under load. Do not keep
+      // displaying its older cached pixels after the decoder has moved on.
+      if (state.bitmap && !element.paused && !element.seeking &&
+          element.currentTime - state.timestamp > .075) {
+        state.drawnAt = null;
+        if (root.VideoFrame) {
+          try {
+            const current = new root.VideoFrame(element);
+            state.drawnAt = current.timestamp / 1e6;
+            current.close();
+          } catch { /* Timestamp sampling must not suppress the native picture. */ }
+        }
+        return element;
+      }
+      state.drawnAt = state.timestamp;
+      return state.bitmap;
+    }
+    frameTimestamp(value) { return this.frames.get(value.id)?.drawnAt; }
+    async relink(descriptor, file) {
+      if (descriptor.size !== file.size || descriptor.name !== file.name || descriptor.contentHash !== await hashFile(file)) throw new Error("This file does not match the saved name, size and content. Choose the original file.");
+      await this.attach(descriptor, file); return descriptor;
+    }
+    async analyze(descriptor, progress = () => {}, signal) {
+      signal?.throwIfAborted();
+      if (descriptor.analysis) return descriptor.analysis;
+      if (descriptor.kind !== "video") return { cuts: [], peaks: [] };
+      const entry = this.assets.get(descriptor.id);
+      if (!entry) throw new Error("Relink " + descriptor.name + " before making a movie.");
+      // A dedicated decoder can be closed immediately without disturbing preview.
+      const video = document.createElement("video"), c = makeCanvas(48, 27), ctx = c.getContext("2d", { willReadFrequently: true });
+      video.preload = "auto"; video.muted = true; video.playsInline = true; video.src = entry.url;
+      const close = () => { video.pause(); video.removeAttribute("src"); video.load(); };
+      signal?.addEventListener("abort", close, { once: true });
+      try {
+      const count = Math.max(2, Math.min(60, Math.ceil(descriptor.duration))), cuts = []; let previous = null;
+      for (let i = 0; i < count; i++) {
+        const time = Math.min(descriptor.duration - .001, i * descriptor.duration / count);
+        signal?.throwIfAborted();
+        await seek(video, time, signal); ctx.drawImage(video, 0, 0, c.width, c.height);
+        const pixels = ctx.getImageData(0, 0, c.width, c.height).data;
+        if (previous) {
+          let difference = 0;
+          for (let j = 0; j < pixels.length; j += 4) difference += Math.abs(pixels[j] - previous[j]) + Math.abs(pixels[j+1] - previous[j+1]) + Math.abs(pixels[j+2] - previous[j+2]);
+          cuts.push({ time, change: difference / (c.width * c.height * 3 * 255) });
+        }
+        previous = pixels; progress((i + 1) / count);
+      }
+      const wave = descriptor.waveform || [], threshold = Math.max(.005, Math.max(0, ...wave) * .8);
+      const peaks = wave.map((level, index, list) => ({ time: index / list.length * descriptor.duration, level, index })).filter((p) => p.level >= threshold && p.level >= (wave[p.index - 1] || 0) && p.level >= (wave[p.index + 1] || 0));
+      signal?.throwIfAborted();
+      descriptor.analysis = { cuts: cuts.sort((a,b) => b.change - a.change), peaks };
+      return descriptor.analysis;
+      } finally { signal?.removeEventListener("abort", close); close(); }
+    }
+    pause() { for (const element of this.elements.values()) element.pause(); }
+    dispose() {
+      this.pause();
+      for (const state of this.frames.values()) {
+        state.disposed = true; state.serial++; state.bitmap?.close();
+        if (state.callback !== undefined) state.element.cancelVideoFrameCallback?.(state.callback);
+      }
+      this.frames.clear();
+      for (const element of this.elements.values()) { element.utvDisposed = true; element.dispatchEvent(new Event("utv-disposed")); element.removeAttribute("src"); element.load(); }
+      for (const entry of this.assets.values()) { if (entry.probe) { entry.probe.utvDisposed = true; entry.probe.dispatchEvent(new Event("utv-disposed")); entry.probe.removeAttribute("src"); entry.probe.load(); } URL.revokeObjectURL(entry.url); }
+      this.elements.clear(); this.assets.clear();
+    }
+  }
+  root.UTStudio.Media = { SHA256, hashFile, fileKind, waitMedia, seek, prepareCanvas, makeCanvas, MediaLibrary };
+  if (typeof module !== "undefined") module.exports = root.UTStudio.Media;
+})(globalThis);

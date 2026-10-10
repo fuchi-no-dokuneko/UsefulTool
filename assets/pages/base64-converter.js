@@ -6,9 +6,18 @@ const byteView = document.getElementById("byteView");
 const dataUri = document.getElementById("dataUri");
 const urlSafe = document.getElementById("urlSafe");
 const downloadButton = document.getElementById("downloadButton");
+const copyButton = document.getElementById("copyButton");
 let selectedBytes = null;
 let selectedMime = "application/octet-stream";
 let decodedBytes = null;
+
+function clearDecodedOutput() {
+  decodedBytes = null;
+  output.value = "";
+  byteView.textContent = "No decoded bytes.";
+  downloadButton.disabled = true;
+  copyButton.disabled = true;
+}
 
 function bytesToBase64(bytes) {
   let binary = "";
@@ -59,6 +68,7 @@ async function encode() {
     output.value = dataUri.checked ? "data:" + selectedMime + ";base64," + encoded : encoded;
     decodedBytes = null;
     downloadButton.disabled = true;
+    copyButton.disabled = false;
     UsefulTool.status(status, "Encoded " + UsefulTool.bytesLabel(bytes.length) + ".");
   } catch (error) { UsefulTool.status(status, error.message, "error"); }
 }
@@ -74,8 +84,12 @@ function decode() {
     output.value = decodedText;
     showBytes(result.bytes, result.mime);
     downloadButton.disabled = false;
+    copyButton.disabled = false;
     UsefulTool.status(status, "Decoded " + UsefulTool.bytesLabel(result.bytes.length) + ".");
-  } catch (error) { UsefulTool.status(status, error.message, "error"); }
+  } catch (error) {
+    clearDecodedOutput();
+    UsefulTool.status(status, error.message, "error");
+  }
 }
 
 fileInput.addEventListener("change", async () => {
@@ -89,18 +103,17 @@ fileInput.addEventListener("change", async () => {
 input.addEventListener("input", () => { selectedBytes = null; selectedMime = "text/plain;charset=utf-8"; });
 document.getElementById("encodeButton").addEventListener("click", encode);
 document.getElementById("decodeButton").addEventListener("click", decode);
-document.getElementById("copyButton").addEventListener("click", async () => {
+copyButton.addEventListener("click", async () => {
   await navigator.clipboard.writeText(output.value);
   UsefulTool.status(status, "Output copied.");
 });
 document.getElementById("useOutputButton").addEventListener("click", () => {
-  input.value = output.value; selectedBytes = null; output.value = ""; UsefulTool.status(status, "Output moved to input.");
+  input.value = output.value; selectedBytes = null; clearDecodedOutput(); UsefulTool.status(status, "Output moved to input.");
 });
 downloadButton.addEventListener("click", () => {
   if (decodedBytes) UsefulTool.download(new Blob([decodedBytes], { type: selectedMime }), "base64-decoded.bin");
 });
 document.getElementById("clearButton").addEventListener("click", () => {
-  input.value = ""; output.value = ""; fileInput.value = ""; selectedBytes = null; decodedBytes = null;
-  byteView.textContent = "No decoded bytes."; downloadButton.disabled = true; UsefulTool.status(status, "Cleared.");
+  input.value = ""; fileInput.value = ""; selectedBytes = null; clearDecodedOutput(); UsefulTool.status(status, "Cleared.");
 });
-window.UsefulToolBase64 = { base64ToBytes, bytesToBase64, decode, encode, normalizeBase64, showBytes };
+window.UsefulToolBase64 = { base64ToBytes, bytesToBase64, clearDecodedOutput, decode, encode, normalizeBase64, showBytes };

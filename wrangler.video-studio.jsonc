@@ -1,0 +1,10 @@
+{
+  "name": "usefultool-video-studio",
+  "compatibility_date": "2026-09-13",
+  "assets": {
+    "directory": "./build/video-studio",
+  },
+  "build": {
+    "command": "node scripts/build-video-studio.mjs",
+  },
+}

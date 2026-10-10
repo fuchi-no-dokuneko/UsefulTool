@@ -23,8 +23,12 @@ for (const name of pages) {
   catch (error) { failures.push(`${name}: offline copy is missing`); continue; }
   if (/<link\s+[^>]*href="(?!data:|https?:|\/\/)/i.test(offline)) failures.push(`${name}: offline copy has a local stylesheet dependency`);
   if (/<script\s+[^>]*src="(?!data:|https?:|\/\/)/i.test(offline)) failures.push(`${name}: offline copy has a local script dependency`);
-  if (/from\s+["']\.\.?\//.test(offline)) failures.push(`${name}: offline copy has a local module dependency`);
-  if (/\b(?:fetch|XMLHttpRequest|WebSocket)\s*\(/.test(offline)) failures.push(`${name}: offline copy contains a network API call`);
+  for (const script of offline.matchAll(/<script\b[^>]*type="module"[^>]*>([\s\S]*?)<\/script>/gi)) {
+    if (/from\s+["']\.\.?\//.test(script[1])) failures.push(`${name}: offline copy has a local module dependency`);
+  }
+  if (!/connect-src\s+'none'/i.test(offline)) failures.push(`${name}: offline copy does not block outbound connections`);
+  const applicationSource = offline.replace(/<script[^>]*data-inlined-from="vendor\/[^"]+"[^>]*>[\s\S]*?<\/script>/gi, "");
+  if (/\b(?:fetch|XMLHttpRequest|WebSocket)\s*\(/.test(applicationSource)) failures.push(`${name}: offline copy contains a network API call outside a vendored library`);
   if (Buffer.byteLength(offline) > maximumArtifactBytes) failures.push(`${name}: offline copy exceeds the 2 MiB budget`);
   const entry = manifestEntries.get(name);
   const digest = crypto.createHash("sha256").update(offline).digest("hex");

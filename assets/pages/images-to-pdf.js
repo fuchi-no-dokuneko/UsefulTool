@@ -80,7 +80,7 @@ document.getElementById("buildButton").addEventListener("click", async () => {
       const scale = Math.min((pageWidth - margin * 2) / record.width, (pageHeight - margin * 2 - captionSpace) / record.height);
       const width = record.width * scale; const height = record.height * scale;
       page.drawImage(embedded, { x: (pageWidth - width) / 2, y: margin + captionSpace + (pageHeight - margin * 2 - captionSpace - height) / 2, width, height });
-      if (caption) page.drawText(record.file.name.slice(0, 120), { x: margin, y: margin, size: 10, font, color: PDFLib.rgb(0.18, 0.22, 0.2) });
+      if (caption) await drawPdfCaption(pdf, page, record.file.name, font, margin);
     }
     pdf.setCreator("UsefulTool Images to PDF"); pdf.setProducer("pdf-lib");
     const bytes = await pdf.save(); UsefulTool.download(new Blob([bytes], { type: "application/pdf" }), "usefultool-images.pdf");

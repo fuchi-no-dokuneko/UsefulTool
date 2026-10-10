@@ -17,11 +17,14 @@ const storageKeys = {
   diffRight: "usefultool:file-diff:right-text"
 };
 let drafts = [];
+let savedDrafts = new Map();
 let activeId = "";
 let current;
 let saveTimer = 0;
 let lastFilename = "";
 let showLineNumbers = true;
+const sentenceSegmenter = typeof Intl.Segmenter === "function"
+  ? new Intl.Segmenter(undefined, { granularity: "sentence" }) : null;
 
 function storageAvailable() {
   try {
@@ -53,15 +56,6 @@ function writeStorage(key, value) {
   } catch (error) {
     UsefulTool.status(status, "Browser storage is full. Current text is not saved for reload.", "warn");
     return false;
-  }
-}
-
-function removeStorage(key) {
-  if (!canStoreText) return;
-  try {
-    localStorage.removeItem(key);
-  } catch (error) {
-    // Nothing to do when storage cleanup is blocked.
   }
 }
 
@@ -97,6 +91,9 @@ function loadDrafts() {
       drafts = [];
     }
   }
+  if (canStoreText) {
+    try { drafts = UsefulToolDraftStore.read().map((d, i) => cleanDraft(d, "Text " + (i + 1))); } catch { /* Keep the legacy collection. */ }
+  }
   const legacyText = readStorage(legacyStorageKey);
   if (legacyText != null && !drafts.some((draft) => draft.text === legacyText)) {
     drafts.unshift(cleanDraft({ name: "Migrated word count", text: legacyText, mode: "auto" }, "Migrated word count"));
@@ -104,10 +101,23 @@ function loadDrafts() {
   if (!drafts.length) drafts = [defaultDraft()];
   activeId = readStorage(storageKeys.active) || drafts[0].id;
   if (!drafts.some((draft) => draft.id === activeId)) activeId = drafts[0].id;
+  savedDrafts = new Map(drafts.map(d => [d.id, JSON.stringify(d)]));
+  // Migrate existing drafts to independent keys before another tab can write.
+  if (canStoreText) try { drafts.forEach(d => UsefulToolDraftStore.write(d, true)); } catch { /* Report on save. */ }
 }
 
 function saveDrafts(immediate) {
   const run = () => {
+    if (canStoreText) try {
+      for (const draft of drafts) {
+        if (savedDrafts.get(draft.id) !== JSON.stringify(draft)) UsefulToolDraftStore.write(draft);
+      }
+      drafts = UsefulToolDraftStore.read();
+      savedDrafts = new Map(drafts.map(d => [d.id, JSON.stringify(d)]));
+    } catch {
+      UsefulTool.status(status, "Browser storage is full. Download your text to keep it.", "warn");
+      return;
+    }
     writeStorage(storageKeys.drafts, JSON.stringify(drafts));
     writeStorage(storageKeys.active, activeId);
     const draft = activeDraft();
@@ -183,8 +193,8 @@ function analyze(text) {
   });
   let sentences = 0;
   if (text.trim()) {
-    if (typeof Intl.Segmenter === "function") {
-      sentences = [...new Intl.Segmenter(undefined, { granularity: "sentence" }).segment(text)]
+    if (sentenceSegmenter) {
+      sentences = [...sentenceSegmenter.segment(text)]
         .filter((part) => /[\p{L}\p{N}]/u.test(part.segment)).length;
     } else {
       sentences = (text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || []).filter((part) => part.trim()).length;
@@ -396,18 +406,28 @@ function formatCss(input) {
   return formatBraceCode(input).replace(/;\s*/g, ";\n").replace(/\n{3,}/g, "\n\n");
 }
 
-function formatCurrent() {
+async function formatCurrent() {
   const mode = inferMode();
   const before = textInput.value;
+  const draftId = activeId;
   let formatted = before;
   if (mode === "json") formatted = formatJsonBestEffort(before);
-  else if (mode === "java" || mode === "kotlin" || mode === "javascript") formatted = formatBraceCode(before);
+  else if (mode === "javascript") {
+    try {
+      formatted = await prettier.format(before, { parser: "babel", plugins: prettierPlugins });
+    } catch (error) {
+      UsefulTool.status(status, "JavaScript could not be formatted: " + error.message, "warn");
+      return before;
+    }
+  }
+  else if (mode === "java" || mode === "kotlin") formatted = formatBraceCode(before);
   else if (mode === "html" || mode === "xml") formatted = formatMarkup(before);
   else if (mode === "css") formatted = formatCss(before);
   else {
     UsefulTool.status(status, "Choose JSON, Java, Kotlin, JavaScript, HTML, CSS, or XML to format.", "warn");
     return before;
   }
+  if (activeId !== draftId || textInput.value !== before || inferMode() !== mode) return textInput.value;
   textInput.value = formatted;
   afterTextChanged("Formatted as " + mode + ".");
   return formatted;
@@ -671,6 +691,10 @@ document.getElementById("deleteDraft").addEventListener("click", () => {
   const draft = activeDraft();
   if (!draft) return;
   if (!confirm("Delete this saved text?\n\n" + draft.name)) return;
+  if (canStoreText) try { UsefulToolDraftStore.remove(draft.id); } catch {
+    UsefulTool.status(status, "Draft could not be deleted from browser storage.", "warn");
+    return;
+  }
   drafts = drafts.filter((item) => item.id !== draft.id);
   if (!drafts.length) drafts = [defaultDraft()];
   activeId = drafts[0].id;

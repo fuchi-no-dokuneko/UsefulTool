@@ -1,0 +1,1 @@
+.image-row{display:grid;grid-template-columns:72px minmax(140px,1fr) auto;gap:12px;align-items:center}.image-row img{width:72px;height:58px;object-fit:contain;background:#eef2ef}@media(max-width:620px){.image-row{grid-template-columns:58px 1fr}.image-row .row{grid-column:1/-1}}

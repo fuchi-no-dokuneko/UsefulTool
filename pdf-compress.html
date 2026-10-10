@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; worker-src 'self' blob:; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'"
+    />
+    <meta name="referrer" content="no-referrer" />
+    <title>PDF Compressor | UsefulTool</title>
+    <link rel="stylesheet" href="toolkit.css" />
+    <link rel="stylesheet" href="assets/pages/compression.css" />
+    <link rel="stylesheet" href="assets/pages/pdf-tools.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="index.html"
+        ><span class="mark">UT</span><span>PDF Compressor</span></a
+      >
+      <nav>
+        <a href="index.html">Home</a><a href="pdf-merge.html">PDF Merge</a
+        ><a href="offline/pdf-compress.html" download>Download HTML</a>
+      </nav>
+    </header>
+    <section class="page-head">
+      <h1>Compress a PDF to a size limit</h1>
+      <p>
+        Optimize embedded pictures first, keeping page text, vectors and links.
+        Check the measured result and preview before downloading.
+      </p>
+    </section>
+    <main class="tool-shell">
+      <section class="controls stack">
+        <label
+          >PDF file<input
+            id="pdfFile"
+            type="file"
+            accept="application/pdf,.pdf"
+        /></label>
+        <div class="row">
+          <label class="grow"
+            >Maximum size<input
+              id="targetSize"
+              type="number"
+              value="1"
+              step="any"
+              min="0.001" /></label
+          ><label
+            >Unit<select id="targetUnit">
+              <option>KiB</option>
+              <option selected>MiB</option>
+            </select></label
+          >
+        </div>
+        <label class="check"
+          ><input id="allowRaster" type="checkbox" />Allow page-image fallback
+          if needed</label
+        >
+        <p class="small muted">
+          Fallback turns pages into pictures: selectable text, links, forms and
+          accessibility structure are lost in that copy. Leave it off to
+          preserve them. Encrypted PDFs are not supported. Editing a signed PDF
+          invalidates its signature.
+        </p>
+        <button id="compressButton" class="primary" disabled>
+          Compress PDF</button
+        ><button id="cancelButton" hidden>Cancel</button>
+        <progress
+          id="progress"
+          max="1"
+          value="0"
+          aria-label="PDF compression progress"
+          hidden
+        ></progress>
+        <div id="status" class="status" role="status" aria-live="polite">
+          Choose a PDF of at most 100 MiB.
+        </div>
+      </section>
+      <section class="workspace stack">
+        <p id="fileFacts" class="muted">No PDF loaded.</p>
+        <h2>Original pages</h2>
+        <div id="originalPages"></div>
+        <section id="resultSection" hidden>
+          <h2>Compressed PDF</h2>
+          <p id="resultFacts" class="result-facts"></p>
+          <div id="resultPages"></div>
+          <button id="downloadButton" class="primary" disabled>
+            Download PDF
+          </button>
+        </section>
+      </section>
+    </main>
+    <footer>
+      Everything is processed in browser memory. Complex images that cannot be
+      safely optimized are kept intact.
+    </footer>
+    <script src="toolkit.js"></script>
+    <script src="vendor/pdf-lib.min.js"></script>
+    <script src="assets/pages/compression.js"></script>
+    <script src="assets/pages/pdf-compression.js"></script>
+    <script
+      id="pdfWorkerSource"
+      type="text/plain"
+      data-inline-worker-src="vendor/pdf.worker.min.mjs"
+      data-inline-worker-compress="gzip"
+    ></script>
+    <script type="module" src="vendor/pdf.min.mjs"></script>
+    <script type="module" src="assets/pages/pdf-preview.js"></script>
+    <script type="module" src="assets/pages/pdf-compress.js"></script>
+  </body>
+</html>

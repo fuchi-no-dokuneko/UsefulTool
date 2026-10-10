@@ -8,6 +8,12 @@ on:
 permissions: {}
 
 jobs:
+  video-acceptance:
+    name: Video Studio release gate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/video-studio.yml
+
   validate:
     name: Unit, UAT, and coverage
     runs-on: ubuntu-latest
@@ -24,6 +30,7 @@ jobs:
         run: |
           test -f index.html
           test -f image-converter.html
+          test -f image-compress.html
           test -f calculator.html
           test -f unit-converter.html
           test -f metadata-lab.html
@@ -35,6 +42,9 @@ jobs:
           test -f lan-chat.html
           test -f image-editor.html
           test -f pdf-merge.html
+          test -f pdf-compress.html
+          test -f video-compress.html
+          test -f sticker.html
           test -f images-to-pdf.html
           test -f toolkit.js
           test -f toolkit.css
@@ -62,10 +72,13 @@ jobs:
           done
       - name: Run browser unit and UAT coverage
         env:
-          UAT_TIMEOUT_MS: "90000"
+          UAT_TIMEOUT_MS: "240000"
         run: node scripts/run-browser-uat.mjs
       - name: Enforce complete maintained-source coverage
-        run: node scripts/verify-coverage.mjs
+        run: |
+          NODE_V8_COVERAGE=build/reports/browser-uat/node node --test tests/video-studio/*.test.cjs tests/new-tools/*.test.cjs
+          node scripts/merge-node-coverage.mjs
+          node scripts/verify-coverage.mjs
       - name: Verify SonarQube input reports
         run: |
           test -s build/reports/browser-uat/lcov.info
@@ -106,7 +119,7 @@ jobs:
           if-no-files-found: error
 
   deploy:
-    needs: validate
+    needs: [validate, video-acceptance]
     runs-on: ubuntu-latest
     permissions:
       actions: read

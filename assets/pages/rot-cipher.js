@@ -5,6 +5,14 @@ const shift = document.getElementById("shift");
 const direction = document.getElementById("direction");
 const allShifts = document.getElementById("allShifts");
 const status = document.getElementById("status");
+const copyButton = document.getElementById("copyButton");
+const swapButton = document.getElementById("swapButton");
+
+function clearOutput() {
+  output.value = "";
+  copyButton.disabled = true;
+  swapButton.disabled = true;
+}
 
 function rotateAlpha(text, amount) {
   const normalized = ((amount % 26) + 26) % 26;
@@ -24,12 +32,16 @@ function rot47(text) {
 }
 
 function transform() {
-  const amount = Number(shift.value);
-  if (!Number.isInteger(amount) || amount < 0 || amount > 25) {
+  const shiftText = shift.value.trim();
+  const amount = Number(shiftText);
+  if (algorithm.value !== "rot47" && (!shiftText || !Number.isInteger(amount) || amount < 0 || amount > 25)) {
+    clearOutput();
     UsefulTool.status(status, "Shift must be an integer from 0 through 25.", "error");
     return;
   }
   output.value = algorithm.value === "rot47" ? rot47(input.value) : rotateAlpha(input.value, direction.value === "decode" ? -amount : amount);
+  copyButton.disabled = false;
+  swapButton.disabled = false;
   UsefulTool.status(status, "Transformed " + input.value.length + " characters. ROT remains reversible obfuscation.", "warn");
 }
 
@@ -48,8 +60,8 @@ document.getElementById("generateButton").addEventListener("click", () => {
 document.getElementById("bruteButton").addEventListener("click", () => {
   allShifts.textContent = Array.from({ length: 26 }, (_, amount) => "ROT" + amount.toString().padStart(2, "0") + "  " + rotateAlpha(input.value, -amount)).join("\n");
 });
-document.getElementById("copyButton").addEventListener("click", async () => { await navigator.clipboard.writeText(output.value); UsefulTool.status(status, "Output copied.", "warn"); });
-document.getElementById("swapButton").addEventListener("click", () => { input.value = output.value; output.value = ""; });
-document.getElementById("clearButton").addEventListener("click", () => { input.value = ""; output.value = ""; allShifts.textContent = "All-shift analysis appears here."; });
+copyButton.addEventListener("click", async () => { await navigator.clipboard.writeText(output.value); UsefulTool.status(status, "Output copied.", "warn"); });
+swapButton.addEventListener("click", () => { input.value = output.value; clearOutput(); });
+document.getElementById("clearButton").addEventListener("click", () => { input.value = ""; clearOutput(); allShifts.textContent = "All-shift analysis appears here."; });
 algorithm.addEventListener("change", () => { shift.disabled = algorithm.value === "rot47"; direction.disabled = algorithm.value === "rot47"; });
-window.UsefulToolRot = { rotateAlpha, rot47, randomPassword, transform };
+window.UsefulToolRot = { clearOutput, rotateAlpha, rot47, randomPassword, transform };

@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputDirectory = path.join(root, "offline");
@@ -11,8 +12,17 @@ function isLocal(reference) {
   return !/^(?:[a-z]+:|\/\/|#)/i.test(reference);
 }
 
+function localFileReference(reference) {
+  return reference.replace(/[?#].*$/, "");
+}
+
 function safeScript(source) {
   return source.replace(/<\/script/gi, "<\\/script");
+}
+
+function allowCspSource(html, directive, source) {
+  const pattern = new RegExp(`${directive}[^;\"]*`);
+  return html.replace(pattern, (value) => value.split(/\s+/).includes(source) ? value : `${value} ${source}`);
 }
 
 async function inlineModuleImports(source, scriptPath) {
@@ -28,28 +38,44 @@ async function inlineModuleImports(source, scriptPath) {
 }
 
 async function inlinePage(name) {
+  if (name === "video-editor.html") {
+    const { execFileSync } = await import("node:child_process");
+    execFileSync(process.execPath, [path.join(root, "scripts/build-video-studio.mjs")]);
+    return fs.readFile(path.join(outputDirectory, name), "utf8");
+  }
   const sourcePath = path.join(root, name);
   let html = await fs.readFile(sourcePath, "utf8");
 
-  const styles = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="([^"]+)"\s*>/g)];
+  const workerBlocks = [...html.matchAll(/<script([^>]*)\s+data-inline-worker-src="([^"]+)"([^>]*)><\/script>/g)];
+  for (const match of workerBlocks) {
+    if (!isLocal(match[2])) continue;
+    const workerPath = path.resolve(root, path.dirname(name), localFileReference(match[2]));
+    const compress = /data-inline-worker-compress="gzip"/.test(match[0]);
+    const rawWorker = await fs.readFile(workerPath, "utf8");
+    const workerSource = compress ? gzipSync(rawWorker, { level: 9 }).toString("base64") : safeScript(rawWorker);
+    const attributes = (match[1] + match[3]).replace(/[ \t]+\n/g, "\n").trim();
+    html = html.replace(match[0], () => `<script${attributes ? " " + attributes : ""} data-inlined-from="${match[2]}">\n${workerSource}\n</script>`);
+  }
+
+  const styles = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="([^"]+)"\s*\/?>/g)];
   for (const match of styles) {
     if (!isLocal(match[1])) continue;
-    const css = (await fs.readFile(path.resolve(root, path.dirname(name), match[1]), "utf8"))
+    const css = (await fs.readFile(path.resolve(root, path.dirname(name), localFileReference(match[1])), "utf8"))
       .replace(/<\/style/gi, "<\\/style");
     html = html.replace(match[0], () => `<style data-inlined-from="${match[1]}">\n${css}\n</style>`);
-    html = html.replace("style-src 'self'", "style-src 'self' 'unsafe-inline'");
+    html = allowCspSource(html, "style-src", "'unsafe-inline'");
   }
 
   const scripts = [...html.matchAll(/<script([^>]*)\s+src="([^"]+)"([^>]*)><\/script>/g)];
   for (const match of scripts) {
     if (!isLocal(match[2])) continue;
-    const scriptPath = path.resolve(root, path.dirname(name), match[2]);
+    const scriptPath = path.resolve(root, path.dirname(name), localFileReference(match[2]));
     const javascript = safeScript(await inlineModuleImports(await fs.readFile(scriptPath, "utf8"), scriptPath));
     const attributes = (match[1] + match[3]).trim();
     html = html.replace(match[0], () => `<script${attributes ? " " + attributes : ""} data-inlined-from="${match[2]}">\n${javascript}\n</script>`);
-    html = html.replace("script-src 'self'", "script-src 'self' 'unsafe-inline'");
+    html = allowCspSource(html, "script-src", "'unsafe-inline'");
     if (javascript.includes("data:text/javascript;base64,")) {
-      html = html.replace("script-src 'self' 'unsafe-inline'", "script-src 'self' 'unsafe-inline' data:");
+      html = allowCspSource(html, "script-src", "data:");
     }
   }
 

@@ -1,11 +1,17 @@
-home-and-theme: Real Chromium verifies thirteen shortcuts, matching tool entries, downloadable offline pages, theme switching, cross-page persistence, and offline bootstrap; no mocks.
-calculator-and-units: Real Chromium exercises expressions, errors, keypad, history, angle modes, Simpson integration, quick presets, swaps, affine conversion, cards, and invalid input; no mocks.
-base64-and-rot: Real Chromium exercises text and file encoding, Data URI and URL-safe modes, decoding, byte download, validation, reset, ROT/ROT47, brute force, password generation, and invalid shifts; no mocks.
-text-editor: Real Chromium exercises counts, drafts, reload persistence, import/export, downloads, formatting, Markdown preview, line numbers, regex paths, deletion confirmation, clear, and diff handoff; clipboard permission itself is browser-managed.
-text-transfer-and-diff: Real Chromium exercises uploads, local persistence, downloads, editor and two-sided handoff, file comparison, swap, whitespace and inline toggles, graded changes, and patch download; no mocks.
-background-and-metadata: Real Chromium exercises image validation, tuning, sampling, mask modes/reset, PNG/JPEG export, Base64 metadata input, inspect/inject/erase, downloads, and unsupported actions; fixture media are generated locally.
-image-editor: Real Chromium exercises layer load/select/order/duplicate/delete, geometry, flips, opacity, canvas sizing/background, clear, and PNG/JPEG/WebP downloads with the real Fabric engine.
-pdf-tools: Real Chromium exercises image order/removal/options/caption/export and PDF load/order/removal/ranges/errors/merge/clear with real generated fixtures and the vendored PDF engine.
-lan-chat: Two real Chromium windows exercise WebRTC offer/answer, text/image exchange, malformed signaling, pending state, and disconnect; no signaling server or channel mock.
-coverage-runner: Real V8 precise line and block ranges are mapped to LCOV; no synthetic hit counts.
-offline-build: Real generated HTML and vendored assets are verified; Cloudflare deployment is outside browser UAT and is not mocked.
+Home/theme/offline entry: real Chromium and generated HTML; no mocks. / 首頁、主題、離線入口：實際瀏覽器；無模擬。
+Calculator/units: real parser, conversions and browser controls; no mocks. / 計算機及單位：實際解析、換算與介面。
+Base64/ROT: real browser text/file processing; no mocks. / Base64及ROT：實際瀏覽器文字與檔案處理。
+Text editor: real drafts, formatting, Markdown and file operations; clipboard browser-managed. / 文字編輯：真實草稿、格式及檔案；剪貼簿由瀏覽器管理。
+Transfer/diff: real storage, handoff and diff engine; no mocks. / 文字傳送與差異：實際儲存、交接及比對。
+Image background/metadata: real canvas and metadata functions with local fixtures. / 圖片背景與中繼資料：實際畫布及本地範例。
+Image editor: real Fabric engine and browser controls; no mocks. / 圖片編輯：真實Fabric引擎與介面。
+PDF tools: real pdf-lib and PDF.js with generated documents. / PDF工具：真實引擎及產生的文件。
+LAN chat: two Chromium windows and real WebRTC; no signaling mocks. / 區網聊天：兩個視窗及實際WebRTC。
+Video model/history: real project data, links, transitions and routing; no mocks. / 影片模型歷史：實際資料與聲道路由。
+Desktop media/ZIP: real GUI, codecs, download and FFmpeg; failure timing injected. / 桌面影音及ZIP：實際介面與編解碼；注入故障時機。
+Cross-tab drafts: real browser storage; deletion confirmation automated. / 跨分頁草稿：真實儲存；自動接受刪除確認。
+PDF races: real extraction; only file-read delay controlled. / PDF競爭：真實擷取；僅控制讀檔延遲。
+PNG/captions: real canvas and PDF output; download captured for inspection. / PNG及標題：實際輸出；擷取下載檢查。
+MP4: both fixtures edited in browser and decoded by FFmpeg; no mocks. / MP4：瀏覽器修改兩個範例，FFmpeg獨立解碼。
+Coverage: actual browser/Node V8 line hits merged; browser branch measurements retained. / 覆蓋率：合併實測行命中；保留瀏覽器分支資料。
+Offline/deployment: generated HTML verified; deployment outside scope and not mocked. / 離線與部署：驗證產物；部署不屬此次範圍。

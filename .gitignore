@@ -3,3 +3,7 @@ build/
 node_modules/
 acceptance/node_modules/
 .DS_Store
+dev-log/
+fan-in/
+fan-out/
+.local-tool/

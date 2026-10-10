@@ -67,6 +67,7 @@ function sendToEditor() {
     updatedAt: Date.now()
   };
   drafts.unshift(draft);
+  writeStorage(storageKeys.editorDrafts + ":" + draft.id, JSON.stringify(draft));
   writeStorage(storageKeys.editorDrafts, JSON.stringify(drafts));
   writeStorage(storageKeys.editorActive, draft.id);
   writeStorage(storageKeys.editorLegacy, textInput.value);
